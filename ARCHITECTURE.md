@@ -87,6 +87,7 @@ In load order.
 | `characters.js` | The account's roster of characters, and the home screen |
 | `campaigns.js` | Campaigns: the bookmark model, entering and leaving, the home section |
 | `homebrew.js` | The account's homebrew: its store, the home screen's file tree, drag-to-refile |
+| `homebrew-editor.js` | The New Homebrew panel: the kind picker, and each kind's form |
 | `router.js` | The address bar: `home` / `character#<id>` / `campaign#<code>`, Back/Forward |
 | `character-sheet.js` | Page one of the 2024 sheet: abilities, skills, combat stats |
 | `class-features.js` | The class registry, and the sheet's Class Features section |
@@ -127,7 +128,7 @@ that owns the element wins.
 | `sheet-prose.css` | The written sections: the bar, the editor, and the rendered prose |
 | `party.css` | Party header badge, sidebar Party tab, party modal, kick |
 | `campaigns.css` | The home screen's Campaigns section, its cards, and the campaign modal |
-| `homebrew.css` | The home screen's Homebrew section and its file tree |
+| `homebrew.css` | The home screen's Homebrew section, its file tree, and the New Homebrew panel |
 | `chat.css` | The sidebar's Chat pane, its messages and composer, and a roll said in it |
 | `dice.css` | The flying number, the corner stack, the wheel, the hover card, the tray |
 | `battlemap.css` | The map button, the map view, and the GM's library pane |

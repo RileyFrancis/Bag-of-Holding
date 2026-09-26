@@ -412,6 +412,16 @@ Browse folders); which folders are open is furniture
 (`dnd_inventory_homebrew_open`). Deleting a folder moves its contents up a
 level, never deletes homebrew.
 
+The New Homebrew panel (`homebrew-editor.js`) builds every kind's form from a
+field-spec list (`HB_FORMS`), and **saves each kind in the shape its data file
+already uses** — class/subclass `features` as `data/classes.json` features
+(the subclass pick is `unlocks: ['subclass']` on a feature), species `traits`
+as `data/species.json` traits, a spell with `data/spells.json`'s keys, an item
+as an item template — so feeding homebrew into `allClasses()`/`allSpecies()`/
+the spell list is a read, not a translation. None of those registries read it
+yet. Its modal opts out of the shared backdrop close
+(`data-backdrop-close="false"`) to ask before discarding a filled-in form.
+
 ### Browse-list folders and sorting
 
 Folders (`folders.js`, own `localStorage` key) describe the *catalogue*, not

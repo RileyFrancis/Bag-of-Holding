@@ -397,8 +397,12 @@ function hideModal(id) {
     document.getElementById('modal-backdrop').classList.add('hidden');
   }
 }
+// A modal marked `data-backdrop-close="false"` handles the backdrop itself
+// (the homebrew editor asks before discarding a half-filled form).
 document.getElementById('modal-backdrop').addEventListener('click', () => {
-  document.querySelectorAll('.modal:not(.hidden)').forEach(m => hideModal(m.id));
+  document.querySelectorAll('.modal:not(.hidden)').forEach(m => {
+    if (m.dataset.backdropClose !== 'false') hideModal(m.id);
+  });
 });
 document.querySelectorAll('.cancel-btn').forEach(btn => {
   btn.addEventListener('click', () => {

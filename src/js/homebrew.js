@@ -82,6 +82,22 @@ function addHomebrewEntry(kind, data) {
   return id;
 }
 
+function updateHomebrewEntry(id, data) {
+  const entry = state.homebrew.entries[id];
+  if (!entry) return;
+  state.homebrew.entries[id] = { ...data, id, kind: entry.kind, name: String(data?.name ?? entry.name) };
+  debouncedSync();
+  renderHomebrewSection();
+}
+
+function deleteHomebrewEntry(id) {
+  if (!state.homebrew.entries[id]) return;
+  delete state.homebrew.entries[id];
+  delete state.homebrew.placement[id];
+  debouncedSync();
+  renderHomebrewSection();
+}
+
 // The seam class-features.js / species-traits.js / spells.js read through once
 // homebrew of that kind is usable at the table.
 function homebrewEntriesOf(kind) {
@@ -112,7 +128,7 @@ function collectHomebrewFiles() {
     files.set(key, { key, kind: 'item', name: template.name || 'Untitled item', detail: owners.join(', ') });
   });
   Object.values(state.homebrew.entries).forEach(e => {
-    files.set(e.id, { key: e.id, kind: e.kind, name: e.name, detail: '' });
+    files.set(e.id, { key: e.id, kind: e.kind, name: e.name, detail: '', entryId: e.id });
   });
   return [...files.values()];
 }
@@ -342,6 +358,14 @@ function homebrewFileRow(file, depth) {
   kind.dataset.kind = file.kind;
   kind.textContent = homebrewKindLabel(file.kind);
   row.appendChild(kind);
+
+  // An account entry opens in the homebrew editor. A character's custom item
+  // is edited from that character's Browse list, where its catalogue lives.
+  if (file.entryId) {
+    row.classList.add('hb-editable');
+    row.title = 'Click to edit, drag to move';
+    row.addEventListener('click', () => openHomebrewEntry(file.entryId));
+  }
   return row;
 }
 
@@ -422,7 +446,6 @@ if (homebrewTreeEl) {
       name => createHomebrewFolder(name));
   });
 
-  // The New Homebrew flow — picking a kind and authoring it — comes next; it
-  // saves through addHomebrewEntry().
-  document.getElementById('homebrew-new-btn').addEventListener('click', () => {});
+  // The panel itself is homebrew-editor.js.
+  document.getElementById('homebrew-new-btn').addEventListener('click', () => openHomebrewPanel());
 }

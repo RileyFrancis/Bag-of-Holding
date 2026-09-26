@@ -1181,6 +1181,29 @@
   </div>
 </div>
 
+<!-- ===== HOMEBREW MODAL =====
+     Two faces in one panel: the six kinds to pick from, then that kind's
+     editor. The form is built by src/js/homebrew-editor.js. -->
+<div id="homebrew-modal" class="modal hidden" data-backdrop-close="false">
+  <div class="modal-box homebrew-box">
+    <button class="homebrew-close-btn hb-close" title="Close" aria-label="Close">✕</button>
+    <section id="homebrew-picker">
+      <h2>What are we brewing?</h2>
+      <div id="homebrew-pick-grid"><!-- one button per kind, from HOMEBREW_KINDS --></div>
+    </section>
+    <section id="homebrew-editor" class="hidden">
+      <h2 id="homebrew-editor-title">New Homebrew</h2>
+      <div id="homebrew-form"><!-- rendered by renderHomebrewForm() --></div>
+      <div class="modal-footer">
+        <button id="homebrew-back-btn" class="btn-sm">&larr; Back</button>
+        <button id="homebrew-delete-btn" class="btn-sm danger hidden">Delete</button>
+        <button id="homebrew-save-btn" class="btn-primary">Create</button>
+        <button class="homebrew-close-btn btn-sm">Cancel</button>
+      </div>
+    </section>
+  </div>
+</div>
+
 <!-- ===== FOLDER PICKER MODAL ===== -->
 <div id="folder-picker-modal" class="modal hidden">
   <div class="modal-box narrow">
@@ -1740,6 +1763,7 @@
 <!-- After campaigns.js: the homebrew tree is the home screen's third section,
      and collects custom items from the roster's slots. -->
 <script src="src/js/homebrew.js"></script>
+<script src="src/js/homebrew-editor.js"></script>
 <!-- After campaigns.js: the URL is written from which screen, character and
      campaign are on show. Only its popstate listener runs at load. -->
 <script src="src/js/router.js"></script>

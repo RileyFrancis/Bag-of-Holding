@@ -86,6 +86,7 @@ In load order.
 | `character-tabs.js` | Per-character tabs, and the sheet/inventory switch |
 | `characters.js` | The account's roster of characters, and the home screen |
 | `campaigns.js` | Campaigns: the bookmark model, entering and leaving, the home section |
+| `homebrew.js` | The account's homebrew: its store, the home screen's file tree, drag-to-refile |
 | `router.js` | The address bar: `home` / `character#<id>` / `campaign#<code>`, Back/Forward |
 | `character-sheet.js` | Page one of the 2024 sheet: abilities, skills, combat stats |
 | `class-features.js` | The class registry, and the sheet's Class Features section |
@@ -126,6 +127,7 @@ that owns the element wins.
 | `sheet-prose.css` | The written sections: the bar, the editor, and the rendered prose |
 | `party.css` | Party header badge, sidebar Party tab, party modal, kick |
 | `campaigns.css` | The home screen's Campaigns section, its cards, and the campaign modal |
+| `homebrew.css` | The home screen's Homebrew section and its file tree |
 | `chat.css` | The sidebar's Chat pane, its messages and composer, and a roll said in it |
 | `dice.css` | The flying number, the corner stack, the wheel, the hover card, the tray |
 | `battlemap.css` | The map button, the map view, and the GM's library pane |
@@ -171,9 +173,10 @@ That split is the rule to preserve: anything describing *how this browser shows
 the app* stays out of the save file, because a GM paging through the party must
 keep their own arrangement rather than adopting each player's.
 
-The save file's shape is version 3 —
-`{ version, activeCharacterId, characters, campaigns }`. Version 2 was the same
-without `campaigns` (no migration needed). Version 1 was a single character at
+The save file's shape is version 4 —
+`{ version, activeCharacterId, characters, campaigns, homebrew }`. Version 3 was
+the same without `homebrew`, and version 2 without `campaigns` either (no
+migration needed for either). Version 1 was a single character at
 the top level, and `normalizeSavePayload()` folds one into a one-character
 roster; it is the only place that knows there were ever earlier shapes. Only
 custom items are saved, since the defaults are re-hydrated from `data/items.csv`

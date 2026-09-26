@@ -73,6 +73,7 @@
   <link rel="stylesheet" href="src/css/auth.css">
   <link rel="stylesheet" href="src/css/home.css">
   <link rel="stylesheet" href="src/css/campaigns.css">
+  <link rel="stylesheet" href="src/css/homebrew.css">
   <link rel="stylesheet" href="src/css/battlemap.css">
   <link rel="stylesheet" href="src/css/initiative.css">
 </head>
@@ -807,6 +808,20 @@
       <p id="home-note" class="home-note hidden"></p>
       <div id="home-card-grid"><!-- rendered by renderHomeScreen() --></div>
     </div>
+
+    <!-- ===== HOMEBREW =====
+         Every custom thing this account has made, as a file tree the player
+         folds into folders of their own. See src/js/homebrew.js. -->
+    <section id="homebrew-section">
+      <div id="homebrew-header" class="home-header home-header-later">
+        <h1>Homebrew</h1>
+        <div class="home-header-actions">
+          <button id="homebrew-new-folder-btn" class="btn-sm"><span class="ico ico-plus lead"></span>New Folder</button>
+          <button id="homebrew-new-btn" class="btn-primary"><span class="ico ico-plus lead"></span>New Homebrew</button>
+        </div>
+      </div>
+      <div id="homebrew-tree" role="tree"><!-- rendered by renderHomebrewSection() --></div>
+    </section>
   </div>
 </div>
 
@@ -1722,6 +1737,9 @@
 <!-- After characters.js: the campaign section renders into the same home screen,
      and a campaign's remembered character is one of that roster's slots. -->
 <script src="src/js/campaigns.js"></script>
+<!-- After campaigns.js: the homebrew tree is the home screen's third section,
+     and collects custom items from the roster's slots. -->
+<script src="src/js/homebrew.js"></script>
 <!-- After campaigns.js: the URL is written from which screen, character and
      campaign are on show. Only its popstate listener runs at load. -->
 <script src="src/js/router.js"></script>

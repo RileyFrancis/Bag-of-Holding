@@ -396,6 +396,9 @@ function renderHomeScreen() {
 
   // The campaigns above the roster — same page, two questions.
   renderCampaignSection();
+  // And the homebrew below the roster, welcome or not — it is the account's,
+  // not any one character's.
+  renderHomebrewSection();
 
   // Nobody made yet: a greeting and one button in place of the roster, whose
   // only card would be the placeholder.

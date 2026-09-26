@@ -395,10 +395,22 @@ mode (a free cursor near an edge would scroll forever).
 
 `saveState`/`loadState` use `localStorage` key `dnd_inventory_v1`. Only custom
 items are saved; defaults re-hydrate from `data/items.csv` on init. The
-payload is **version 3**: `{ version, activeCharacterId, characters,
-campaigns }` — V1 (a single character at the top level, still what an older
+payload is **version 4**: `{ version, activeCharacterId, characters,
+campaigns, homebrew }` — V1 (a single character at the top level, still what an older
 browser or cloud save may hold) is folded into a one-character roster by
 `normalizeSavePayload()`. The storage key never changed across versions.
+
+### Homebrew
+
+The home screen's third section (`homebrew.js`): a file tree of everything
+custom. **Custom items are not copied into it** — they stay in each character
+slot's `db` and are collected from every slot at render, deduplicated by
+template id (`item:<templateId>` is the tree key). Every other kind lives in
+`state.homebrew.entries`, written through `addHomebrewEntry()`. Folders and
+placements are in the save file and synced (account content, unlike the
+Browse folders); which folders are open is furniture
+(`dnd_inventory_homebrew_open`). Deleting a folder moves its contents up a
+level, never deletes homebrew.
 
 ### Browse-list folders and sorting
 

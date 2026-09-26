@@ -13,6 +13,9 @@ const state = {
   activeCharacterId: null,
   // Bookmarks, not the campaigns themselves (those live under parties/<code>).
   campaigns: {},          // { [code]: { code, name, role, characterId, gmName, memberCount, lastPlayed } }
+  // The account's homebrew: its own entries, and the folder tree over them and
+  // the roster's custom items (homebrew.js).
+  homebrew: { entries: {}, folders: {}, placement: {} },
   screen: 'app',          // 'app' | 'home' — the home screen is a page in front, never saved
 
   grid: [],               // 2D array [row][col] = instanceId | null

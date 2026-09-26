@@ -89,8 +89,9 @@ document.getElementById('stash-delete-all-btn').addEventListener('click', () => 
 // screen is flushed back to its slot first (`commitActiveCharacter()` declines
 // for someone else's sheet or the GM placeholder). Version 3 adds `campaigns`
 // (an account fact — it follows you across machines); v2 simply has none, so the
-// bump needs no migration.
-const SAVE_VERSION = 3;
+// bump needs no migration. Version 4 adds `homebrew` the same way — an older
+// save just has none yet (normalizeHomebrew() hands back an empty tree).
+const SAVE_VERSION = 4;
 
 function buildSavePayload() {
   commitActiveCharacter();
@@ -99,6 +100,7 @@ function buildSavePayload() {
     activeCharacterId: state.activeCharacterId,
     characters: state.characters,
     campaigns: state.campaigns,
+    homebrew: state.homebrew,
   };
 }
 
@@ -110,6 +112,7 @@ function applySavePayload(data) {
   state.characters = norm.characters;
   state.activeCharacterId = norm.activeCharacterId;
   state.campaigns = normalizeCampaigns(data.campaigns);
+  state.homebrew = normalizeHomebrew(data.homebrew);
   ensureCharacter();              // also loads the active slot into live state
   loadActiveCharacterIntoLive();
 }

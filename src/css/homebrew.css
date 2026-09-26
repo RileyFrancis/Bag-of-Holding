@@ -1,0 +1,132 @@
+/* ============================================================
+   homebrew.css — the home screen's Homebrew section: its file tree
+
+   Loaded after campaigns.css, and borrowing the home page's header and panel
+   language so the third section reads as part of the same page. The rows lean
+   on the Browse list's folder headers (sidebar.css) in spirit — the same
+   caret, the same hover-only ✎ / ✕ — but live on a page, not a panel, so they
+   are sized for it.
+   ============================================================ */
+
+#homebrew-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 64px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--emboss-hi);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Only the tree background says "top level"; a folder row says "in here". */
+#homebrew-tree.hb-drop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.homebrew-empty { padding: 24px 12px; }
+
+/* ─── ROWS ───────────────────────────────────────────────── */
+.hb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 8px;
+  /* Indented by depth — the tree is one flat list of rows, not nested boxes,
+     so a deep folder never squeezes its own contents. */
+  padding-left: calc(8px + var(--depth, 0) * 20px);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: grab;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.hb-row:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--border);
+}
+.hb-row.hb-dragging { opacity: 0.4; border-style: dashed; border-color: var(--border2); }
+
+.hb-folder { cursor: pointer; }
+.hb-folder .hb-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.hb-folder.hb-drop {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* A file lines up under its folder's name, not its caret. */
+.hb-file { padding-left: calc(8px + 17px + var(--depth, 0) * 20px); }
+
+.hb-caret { width: 9px; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+
+.hb-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Which characters carry a custom item — secondary, so it gives way first. */
+.hb-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hb-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.hb-kind {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+}
+.hb-detail + .hb-kind { margin-left: 0; }
+
+/* ─── FOLDER ACTIONS ─────────────────────────────────────── */
+.hb-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.hb-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 2px;
+  color: var(--text-dim);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.hb-row:hover .hb-btn,
+.hb-btn:focus-visible { opacity: 1; }
+.hb-btn:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.hb-btn.danger:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+/* No hover on a touch screen, so the actions stay visible there. */
+@media (hover: none) {
+  .hb-btn { opacity: 1; }
+}

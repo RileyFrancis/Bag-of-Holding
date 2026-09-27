@@ -424,6 +424,20 @@
   color: var(--text-dim);
 }
 
+/* A chat line: wraps inside a fixed width rather than running off as one long
+   line. Its height is bounded by the cut in JS (TAB_BUBBLE_MAX_CHARS), not a
+   line clamp — that needs overflow: hidden, which would clip the tail. */
+.tab-bubble.speech {
+  display: block;
+  max-width: 240px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .tab-bubble.crit   { border-color: var(--crit); }
 .tab-bubble.fumble { border-color: var(--fumble); }
 .tab-bubble.crit::before   { border-color: var(--crit); }

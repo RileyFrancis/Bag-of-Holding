@@ -5,8 +5,8 @@
 
 // A roll has three audiences: the roller (the big tumbling number, then a corner
 // chip whose hover shows the whole working), the table (a line in the chat log),
-// and everyone else (a bubble over the roller's tab). There is no rolls
-// collection — a roll IS a chat message with `kind: 'roll'`, so it inherits the
+// and everyone else (a bubble over the roller's tab, as a chat line pops one).
+// There is no rolls collection — a roll IS a chat message with `kind: 'roll'`, so it inherits the
 // log's server ordering, single subscription and capped tail. Nothing here talks
 // to Firebase except `postRollToChat()`; rolling works with no campaign at all.
 // See CLAUDE.md § Dice.
@@ -39,9 +39,16 @@ const ROLL_TICK_SLOW_MS = 205;
 
 const ROLL_FLIGHT_MS = 620;
 
-// How long another player's roll hangs over their tab; last stretch is the fade.
-const TAB_BUBBLE_MS = 4500;
+// How long a bubble hangs over a tab: long enough to read, scaled by what it
+// says and clamped to a range. The last stretch is the fade.
+const TAB_BUBBLE_MIN_MS = 3000;
+const TAB_BUBBLE_MAX_MS = 8000;
+const TAB_BUBBLE_MS_PER_CHAR = 60;
 const TAB_BUBBLE_FADE_MS = 400;
+
+// A chat line longer than this is cut short in its bubble — the log has the
+// whole thing, and a paragraph hanging off a tab would cover the page.
+const TAB_BUBBLE_MAX_CHARS = 120;
 
 // Keyed by the value stored on a roll, so the map is also the set of legal modes.
 const ROLL_MODES = {
@@ -499,47 +506,81 @@ function rollFromMessage(m) {
 // =============================================================================
 // A fixed layer, not children of the tabs — `#character-tabs` scrolls sideways
 // and clips overflow, so a bubble hanging below a tab would be sliced off.
-const tabBubbles = new Map(); // tab key → { total, label, crit, mode, at, timer }
+// One bubble per tab: whatever that player said or rolled last replaces the one
+// before it.
+const tabBubbles = new Map(); // tab key → { text } | { roll fields }, + { at, ms, timer }
 
 // null until the first chat snapshot. Joining delivers the whole tail at once
 // and every line in it is history — a bubble per line would be a wall of them.
-let seenRollIds = null;
+let seenBubbleIds = null;
 
-function noteRollFeed(messages) {
-  const first = seenRollIds === null;
-  if (first) seenRollIds = new Set();
+// Every new chat line pops a bubble over its speaker's tab, a roll included.
+function noteBubbleFeed(messages) {
+  const first = seenBubbleIds === null;
+  if (first) seenBubbleIds = new Set();
   const me = ownPlayerId();
 
   messages.forEach(m => {
-    if (m.kind !== 'roll' || !m.roll || seenRollIds.has(m.id)) return;
-    seenRollIds.add(m.id);
-    if (first) return;        // the backlog is not news
-    if (m.uid === me) return; // we watched our own land in the corner
-    popTabBubble(m.uid, rollFromMessage(m));
+    if (seenBubbleIds.has(m.id)) return;
+    seenBubbleIds.add(m.id);
+    if (first) return; // the backlog is not news
+    const isRoll = m.kind === 'roll' && !!m.roll;
+    // We watched our own roll land in the corner — and it is posted as the
+    // tumble starts, so a bubble would give the number away before it lands.
+    if (isRoll && m.uid === me) return;
+    // Our own tab is keyed OWN_TAB, not by account id.
+    const key = m.uid === me ? OWN_TAB : m.uid;
+    if (isRoll) popTabBubble(key, rollBubbleFields(rollFromMessage(m)));
+    else {
+      const text = tabBubbleText(m.text);
+      if (text) popTabBubble(key, { text });
+    }
   });
 }
 
 // Called when the log is torn down, or the next campaign's tail reads as live.
-function resetRollFeed() {
-  seenRollIds = null;
+function resetBubbleFeed() {
+  seenBubbleIds = null;
   tabBubbles.forEach(b => clearTimeout(b.timer));
   tabBubbles.clear();
   renderTabBubbles();
 }
 
-function popTabBubble(uid, roll) {
-  // Keyed by account id. A roll from someone not on the strip (a GM, a departed
+function rollBubbleFields(roll) {
+  return { total: roll.total, label: roll.label, crit: rollCrit(roll), mode: roll.mode };
+}
+
+// One line of the message, cut at a word near the cap. Newlines fold to spaces
+// — a bubble is a glance, not a transcript.
+function tabBubbleText(raw) {
+  const text = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length <= TAB_BUBBLE_MAX_CHARS) return text;
+  const cut = text.slice(0, TAB_BUBBLE_MAX_CHARS);
+  const space = cut.lastIndexOf(' ');
+  // Back to a word break unless that would throw away most of the line.
+  return (space > TAB_BUBBLE_MAX_CHARS * 0.6 ? cut.slice(0, space) : cut).replace(/[\s.,;:!?-]+$/, '') + '…';
+}
+
+// Scaled by what the bubble actually shows — a cut-short line has already said
+// all it is going to.
+function tabBubbleDuration(b) {
+  const chars = b.text !== undefined ? b.text.length : String(b.total).length + String(b.label).length;
+  return Math.max(TAB_BUBBLE_MIN_MS,
+    Math.min(TAB_BUBBLE_MAX_MS, TAB_BUBBLE_MIN_MS + chars * TAB_BUBBLE_MS_PER_CHAR));
+}
+
+function popTabBubble(key, fields) {
+  // Keyed by tab. A line from someone not on the strip (a GM, a departed
   // player) has nothing to point at and renderTabBubbles() drops it.
-  const existing = tabBubbles.get(uid);
+  const existing = tabBubbles.get(key);
   if (existing) clearTimeout(existing.timer);
 
-  tabBubbles.set(uid, {
-    total: roll.total,
-    label: roll.label,
-    crit: rollCrit(roll),
-    mode: roll.mode,
+  const ms = tabBubbleDuration(fields);
+  tabBubbles.set(key, {
+    ...fields,
+    ms,
     at: Date.now(), // so a redraw resumes the bubble at its real age
-    timer: setTimeout(() => { tabBubbles.delete(uid); renderTabBubbles(); }, TAB_BUBBLE_MS),
+    timer: setTimeout(() => { tabBubbles.delete(key); renderTabBubbles(); }, ms),
   });
   renderTabBubbles();
 }
@@ -558,19 +599,26 @@ function renderTabBubbles() {
     if (!r.width) return; // the strip is hidden — nothing to point at
 
     const bubble = document.createElement('div');
-    bubble.className = 'tab-bubble' + (b.crit ? ' ' + b.crit : '');
 
-    const total = document.createElement('span');
-    total.className = 'tab-bubble-total';
-    total.textContent = b.total;
+    if (b.text !== undefined) {
+      // textContent, never innerHTML — another player's typing, same as the log.
+      bubble.className = 'tab-bubble speech';
+      bubble.textContent = b.text;
+    } else {
+      bubble.className = 'tab-bubble' + (b.crit ? ' ' + b.crit : '');
 
-    const label = document.createElement('span');
-    label.className = 'tab-bubble-label';
-    label.textContent = b.label;
+      const total = document.createElement('span');
+      total.className = 'tab-bubble-total';
+      total.textContent = b.total;
 
-    bubble.append(total, label);
-    const pill = rollModePill(b);
-    if (pill) bubble.appendChild(pill);
+      const label = document.createElement('span');
+      label.className = 'tab-bubble-label';
+      label.textContent = b.label;
+
+      bubble.append(total, label);
+      const pill = rollModePill(b);
+      if (pill) bubble.appendChild(pill);
+    }
     diceBubbleEl.appendChild(bubble);
 
     // Measured after the text is in, and clamped so the rightmost tab's bubble
@@ -590,7 +638,7 @@ function renderTabBubbles() {
     // replays the pop and resets the countdown to leave.
     const age = Date.now() - b.at;
     bubble.style.animationDelay =
-      (-age) + 'ms, ' + Math.max(0, TAB_BUBBLE_MS - TAB_BUBBLE_FADE_MS - age) + 'ms';
+      (-age) + 'ms, ' + Math.max(0, b.ms - TAB_BUBBLE_FADE_MS - age) + 'ms';
   });
 }
 

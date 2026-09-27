@@ -45,9 +45,9 @@ function subscribeToChat(code) {
     // Push ids sort lexicographically into chronological order — sorted
     // explicitly rather than trusting object key order.
     chatMessages = Object.keys(val).sort().map(id => ({ id, ...val[id] }));
-    // A roll arriving is news for the tab strip too (dice.js) — it rides this
-    // subscription rather than one of its own.
-    noteRollFeed(chatMessages);
+    // A line arriving is news for the tab strip too — a bubble over the
+    // speaker's tab (dice.js, whose roll bubbles came first).
+    noteBubbleFeed(chatMessages);
     renderChat();
   });
 }
@@ -56,9 +56,9 @@ function unsubscribeFromChat() {
   if (partyChatRef) { partyChatRef.off(); partyChatRef = null; }
   chatMessages = [];
   chatPinnedToBottom = true;
-  // Or the next campaign's tail would arrive as a burst of live rolls, popping
+  // Or the next campaign's tail would arrive as a burst of live lines, popping
   // a bubble for every one of them.
-  resetRollFeed();
+  resetBubbleFeed();
   renderChat();
 }
 

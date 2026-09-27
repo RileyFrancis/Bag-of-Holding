@@ -143,6 +143,11 @@ subscription and cap. Rolling therefore works with **no campaign at all**;
 - **Advantage rolls the whole pool twice and keeps the better total**; the
   loser is kept, greyed, as `dropped`. A crit is a natural 20/1 on a single
   d20 only, read off the *kept* die.
+- **Every new line pops a bubble under its speaker's tab** (`noteBubbleFeed()`
+  in dice.js), held 3–8 s by length and cut short past
+  `TAB_BUBBLE_MAX_CHARS`. The first snapshot is backlog, never bubbled; your
+  own *roll* is skipped — it's posted as the tumble starts, so a bubble would
+  give the number away before the flier lands.
 - Not gated by `isReadOnly()` — rolling writes nothing, and a GM rolling a
   player's Perception is correctly attributed to the GM's account.
 

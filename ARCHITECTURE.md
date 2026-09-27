@@ -238,7 +238,8 @@ preview rendered through the real `markdown.js`; it writes the file directly via
 the File System Access API when the browser supports picking a file to save in
 place, and falls back to a download otherwise.
 
-`data/statuses.json` is `{ id, name, description, derived? }` per status —
+`data/statuses.json` is `{ id, name, description, derived?, maxLevel? }` per
+status (`maxLevel` > 1 stacks: each level is the id repeated in the saved list) —
 `description` Markdown, same rules again. A status with `derived` (today
 `encumbered` / `heavilyEncumbered`) is worked out from the inventory by
 `encumbranceLevel()` and never offered in the picker or saved; every other one

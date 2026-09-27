@@ -38,6 +38,19 @@
   background: color-mix(in srgb, var(--enc-heavy) 10%, var(--panel));
 }
 
+/* A stacking status's level (Exhaustion 3) — a small disc after the name. */
+.status-chip-level {
+  min-width: 15px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 8px;
+}
+
 .status-chip-remove {
   margin-right: -3px;
   padding: 0 2px;
@@ -95,6 +108,18 @@
   color: var(--text);
 }
 .status-option.active .status-option-name { color: var(--accent); }
+
+.status-option-level {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.status-option.active .status-option-level { color: var(--accent); }
+
+/* A stacking status at its maximum — still listed, but another click does nothing. */
+.status-option.maxed { cursor: default; }
+.status-option.maxed:hover { background: none; }
 
 /* The tooltip's Markdown rules (.tip-desc, tooltip.css) do the rest. Two
    classes deep because tooltip.css comes later in the cascade and sets its own

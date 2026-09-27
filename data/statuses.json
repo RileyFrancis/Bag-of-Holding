@@ -4,7 +4,7 @@
     "Statuses section. Read by src/js/statuses.js, which is the only file that",
     "may touch this.",
     "",
-    "A status is { id, name, description, derived? }.",
+    "A status is { id, name, description, derived?, maxLevel? }.",
     "",
     "  id          stable, and never derived from position - a character's",
     "              statuses are saved as a list of these ids.",
@@ -16,6 +16,9 @@
     "                                  or weighs more than Strength x 15 lb",
     "                heavilyEncumbered the same for Heavily Encumbered",
     "                                  (Strength x 30 lb)",
+    "  maxLevel    optional, defaults to 1. Above 1 the status stacks: picking",
+    "              it again adds a level, up to this many, and the chip shows",
+    "              the level. Saved as the id repeated once per level.",
     "  description Markdown, and may be an array for anything multi-line - the",
     "              same rules as data/classes.json, which documents them in full.",
     "",
@@ -46,6 +49,7 @@
     {
       "id": "exhaustion",
       "name": "Exhaustion",
+      "maxLevel": 6,
       "description": [
         "Cumulative, up to 6 levels; at level 6 you die.",
         "- Each level gives **−2** to every D20 Test and **−5 ft** of Speed.",

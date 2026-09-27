@@ -7,7 +7,10 @@
 // and a section that draws it as chips. Two kinds of status:
 //
 //   picked   — `character.statuses`, an id list the player edits from the
-//              picker. Saved and synced like any other sheet field.
+//              picker. Saved and synced like any other sheet field. A status
+//              with `maxLevel` (Exhaustion) stacks: each extra level is the id
+//              repeated, so picking it again is just adding another instance —
+//              ['exhaustion','exhaustion'] is Exhaustion 2.
 //   derived  — `derived:` in the data file; worked out on every render from a
 //              fact the app already knows (today only encumbrance, via
 //              `encumbranceLevel()` in render-stats.js). Never saved and never
@@ -46,6 +49,7 @@ function sanitizeStatusList(raw) {
     return {
       id, name,
       derived: s.derived ? String(s.derived) : null,
+      maxLevel: Math.max(1, Math.min(99, parseInt(s.maxLevel, 10) || 1)),
       description: normalizeDescription(s.description), // class-features.js
     };
   }).filter(Boolean);
@@ -68,11 +72,24 @@ function derivedStatusIds() {
   return key ? DEFAULT_STATUSES.filter(s => s.derived === key).map(s => s.id) : [];
 }
 
-// A picked id the data file no longer knows is kept in the save but not drawn —
-// the same "filtered, not deleted" rule as knownSpells.
+// Each picked status once, in the order first picked. An id the data file no
+// longer knows is kept in the save but not drawn — the same "filtered, not
+// deleted" rule as knownSpells.
 function pickedStatusIds(c = state.character) {
-  return (Array.isArray(c.statuses) ? c.statuses : [])
-    .filter(id => { const s = statusById(id); return s && !s.derived; });
+  const raw = Array.isArray(c.statuses) ? c.statuses : [];
+  return [...new Set(raw)].filter(id => { const s = statusById(id); return s && !s.derived; });
+}
+
+function isLeveledStatus(status) {
+  return status.maxLevel > 1;
+}
+
+// How many times the id is in the list, capped at the status's own maximum.
+function statusLevel(id, c = state.character) {
+  const s = statusById(id);
+  if (!s) return 0;
+  const n = (Array.isArray(c.statuses) ? c.statuses : []).filter(x => x === id).length;
+  return Math.min(n, s.maxLevel);
 }
 
 // =============================================================================
@@ -94,7 +111,7 @@ function renderStatuses() {
 
   const derived = derivedStatusIds();
   const picked  = pickedStatusIds();
-  const sig = JSON.stringify([derived, picked, readOnly]);
+  const sig = JSON.stringify([derived, picked.map(id => [id, statusLevel(id)]), readOnly]);
   if (sig === statusSignature) return;
   statusSignature = sig;
 
@@ -124,13 +141,24 @@ function statusChip(status, { derived = false, removable = false } = {}) {
   name.textContent = status.name;
   chip.appendChild(name);
 
+  const level = derived ? 0 : statusLevel(status.id);
+  if (isLeveledStatus(status) && level) {
+    const lv = document.createElement('span');
+    lv.className = 'status-chip-level';
+    lv.textContent = level;
+    chip.appendChild(lv);
+  }
+
+  // Takes one level off a stacking status, the whole status otherwise.
   if (removable) {
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 'status-chip-remove';
-    x.title = `Remove ${status.name}`;
+    x.title = isLeveledStatus(status) && level > 1
+      ? `Remove a level of ${status.name}`
+      : `Remove ${status.name}`;
     x.textContent = '×';
-    x.addEventListener('click', () => toggleStatus(status.id));
+    x.addEventListener('click', () => removeStatusLevel(status.id));
     chip.appendChild(x);
   }
 
@@ -153,18 +181,47 @@ function showStatusTooltip(status, x, y, derived) {
     <div class="tip-desc"></div>
   `;
   el.querySelector('.tip-name').textContent = status.name;
-  el.querySelector('.tip-rarity').textContent = derived ? 'From inventory' : 'Status';
+  el.querySelector('.tip-rarity').textContent = derived ? 'From inventory'
+    : isLeveledStatus(status) ? `Level ${statusLevel(status.id)} of ${status.maxLevel}`
+    : 'Status';
   renderMarkdownInto(el.querySelector('.tip-desc'), status.description);
   showTooltipAt(el, x, y);
 }
 
-function toggleStatus(id) {
-  if (isReadOnly()) return;
-  const picked = pickedStatusIds();
-  state.character.statuses = picked.includes(id)
-    ? picked.filter(p => p !== id)
-    : [...picked, id];
+// Every edit rewrites the list whole from what is drawn, which also drops any
+// unknown id or over-cap repeat an older save may have carried.
+function writeStatuses(levels) {
+  state.character.statuses = levels.flatMap(([id, n]) => Array(n).fill(id));
   commitSheetEdit('statuses'); // re-renders the sheet, and so this section
+}
+
+function currentStatusLevels() {
+  return pickedStatusIds().map(id => [id, statusLevel(id)]);
+}
+
+// One more instance: a new status, or the next level of a stacking one.
+function addStatus(id) {
+  const s = statusById(id);
+  if (isReadOnly() || !s || s.derived) return;
+  const levels = currentStatusLevels();
+  const entry = levels.find(([x]) => x === id);
+  if (!entry) levels.push([id, 1]);
+  else if (entry[1] < s.maxLevel) entry[1]++;
+  else return;
+  writeStatuses(levels);
+}
+
+function removeStatusLevel(id) {
+  if (isReadOnly()) return;
+  const levels = currentStatusLevels()
+    .map(([x, n]) => [x, x === id ? n - 1 : n])
+    .filter(([, n]) => n > 0);
+  writeStatuses(levels);
+}
+
+function removeStatus(id) {
+  if (isReadOnly()) return;
+  writeStatuses(currentStatusLevels().filter(([x]) => x !== id));
 }
 
 // =============================================================================
@@ -201,7 +258,9 @@ function closeStatusPicker() {
   statusAddBtn.setAttribute('aria-expanded', 'false');
 }
 
-// Every pickable status with its description, the active ones ticked.
+// Every pickable status with its description, the active ones ticked. A
+// stacking status is never un-ticked from here — another click is another
+// level, up to its maximum; the chip's × takes levels back off.
 function renderStatusPicker() {
   const picked = pickedStatusIds();
   statusPickerEl.innerHTML = '';
@@ -216,11 +275,16 @@ function renderStatusPicker() {
 
   pickableStatuses().forEach(s => {
     const on = picked.includes(s.id);
+    const leveled = isLeveledStatus(s);
+    const level = statusLevel(s.id);
+    const maxed = leveled && level >= s.maxLevel;
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'status-option' + (on ? ' active' : '');
-    row.setAttribute('role', 'menuitemcheckbox');
-    row.setAttribute('aria-checked', String(on));
+    row.className = 'status-option' + (on ? ' active' : '') + (maxed ? ' maxed' : '');
+    row.setAttribute('role', leveled ? 'menuitem' : 'menuitemcheckbox');
+    if (!leveled) row.setAttribute('aria-checked', String(on));
+    row.title = !leveled ? '' : maxed ? `At its maximum, level ${s.maxLevel}`
+              : on ? `Add a level (now ${level} of ${s.maxLevel})` : 'Add at level 1';
 
     const head = document.createElement('span');
     head.className = 'status-option-head';
@@ -231,13 +295,23 @@ function renderStatusPicker() {
     name.className = 'status-option-name';
     name.textContent = s.name;
     head.append(tick, name);
+    if (leveled) {
+      const lv = document.createElement('span');
+      lv.className = 'status-option-level';
+      lv.textContent = on ? `Level ${level} / ${s.maxLevel}` : `Up to level ${s.maxLevel}`;
+      head.appendChild(lv);
+    }
 
     const desc = document.createElement('span');
     desc.className = 'status-option-desc tip-desc';
     renderMarkdownInto(desc, s.description);
 
     row.append(head, desc);
-    row.addEventListener('click', () => toggleStatus(s.id));
+    row.addEventListener('click', () => {
+      if (leveled) addStatus(s.id);
+      else if (on) removeStatus(s.id);
+      else addStatus(s.id);
+    });
     statusPickerEl.appendChild(row);
   });
 }

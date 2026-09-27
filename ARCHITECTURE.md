@@ -100,7 +100,7 @@ In load order.
 | `equipment.js` | Equip slots, layout editor, equip/unequip |
 | `shop.js` | The left panel's tabs, GM shop editor, player shopfront, paying |
 | `chat.js` | The campaign's chat log, and the sidebar's Chat pane |
-| `dice.js` | Rolling: the tumbling number, the corner stack, the advantage wheel, the tray |
+| `dice.js` | Rolling: the tumbling number, the corner stack, the advantage wheel, the dice dock |
 | `battlemap.js` | Battle maps: the model, the Firebase seam, and line of sight |
 | `battlemap-library.js` | The GM's Maps pane, and the import / creature dialogs |
 | `battlemap-view.js` | The map itself: the camera, the canvas, the fog, the pointer |
@@ -131,7 +131,7 @@ that owns the element wins.
 | `campaigns.css` | The home screen's Campaigns section, its cards, and the campaign modal |
 | `homebrew.css` | The home screen's Homebrew section, its file tree, and the New Homebrew panel |
 | `chat.css` | The sidebar's Chat pane, its messages and composer, and a roll said in it |
-| `dice.css` | The flying number, the corner stack, the wheel, the hover card, the tray |
+| `dice.css` | The flying number, the corner stack, the wheel, the hover card, the dice dock |
 | `battlemap.css` | The map button, the map view, and the GM's library pane |
 | `initiative.css` | The turn order panel over the board, and its group-roll dialog |
 | `equipment.css` | The equip rack, the left-panel tabs, the layout editor |

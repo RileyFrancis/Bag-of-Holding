@@ -36,6 +36,7 @@
 
 /* Paths are relative to this file, not to the document. */
 .ico-d20     { -webkit-mask-image: url('../../img/icon/d20.png');     mask-image: url('../../img/icon/d20.png'); }
+.ico-dice    { -webkit-mask-image: url('../../img/icon/dice.png');    mask-image: url('../../img/icon/dice.png'); }
 .ico-dots    { -webkit-mask-image: url('../../img/icon/dots.png');    mask-image: url('../../img/icon/dots.png'); }
 .ico-hide    { -webkit-mask-image: url('../../img/icon/hide.png');    mask-image: url('../../img/icon/hide.png'); }
 .ico-home    { -webkit-mask-image: url('../../img/icon/home.png');    mask-image: url('../../img/icon/home.png'); }

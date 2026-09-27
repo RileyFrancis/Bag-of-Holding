@@ -5,17 +5,17 @@
 
 // The sidebar shows the tabs that belong to what the inventory panel is showing:
 //   inventory view    Browse · Details · Party
-//   sheet / map view  Chat · Dice · Party
-//   spells view       Spells · Dice · Party   (Spells takes Chat's place)
-// Party (and Dice) belong to more than one view, hence values that are `null`
-// (every view) or an array (some) rather than three flat lists.
+//   sheet / map view  Chat · Party
+//   spells view       Spells · Party   (Spells takes Chat's place)
+// Party belongs to every view, hence a value that is `null` (every view) — or,
+// for a tab shared by only some, an array — rather than three flat lists.
+// Dice are not a tab: they are the dock in the middle panel (dice.js).
 // See CLAUDE.md § The sidebar's tabs.
 const SIDEBAR_TAB_VIEW = {
   browse:    'inventory',
   details:   'inventory',
   chat:      'sheet',
   spellbook: 'spells',
-  dice:      ['sheet', 'spells'],
   party:     null, // all three
 };
 
@@ -28,7 +28,7 @@ function sidebarTabView(name) {
 // What the inventory panel is actually showing, which is not always
 // `state.view`: a GM who deselects a player keeps `state.view === 'sheet'`
 // while the panel falls back to the placeholder. The battle map answers
-// 'sheet' — the panes beside a board are Chat, Dice and Party, not a fourth
+// 'sheet' — the panes beside a board are Chat and Party, not a fourth
 // row. The spell sheet gets its own row (Spells replacing Chat) since,
 // unlike the map, it has its own side panel worth putting there.
 function sidebarView() {
@@ -77,7 +77,7 @@ function syncSidebarTabs() {
 
 // Asking for a tab is asking for the view it lives in — a shop entry clicked
 // from the character sheet calls `switchTab('details')`, and the honest answer
-// is to show the item. A tab belonging to more than one view (Dice, Party)
+// is to show the item. A tab belonging to more than one view (Party)
 // never forces a switch — same as Party's old `null` case — since the only
 // way to click one is from a view it's already visible in.
 function switchTab(name) {

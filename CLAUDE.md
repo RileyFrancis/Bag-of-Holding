@@ -112,13 +112,13 @@ character they bring (`campaigns.js`; live session in `party.js`).
 
 ```
 inventory view    Browse · Details · Party
-sheet / map view  Chat · Dice · Party
-spells view       Spells · Dice · Party   (Spells takes Chat's place)
+sheet / map view  Chat · Party
+spells view       Spells · Party   (Spells takes Chat's place)
 ```
 
-`SIDEBAR_TAB_VIEW` values are a view name, an array of them (Dice belongs to
-both `sheet` and `spells`), or `null` (Party, every view) — `sidebarTabView()`
-callers must handle all three. `sidebarView()` ≠ `state.view` — a GM who
+`SIDEBAR_TAB_VIEW` values are a view name, an array of them (none today), or
+`null` (Party, every view) — `sidebarTabView()` callers must handle all three.
+Dice are not a tab: see *Chat and Dice*. `sidebarView()` ≠ `state.view` — a GM who
 deselects a player keeps `state.view === 'sheet'` while the panel shows a
 placeholder, so reading the raw field would strand them with no Browse tab.
 The battle map still answers `'sheet'` (no fourth row for it), but the spell
@@ -138,6 +138,14 @@ your browser continuously, and markdown.js is deliberately not involved.
 subscription and cap. Rolling therefore works with **no campaign at all**;
 `canChat()` just silently drops the table/bubble audiences.
 
+- **The dice dock** (`#dice-dock`, top right of the middle panel, every view
+  but the map) builds a *handful*: each face click adds one die, right-click
+  takes one back, and Roll throws it plus the optional modifier. A handful can
+  mix sizes, so a roll carries `pool: [{faces, count}]` (largest first; `dice`
+  and `dropped` flat in that order) — read it through `rollGroups()`, never
+  `faces`/`count` directly. `faces`/`count` still hold the first group, and
+  `pool` is only put in the chat payload when mixed, so an older client reads
+  a sheet roll unchanged.
 - `parts` (which ability/score/proficiency built the modifier) is kept out of
   the payload — it only powers the hover card on your *own* corner chip.
 - **Advantage rolls the whole pool twice and keeps the better total**; the

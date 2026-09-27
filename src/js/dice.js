@@ -85,19 +85,65 @@ function poolTotal(pool) {
   return pool.reduce((a, b) => a + b, 0);
 }
 
+// A roll's dice as groups of one size — `[{ faces, count }]`, largest die
+// first. A sheet roll is one group; the dice dock can mix sizes (1d20 + 2d6).
+// `dice` and `dropped` are flat, in this same group order, so the Nth value is
+// read against the Nth slot of `groupFacesList()`. Anything without a `pool`
+// (a sheet roll, an older client's chat line) is its own `faces`/`count`.
+function rollGroups(r) {
+  const raw = r && r.pool ? (Array.isArray(r.pool) ? r.pool : Object.values(r.pool)) : [];
+  const groups = raw
+    .map(g => ({ faces: Number(g && g.faces) || 0, count: Number(g && g.count) || 0 }))
+    .filter(g => g.faces > 0 && g.count > 0);
+  if (groups.length) return groups;
+  return [{ faces: Number(r && r.faces) || 20, count: Number(r && r.count) || 1 }];
+}
+
+// Merges repeats, drops unknown sizes and clamps each group, so
+// `[d6, d20, d6]` comes out as 1d20 + 2d6.
+function normalizePool(pool) {
+  const byFaces = new Map();
+  pool.forEach(g => {
+    const faces = parseInt(g.faces, 10);
+    if (!DICE_FACES.includes(faces)) return;
+    byFaces.set(faces, (byFaces.get(faces) || 0) + (parseInt(g.count, 10) || 0));
+  });
+  return [...byFaces]
+    .filter(([, count]) => count > 0)
+    .map(([faces, count]) => ({ faces, count: Math.min(20, count) }))
+    .sort((a, b) => b.faces - a.faces);
+}
+
+function rollGroupsDice(groups) {
+  return groups.flatMap(g => rollPool(g.faces, g.count));
+}
+
+// The die size behind each slot of a flat `dice` list.
+function groupFacesList(groups) {
+  return groups.flatMap(g => Array(g.count).fill(g.faces));
+}
+
 // The one way a roll happens. Advantage rolls the whole pool twice and keeps the
-// better total — not special-cased to a single d20.
-function performRoll({ label, faces = 20, count = 1, mod = 0, mode = 'normal', parts = [], kind = '' }) {
+// better total — not special-cased to a single d20. `pool` (the dice dock's
+// mixed handful) takes the place of `faces`/`count` when given.
+function performRoll({ label, faces = 20, count = 1, pool = null, mod = 0, mode = 'normal', parts = [], kind = '' }) {
   count = Math.max(1, Math.min(20, parseInt(count, 10) || 1));
   mod   = Math.max(-99, Math.min(99, parseInt(mod, 10) || 0));
   if (!ROLL_MODES[mode]) mode = 'normal';
 
+  const groups = pool ? normalizePool(pool) : [{ faces, count }];
+  if (!groups.length) return null;
+  // The first group stands in for `faces`/`count` — what an older client reads
+  // off the chat payload.
+  faces = groups[0].faces;
+  count = groups[0].count;
+
   let dice, dropped = [], keptIndex = 0;
   if (mode === 'normal') {
-    dice = rollPool(faces, count);
+    dice = rollGroupsDice(groups);
   } else {
-    const a = rollPool(faces, count);
-    const b = rollPool(faces, count);
+    const a = rollGroupsDice(groups);
+    const b = rollGroupsDice(groups);
     const keepA = mode === 'adv' ? poolTotal(a) >= poolTotal(b) : poolTotal(a) <= poolTotal(b);
     dice      = keepA ? a : b;
     dropped   = keepA ? b : a;
@@ -109,8 +155,8 @@ function performRoll({ label, faces = 20, count = 1, mod = 0, mode = 'normal', p
 
   const roll = {
     id: ++rollSeq,
-    label: label || count + 'd' + faces,
-    faces, count, mod, mode, dice, dropped, keptIndex, parts,
+    label: label || rollFormula({ pool: groups, mod: 0 }),
+    faces, count, pool: groups, mod, mode, dice, dropped, keptIndex, parts,
     // What the roll was for, where something is waiting on the answer (only
     // initiative, today). Not in the chat payload.
     kind,
@@ -125,7 +171,8 @@ function performRoll({ label, faces = 20, count = 1, mod = 0, mode = 'normal', p
 
 // A natural 20 or a natural 1, and only on a single d20. Read off the kept die.
 function rollCrit(r) {
-  if (r.faces !== 20 || r.count !== 1) return '';
+  const groups = rollGroups(r);
+  if (groups.length !== 1 || groups[0].faces !== 20 || groups[0].count !== 1) return '';
   if (r.dice[0] === 20) return 'crit';
   if (r.dice[0] === 1)  return 'fumble';
   return '';
@@ -145,15 +192,22 @@ function modSuffix(mod) {
   return mod ? ' ' + (mod > 0 ? '+' : '−') + ' ' + Math.abs(mod) : '';
 }
 
-// "1d20 + 3" — what was asked for, with nothing of the answer in it.
+// "1d20 + 2d6 + 3" — what was asked for, with nothing of the answer in it.
 function rollFormula(r) {
-  return r.count + 'd' + r.faces + modSuffix(r.mod);
+  return rollGroups(r).map(g => g.count + 'd' + g.faces).join(' + ') + modSuffix(r.mod);
 }
 
-// "1d20 (9) + 3" — what was on the dice, plus whatever advantage discarded.
+// "1d20 (9) + 2d6 (3, 5) + 3" — what was on the dice, plus whatever advantage
+// discarded.
 function rollBreakdown(r) {
   const dropped = rollDiceList(r, 'dropped');
-  let s = r.count + 'd' + r.faces + ' (' + rollDiceList(r).join(', ') + ')' + modSuffix(r.mod);
+  const dice = rollDiceList(r);
+  let at = 0;
+  let s = rollGroups(r).map(g => {
+    const vals = dice.slice(at, at + g.count);
+    at += g.count;
+    return g.count + 'd' + g.faces + ' (' + vals.join(', ') + ')';
+  }).join(' + ') + modSuffix(r.mod);
   if (dropped.length) {
     s += ' · dropped ' + (dropped.length > 1
       ? dropped.join(', ') + ' = ' + poolTotal(dropped)
@@ -309,8 +363,9 @@ function flyRoll(roll) {
 // non-tabular font overruns evenly either side of centred text. The sign gets a
 // fraction of a digit.
 function totalBoxWidth(r) {
-  const hi = r.count * r.faces + r.mod;
-  const lo = r.count + r.mod;
+  const groups = rollGroups(r);
+  const hi = groups.reduce((n, g) => n + g.count * g.faces, 0) + r.mod;
+  const lo = groups.reduce((n, g) => n + g.count, 0) + r.mod;
   const digits = n => String(Math.abs(n)).length;
   return Math.max(digits(hi), digits(lo)) + (lo < 0 || hi < 0 ? 0.6 : 0);
 }
@@ -318,7 +373,7 @@ function totalBoxWidth(r) {
 // A plausible number for the way past: the same pool, rolled again — so a
 // 3d6 + 2 never flashes a value it could not produce.
 function fakeTotal(roll) {
-  return poolTotal(rollPool(roll.faces, roll.count)) + roll.mod;
+  return poolTotal(rollGroupsDice(rollGroups(roll))) + roll.mod;
 }
 
 // The tumble. Numbers arrive fast then further apart (eased on t²). A setTimeout
@@ -468,9 +523,12 @@ function postRollToChat(r) {
     // Flat and complete: the renderer at the other end works only from this.
     // `parts` is deliberately not sent — it is the sheet's own knowledge, for
     // the roller's hover card only.
+    // `pool` only for a mixed handful — an older client reads `faces`/`count`
+    // (the first group), and still has `text` to fall back on.
     roll: {
       label: r.label, total: r.total, mode: r.mode,
       faces: r.faces, count: r.count, mod: r.mod,
+      ...(r.pool && r.pool.length > 1 ? { pool: r.pool } : {}),
       dice: r.dice, dropped: r.dropped,
     },
     at: firebase.database.ServerValue.TIMESTAMP,
@@ -494,6 +552,7 @@ function rollFromMessage(m) {
     faces: Number(r.faces) || 20,
     count: Number(r.count) || 1,
     mod:   Number(r.mod)   || 0,
+    pool:  r.pool ? rollGroups(r) : null,
     mode:  ROLL_MODES[r.mode] ? r.mode : 'normal',
     dice:    rollDiceList(r),
     dropped: rollDiceList(r, 'dropped'),
@@ -672,10 +731,11 @@ function showRollDetail(chip) {
   // Each die on its own line, kept ones first; a dropped pool struck through.
   const dice = document.createElement('div');
   dice.className = 'roll-detail-group';
-  rollDiceList(roll).forEach(v => dice.appendChild(
-    rollDetailRow('d' + roll.faces, '', String(v), rollDieRowClass(roll, v))));
-  rollDiceList(roll, 'dropped').forEach(v => dice.appendChild(
-    rollDetailRow('d' + roll.faces, roll.mode === 'adv' ? 'lower' : 'higher',
+  const facesOf = groupFacesList(rollGroups(roll));
+  rollDiceList(roll).forEach((v, i) => dice.appendChild(
+    rollDetailRow('d' + facesOf[i], '', String(v), rollDieRowClass(facesOf[i], v))));
+  rollDiceList(roll, 'dropped').forEach((v, i) => dice.appendChild(
+    rollDetailRow('d' + facesOf[i], roll.mode === 'adv' ? 'lower' : 'higher',
                   String(v), 'dropped')));
   rollDetailEl.appendChild(dice);
 
@@ -700,8 +760,8 @@ function showRollDetail(chip) {
 
 // Marks a natural 20 / 1 on the die itself — with three dice, the only way to
 // see which one it was.
-function rollDieRowClass(roll, value) {
-  if (roll.faces !== 20) return '';
+function rollDieRowClass(faces, value) {
+  if (faces !== 20) return '';
   if (value === 20) return 'crit';
   if (value === 1)  return 'fumble';
   return '';
@@ -839,7 +899,13 @@ function finishRollGesture(roll) {
   lastPointerRollAt = Date.now();
   // The spec is read now, so a roll uses the modifier the sheet is showing at
   // the moment it is let go.
-  if (roll) performRoll({ ...g.spec(), mode: g.mode });
+  if (roll) rollSpecNow(g.spec(), g.mode);
+}
+
+// `onRoll` is the spec's own follow-up (the dice dock emptying its handful).
+function rollSpecNow(s, mode) {
+  if (!s) return;
+  if (performRoll({ ...s, mode }) && s.onRoll) s.onRoll();
 }
 
 window.addEventListener('pointermove', e => {
@@ -862,8 +928,7 @@ window.addEventListener('keydown', e => {
 // no roll of its own.
 function rollFromClick(spec) {
   if (Date.now() - lastPointerRollAt < 400) return;
-  const s = spec();
-  if (s) performRoll({ ...s, mode: 'normal' });
+  rollSpecNow(spec(), 'normal');
 }
 
 // =============================================================================
@@ -933,58 +998,144 @@ sheetRollEl.addEventListener('click', e => {
 });
 
 // =============================================================================
-// THE DICE TRAY
+// THE DICE DOCK
 // =============================================================================
-// Seven faces from DICE_FACES. The count and modifier above them are read when a
-// face is let go, so the tray keeps no state of its own.
-const diceCountEl = document.getElementById('dice-count');
-const diceModEl   = document.getElementById('dice-mod');
-const diceFacesEl = document.getElementById('dice-faces');
+// The button in the top right of the middle of the app, and the column of faces
+// it opens. Each click on a face adds one of that die to the handful (a
+// right-click takes one back); Roll throws the lot plus the modifier, and is
+// the one held-press target here, so a whole handful can be rolled with
+// advantage. The handful is session-only and emptied by the roll that uses it.
+const DOCK_MOD_LIMIT = 30;
 
-function trayRollSpec(faces) {
-  const count = Math.max(1, Math.min(20, parseInt(diceCountEl.value, 10) || 1));
-  const mod   = Math.max(-30, Math.min(30, parseInt(diceModEl.value, 10) || 0));
-  // No label but the formula — a bare handful of dice is not about anything.
+const diceDockEl      = document.getElementById('dice-dock');
+const diceDockBtn     = document.getElementById('dice-dock-btn');
+const diceDockPanel   = document.getElementById('dice-dock-panel');
+const diceDockFaces   = document.getElementById('dice-dock-faces');
+const diceDockRollBtn = document.getElementById('dice-dock-roll');
+const diceDockFormula = document.getElementById('dice-dock-formula');
+const diceDockModEl   = document.getElementById('dice-dock-mod-input');
+
+// faces → how many of that die are in the handful.
+const dockPool = new Map();
+
+function dockMod() {
+  return Math.max(-DOCK_MOD_LIMIT, Math.min(DOCK_MOD_LIMIT, parseInt(diceDockModEl.value, 10) || 0));
+}
+
+function dockPoolGroups() {
+  return [...dockPool].map(([faces, count]) => ({ faces, count }));
+}
+
+// Read at the moment the Roll button is let go, like every other roll spec.
+function dockRollSpec() {
+  const pool = normalizePool(dockPoolGroups());
+  if (!pool.length) return null;
+  const mod = dockMod();
   return {
-    label: rollFormula({ count, faces, mod }),
-    faces, count, mod,
+    // No label but the formula — a bare handful of dice is not about anything.
+    label: rollFormula({ pool, mod }),
+    pool, mod,
     parts: mod ? [{ label: 'Modifier', value: mod }] : [],
+    onRoll: clearDock,
   };
 }
 
-function buildDiceTray() {
-  if (!diceFacesEl || diceFacesEl.childElementCount) return;
+function buildDiceDock() {
+  if (!diceDockFaces || diceDockFaces.childElementCount) return;
 
   DICE_FACES.forEach(faces => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'die-btn';
     btn.dataset.faces = faces;
-    btn.title = 'Roll d' + faces + ' — hold and slide for advantage';
+    btn.title = 'Add a d' + faces + ' · right-click to take one back';
 
     const face = document.createElement('span');
     face.className = 'die-face';
     face.textContent = 'd' + faces;
 
-    btn.appendChild(face);
-    diceFacesEl.appendChild(btn);
+    const count = document.createElement('span');
+    count.className = 'die-count';
+
+    btn.append(face, count);
+    diceDockFaces.appendChild(btn);
   });
+  renderDiceDock();
 }
 
-diceFacesEl.addEventListener('pointerdown', e => {
+// Counts on the faces, and the Roll button only once there is something to roll.
+function renderDiceDock() {
+  diceDockFaces.querySelectorAll('.die-btn').forEach(btn => {
+    const n = dockPool.get(Number(btn.dataset.faces)) || 0;
+    btn.classList.toggle('picked', n > 0);
+    btn.querySelector('.die-count').textContent = n > 1 ? n : '';
+  });
+  const pool = normalizePool(dockPoolGroups());
+  diceDockRollBtn.classList.toggle('hidden', !pool.length);
+  diceDockFormula.textContent = pool.length ? rollFormula({ pool, mod: dockMod() }) : '';
+}
+
+function addDockDie(faces, delta) {
+  const n = Math.max(0, Math.min(20, (dockPool.get(faces) || 0) + delta));
+  if (n) dockPool.set(faces, n);
+  else dockPool.delete(faces);
+  renderDiceDock();
+}
+
+function stepDockMod(delta) {
+  const n = Math.max(-DOCK_MOD_LIMIT, Math.min(DOCK_MOD_LIMIT, dockMod() + delta));
+  diceDockModEl.value = n ? n : '';
+  renderDiceDock();
+}
+
+function clearDock() {
+  dockPool.clear();
+  diceDockModEl.value = '';
+  renderDiceDock();
+}
+
+function setDiceDockOpen(open) {
+  diceDockPanel.classList.toggle('hidden', !open);
+  diceDockEl.classList.toggle('open', open);
+  diceDockBtn.setAttribute('aria-expanded', String(open));
+}
+
+function diceDockIsOpen() {
+  return !diceDockPanel.classList.contains('hidden');
+}
+
+diceDockBtn.addEventListener('click', () => setDiceDockOpen(!diceDockIsOpen()));
+
+diceDockFaces.addEventListener('click', e => {
   const btn = e.target.closest('.die-btn');
-  if (btn) beginRollGesture(e, btn, () => trayRollSpec(Number(btn.dataset.faces)));
+  if (btn) addDockDie(Number(btn.dataset.faces), 1);
 });
 
-diceFacesEl.addEventListener('click', e => {
+diceDockFaces.addEventListener('contextmenu', e => {
   const btn = e.target.closest('.die-btn');
-  if (btn) rollFromClick(() => trayRollSpec(Number(btn.dataset.faces)));
+  if (!btn) return;
+  e.preventDefault();
+  addDockDie(Number(btn.dataset.faces), -1);
 });
 
-const diceClearBtn = document.getElementById('dice-clear-btn');
-if (diceClearBtn) diceClearBtn.addEventListener('click', () => {
-  diceCountEl.value = 1;
-  diceModEl.value = 0;
+diceDockRollBtn.addEventListener('pointerdown', e => beginRollGesture(e, diceDockRollBtn, dockRollSpec));
+diceDockRollBtn.addEventListener('click', () => rollFromClick(dockRollSpec));
+
+diceDockModEl.addEventListener('input', renderDiceDock);
+// A typed-in number past the limit is pulled back to it once the box is left.
+diceDockModEl.addEventListener('change', () => stepDockMod(0));
+diceDockPanel.querySelectorAll('[data-mod-step]').forEach(b => {
+  b.addEventListener('click', () => stepDockMod(Number(b.dataset.modStep)));
 });
 
-buildDiceTray();
+// A click anywhere else folds the column away — the handful stays for next time.
+document.addEventListener('pointerdown', e => {
+  if (diceDockIsOpen() && !diceDockEl.contains(e.target)) setDiceDockOpen(false);
+});
+// Capture, so this runs before the gesture's own Escape clears `rollGesture` —
+// an Escape backing out of a held Roll should not also fold the column.
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && diceDockIsOpen() && !rollGesture) setDiceDockOpen(false);
+}, { capture: true });
+
+buildDiceDock();

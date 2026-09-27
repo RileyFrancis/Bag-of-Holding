@@ -190,6 +190,27 @@
         <button id="return-to-own-btn" class="btn-sm">Return to Your Inventory</button>
       </div>
       <div id="container-tabs" class="hidden"></div>
+      <!-- The dice dock: a button in the top right of whatever this panel is
+           showing, opening a column of faces to build a handful from, a Roll
+           button, and a modifier. A zero-height row here, so it always hangs
+           just under the tabs and banners above, however many are showing.
+           The faces are built from DICE_FACES by buildDiceDock() in
+           src/js/dice.js. -->
+      <div id="dice-dock">
+        <button id="dice-dock-btn" type="button" title="Roll dice" aria-label="Roll dice"
+                aria-expanded="false" aria-controls="dice-dock-panel"><span class="ico ico-dice"></span></button>
+        <div id="dice-dock-panel" class="hidden">
+          <div id="dice-dock-faces"></div>
+          <button id="dice-dock-roll" class="btn-primary hidden" type="button"
+                  title="Roll — hold and slide for advantage or disadvantage">Roll<span id="dice-dock-formula"></span></button>
+          <input id="dice-dock-mod-input" type="number" min="-30" max="30" step="1"
+                 placeholder="±0" aria-label="Modifier" title="Modifier (optional)">
+          <div id="dice-dock-steps">
+            <button type="button" class="btn-sm" data-mod-step="-1" aria-label="Modifier down one">&minus;</button>
+            <button type="button" class="btn-sm" data-mod-step="1" aria-label="Modifier up one">+</button>
+          </div>
+        </div>
+      </div>
       <div id="grid-scroll">
         <!-- The wrapper exists to carry the torn paper: #inventory-grid is
              `overflow: hidden` for its own cells, which would clip the sheet
@@ -559,16 +580,16 @@
 
     <!-- ===== SIDEBAR ===== -->
     <aside id="sidebar">
-      <!-- Browse and Details belong beside a grid of items; Chat and Dice belong
+      <!-- Browse and Details belong beside a grid of items; Chat belongs
            beside a character sheet; Spellbook takes Chat's place while viewing
            the Spell Sheet (see `sidebarView()` in modals.js — the two never
-           show together). Party is in all three. -->
+           show together). Party is in all three. Dice are not a tab — they
+           are the dock in the middle panel's top right. -->
       <div id="sidebar-tabs">
         <button class="tab-btn active" data-tab="browse">Browse</button>
         <button class="tab-btn" data-tab="details">Details</button>
         <button class="tab-btn hidden" data-tab="chat">Chat</button>
         <button class="tab-btn hidden" data-tab="spellbook">Spells</button>
-        <button class="tab-btn hidden" data-tab="dice">Dice</button>
         <button class="tab-btn" data-tab="party">Party</button>
       </div>
 
@@ -699,28 +720,6 @@
           </div>
         </div>
         <div id="spellbook-list" class="spell-picker-list"></div>
-      </div>
-
-      <!-- Dice Tab -->
-      <!-- The tray: how many, plus what, and one button per face. The faces
-           themselves are built from DICE_FACES in src/js/dice.js — seven
-           hand-written buttons would only be a second place for that list to
-           disagree with itself. -->
-      <div id="tab-dice" class="tab-pane">
-        <div id="dice-tray">
-          <div id="dice-tray-controls">
-            <label class="dice-num"><span>Dice</span>
-              <input id="dice-count" type="number" min="1" max="20" value="1"></label>
-            <label class="dice-num"><span>Modifier</span>
-              <input id="dice-mod" type="number" min="-30" max="30" value="0"></label>
-            <button id="dice-clear-btn" class="btn-sm" title="Back to one die, no modifier">Reset</button>
-          </div>
-          <div id="dice-faces"><!-- built from DICE_FACES by buildDiceTray() --></div>
-          <p class="dice-note">Skills, saving throws, ability checks and
-            initiative roll from the character sheet — click the modifier.
-            <strong>Hold and slide</strong> either here or there for advantage
-            or disadvantage.</p>
-        </div>
       </div>
 
       <!-- Party Tab -->

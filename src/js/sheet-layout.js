@@ -59,7 +59,7 @@ function defaultSheetLayout() {
           sheetWidgetNode('abilities', 2),
           {
             t: 's', dir: 'col', size: 1,
-            kids: ['combat', 'hp', 'death', 'prof'].map(id => sheetWidgetNode(id)),
+            kids: ['statuses', 'combat', 'hp', 'death', 'prof'].map(id => sheetWidgetNode(id)),
           },
         ],
       },

@@ -25,6 +25,7 @@ data/
   species.json          The species the app knows, and the traits each grants
   spell-slots.json      Spell slots each class grants, indexed by that class's level
   spells.json           Every spell the app knows, each tagged with its classes
+  statuses.json         The statuses (conditions) a character can be under
 img/                    Image assets — the icon set and the paper texture
 functions/
   firebase-env.js       Cloudflare Pages Function: serves the Firebase keys on a
@@ -95,6 +96,7 @@ In load order.
 | `species-traits.js` | The species registry, and the sheet's Species Traits section |
 | `markdown.js` | Markdown to HTML for the written sections, and the sanitizer |
 | `sheet-prose.js` | Backstory & Appearance: the editor/preview swap |
+| `statuses.js` | The status registry, and the sheet's Statuses section and its picker |
 | `sheet-layout.js` | The sheet's sections as widgets: the split tree, drag-to-tile |
 | `character-setup.js` | The Character Setup modal: name, species, background, class rows |
 | `equipment.js` | Equip slots, layout editor, equip/unequip |
@@ -127,6 +129,7 @@ that owns the element wins.
 | `sheet-layout.css` | The sheet's split containers, resize seams, drop feedback |
 | `class-features.css` | The feature cards and badges — Class Features and Species Traits both |
 | `sheet-prose.css` | The written sections: the bar, the editor, and the rendered prose |
+| `statuses.css` | The Statuses section's chips, and the picker that adds them |
 | `party.css` | Party header badge, sidebar Party tab, party modal, kick |
 | `campaigns.css` | The home screen's Campaigns section, its cards, and the campaign modal |
 | `homebrew.css` | The home screen's Homebrew section, its file tree, and the New Homebrew panel |
@@ -234,6 +237,12 @@ adding or editing entries in this file without hand-writing JSON, with a live
 preview rendered through the real `markdown.js`; it writes the file directly via
 the File System Access API when the browser supports picking a file to save in
 place, and falls back to a download otherwise.
+
+`data/statuses.json` is `{ id, name, description, derived? }` per status —
+`description` Markdown, same rules again. A status with `derived` (today
+`encumbered` / `heavilyEncumbered`) is worked out from the inventory by
+`encumbranceLevel()` and never offered in the picker or saved; every other one
+is picked by the player into `character.statuses`, an id list.
 
 The character sheet's written sections (Backstory, Appearance) are Markdown, and
 **raw HTML in them is allowed on purpose**. `src/js/markdown.js` is the only

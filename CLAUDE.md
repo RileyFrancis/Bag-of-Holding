@@ -353,6 +353,17 @@ string the same way `class-features.js`'s `featureDescCache` is, since
   showing in Spells Known even after you uncheck the class or school that
   grants it.
 
+### Statuses
+
+The sheet's Statuses section (`statuses.js`, `data/statuses.json`) shows two
+kinds of chip. **Picked** ones are `character.statuses`, an id list saved and
+synced like any sheet field. **Derived** ones (`derived:` in the data file —
+Encumbered / Heavily Encumbered) are recomputed on every render from
+`encumbranceLevel()` in render-stats.js, the same function the header readout
+uses, and **never stored** — a saved copy would go stale the moment an item
+moved. The chips only redraw when their signature changes, or a sync would
+orphan an open hover card.
+
 ### Markdown and the written sections
 
 Backstory/Appearance are plain `data-sheet` string fields, synced like any

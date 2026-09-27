@@ -1,0 +1,180 @@
+{
+  "_comment": [
+    "The statuses a character can be under, shown in the character sheet's",
+    "Statuses section. Read by src/js/statuses.js, which is the only file that",
+    "may touch this.",
+    "",
+    "A status is { id, name, description, derived? }.",
+    "",
+    "  id          stable, and never derived from position - a character's",
+    "              statuses are saved as a list of these ids.",
+    "  derived     optional. Names a fact the app works out for itself rather",
+    "              than one the player picks: such a status is never offered",
+    "              in the picker, never saved, and is shown only while the fact",
+    "              holds. Known values:",
+    "                encumbered        the inventory reaches the Encumbered zone",
+    "                                  or weighs more than Strength x 15 lb",
+    "                heavilyEncumbered the same for Heavily Encumbered",
+    "                                  (Strength x 30 lb)",
+    "  description Markdown, and may be an array for anything multi-line - the",
+    "              same rules as data/classes.json, which documents them in full.",
+    "",
+    "Order is the order the picker lists them in."
+  ],
+  "statuses": [
+    {
+      "id": "blinded",
+      "name": "Blinded",
+      "description": [
+        "- You can't see, and automatically fail any ability check that requires sight.",
+        "- Attack rolls against you have **Advantage**; your attack rolls have **Disadvantage**."
+      ]
+    },
+    {
+      "id": "charmed",
+      "name": "Charmed",
+      "description": [
+        "- You can't attack the charmer or target them with damaging abilities or magical effects.",
+        "- The charmer has **Advantage** on ability checks to interact with you socially."
+      ]
+    },
+    {
+      "id": "deafened",
+      "name": "Deafened",
+      "description": "You can't hear, and automatically fail any ability check that requires hearing."
+    },
+    {
+      "id": "exhaustion",
+      "name": "Exhaustion",
+      "description": [
+        "Cumulative, up to 6 levels; at level 6 you die.",
+        "- Each level gives **−2** to every D20 Test and **−5 ft** of Speed.",
+        "- A Long Rest removes one level."
+      ]
+    },
+    {
+      "id": "frightened",
+      "name": "Frightened",
+      "description": [
+        "- **Disadvantage** on ability checks and attack rolls while the source of fear is in sight.",
+        "- You can't willingly move closer to the source of fear."
+      ]
+    },
+    {
+      "id": "grappled",
+      "name": "Grappled",
+      "description": [
+        "- Your Speed is 0 and can't increase.",
+        "- **Disadvantage** on attack rolls against anyone other than the grappler.",
+        "- The grappler can drag or carry you when it moves, at the cost of extra movement."
+      ]
+    },
+    {
+      "id": "incapacitated",
+      "name": "Incapacitated",
+      "description": [
+        "- You can't take any action, Bonus Action, or Reaction.",
+        "- Your Concentration is broken, and you can't speak.",
+        "- If you're Incapacitated when you roll Initiative, you have **Disadvantage** on the roll."
+      ]
+    },
+    {
+      "id": "invisible",
+      "name": "Invisible",
+      "description": [
+        "- **Advantage** on Initiative rolls.",
+        "- You aren't affected by anything that requires its target to be seen, unless the creature can somehow see you.",
+        "- Attack rolls against you have **Disadvantage**; your attack rolls have **Advantage** — unless a creature can somehow see you."
+      ]
+    },
+    {
+      "id": "paralyzed",
+      "name": "Paralyzed",
+      "description": [
+        "- You're **Incapacitated**, and your Speed is 0.",
+        "- You automatically fail Strength and Dexterity saving throws.",
+        "- Attack rolls against you have **Advantage**; any hit from within 5 ft is a Critical Hit."
+      ]
+    },
+    {
+      "id": "petrified",
+      "name": "Petrified",
+      "description": [
+        "Turned to an inanimate substance, along with anything you're wearing or carrying.",
+        "- Your weight increases tenfold and you stop aging.",
+        "- You're **Incapacitated**, your Speed is 0, and attack rolls against you have **Advantage**.",
+        "- You automatically fail Strength and Dexterity saving throws.",
+        "- **Resistance** to all damage, and **Immunity** to the Poisoned condition."
+      ]
+    },
+    {
+      "id": "poisoned",
+      "name": "Poisoned",
+      "description": "**Disadvantage** on attack rolls and ability checks."
+    },
+    {
+      "id": "prone",
+      "name": "Prone",
+      "description": [
+        "- Your only movement options are to crawl, or to spend half your Speed to stand up.",
+        "- **Disadvantage** on your attack rolls.",
+        "- Attack rolls against you have **Advantage** from within 5 ft, **Disadvantage** from farther away."
+      ]
+    },
+    {
+      "id": "restrained",
+      "name": "Restrained",
+      "description": [
+        "- Your Speed is 0 and can't increase.",
+        "- Attack rolls against you have **Advantage**; your attack rolls have **Disadvantage**.",
+        "- **Disadvantage** on Dexterity saving throws."
+      ]
+    },
+    {
+      "id": "stunned",
+      "name": "Stunned",
+      "description": [
+        "- You're **Incapacitated**.",
+        "- You automatically fail Strength and Dexterity saving throws.",
+        "- Attack rolls against you have **Advantage**."
+      ]
+    },
+    {
+      "id": "unconscious",
+      "name": "Unconscious",
+      "description": [
+        "- You're **Incapacitated** and **Prone**, drop whatever you're holding, and are unaware of your surroundings.",
+        "- Your Speed is 0, and you automatically fail Strength and Dexterity saving throws.",
+        "- Attack rolls against you have **Advantage**; any hit from within 5 ft is a Critical Hit."
+      ]
+    },
+    {
+      "id": "concentrating",
+      "name": "Concentrating",
+      "description": [
+        "Maintaining a spell or effect that requires Concentration.",
+        "- Taking damage calls for a Constitution save (DC 10 or half the damage, whichever is higher, up to 30) to keep it.",
+        "- It ends if you're Incapacitated or die, or if you start another Concentration effect."
+      ]
+    },
+    {
+      "id": "encumbered",
+      "name": "Encumbered",
+      "derived": "encumbered",
+      "description": [
+        "Carrying more than **Strength × 15 lb**, or packed into the inventory's Encumbered zone.",
+        "- Your Speed drops by **10 ft**."
+      ]
+    },
+    {
+      "id": "heavily-encumbered",
+      "name": "Heavily Encumbered",
+      "derived": "heavilyEncumbered",
+      "description": [
+        "Carrying more than **Strength × 30 lb**, or packed into the inventory's Heavily Encumbered zone.",
+        "- Your Speed drops by **20 ft**.",
+        "- **Disadvantage** on ability checks, attack rolls, and saving throws that use Strength, Dexterity, or Constitution."
+      ]
+    }
+  ]
+}

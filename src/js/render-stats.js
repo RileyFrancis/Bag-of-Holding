@@ -22,6 +22,18 @@ function getZoneEncumbrance() {
   return status;
 }
 
+// 0 = none, 1 = Encumbered, 2 = Heavily Encumbered. Zone placement overrides
+// weight-based encumbrance upward. The header's readout and the sheet's
+// Statuses section (statuses.js) both ask here, so they can never disagree.
+function encumbranceLevel() {
+  const str = state.character.strength;
+  const carried = Math.round(totalCarriedWeight() * 100) / 100;
+  const zoneStatus = getZoneEncumbrance();
+  if (carried > str * 30 || zoneStatus >= 2) return 2;
+  if (carried > str * 15 || zoneStatus >= 1) return 1;
+  return 0;
+}
+
 function updateWeightDisplay() {
   const str = state.character.strength;
   const normal = str * 15;
@@ -32,12 +44,11 @@ function updateWeightDisplay() {
   document.getElementById('weight-carried').textContent = `${carried} lb carried`;
   document.getElementById('weight-limits').textContent  = `${normal} / ${enc} / ${heavy} lb`;
 
-  // Status: zone placement overrides weight-based encumbrance upward
-  const zoneStatus = getZoneEncumbrance();
+  const level = encumbranceLevel();
   const statusEl = document.getElementById('encumbrance-status');
-  if (carried > enc || zoneStatus >= 2) {
+  if (level >= 2) {
     statusEl.textContent = 'Heavily Encumbered'; statusEl.className = 'heavy';
-  } else if (carried > normal || zoneStatus >= 1) {
+  } else if (level >= 1) {
     statusEl.textContent = 'Encumbered'; statusEl.className = 'enc';
   } else {
     statusEl.textContent = ''; statusEl.className = '';

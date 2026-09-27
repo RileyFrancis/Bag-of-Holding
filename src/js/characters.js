@@ -583,6 +583,7 @@ window.addEventListener('keydown', e => {
     && !(t && t.isContentEditable)
     && !document.querySelector('.modal:not(.hidden)')
     && !chatModalIsOpen()
+    && !statusPickerIsOpen()
     && !diceDockIsOpen()
     && !rollGesture
     && openTabMenuKey === null

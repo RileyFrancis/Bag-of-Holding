@@ -83,6 +83,7 @@ function defaultSheetFields() {
     // The written sections — Markdown, rendered by sheet-prose.js; plain strings here.
     backstory: '', appearance: '',
     knownSpells: [], // ids picked from the Spell Sheet's Available Spells panel — see spells.js
+    statuses: [],    // ids from data/statuses.json the player has picked — see statuses.js
   };
 }
 
@@ -303,6 +304,7 @@ function renderCharacterSheet() {
   document.getElementById('sheet-setup-btn').classList.toggle('hidden', readOnly);
 
   renderDeathSaves(readOnly);
+  renderStatuses(); // encumbrance among them, so it follows the inventory too
 
   // All three are driven by fields edited above, so they re-run with everything
   // else. Species first: `applyFeatureUnlocks()` (inside renderClassFeatures())

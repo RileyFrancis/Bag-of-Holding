@@ -59,6 +59,7 @@
   <link rel="stylesheet" href="src/css/sheet-layout.css">
   <link rel="stylesheet" href="src/css/class-features.css">
   <link rel="stylesheet" href="src/css/sheet-prose.css">
+  <link rel="stylesheet" href="src/css/statuses.css">
   <link rel="stylesheet" href="src/css/spells.css">
   <link rel="stylesheet" href="src/css/party.css">
   <link rel="stylesheet" href="src/css/chat.css">
@@ -363,6 +364,20 @@
                     <div id="sheet-death-fail" class="death-pips fail"></div>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <!-- Chips built by src/js/statuses.js from data/statuses.json. The
+                 add button rides the title the same way Class Features' toggle
+                 does; the picker it opens is #status-picker, at the foot of
+                 this file, since it floats over the page. -->
+            <section class="sheet-widget" data-widget="statuses">
+              <h3 class="sheet-h widget-title">Statuses
+                <button id="status-add-btn" class="btn-sm widget-action" type="button"
+                        title="Add a status" aria-haspopup="true">+ Add</button>
+              </h3>
+              <div class="widget-body">
+                <div id="sheet-statuses" class="status-list"></div>
               </div>
             </section>
 
@@ -1758,6 +1773,8 @@
 
 <!-- ===== ITEM TOOLTIP ===== -->
 <div id="item-tooltip" class="hidden"></div>
+<!-- The Statuses section's picker — rows built by src/js/statuses.js. -->
+<div id="status-picker" class="hidden" role="menu"></div>
 
 <!-- ===== FIREBASE ===== -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -1826,6 +1843,7 @@
      species by name, so it wants both of them defined. -->
 <script src="src/js/character-setup.js"></script>
 <script src="src/js/sheet-prose.js"></script>
+<script src="src/js/statuses.js"></script>
 <script src="src/js/sheet-layout.js"></script>
 <script src="src/js/equipment.js"></script>
 <script src="src/js/shop.js"></script>

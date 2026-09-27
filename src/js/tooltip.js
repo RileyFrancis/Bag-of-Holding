@@ -6,8 +6,14 @@
 let tooltipTimer = null;
 
 function startTooltipTimer(instanceId, x, y) {
+  startTooltipTimerWith(() => showItemTooltip(instanceId, x, y));
+}
+
+// The same hover delay for anything else that shows a card here — a status on
+// the sheet (statuses.js).
+function startTooltipTimerWith(show) {
   clearTooltip();
-  tooltipTimer = setTimeout(() => showItemTooltip(instanceId, x, y), 1200);
+  tooltipTimer = setTimeout(show, 1200);
 }
 
 function clearTooltip() {
@@ -72,6 +78,11 @@ function renderTooltip(t, weight, x, y) {
 
   if (t.description) renderMarkdownInto(el.querySelector('.tip-desc'), t.description);
 
+  showTooltipAt(el, x, y);
+}
+
+// Beside the cursor, flipped or pulled back in wherever it would leave the window.
+function showTooltipAt(el, x, y) {
   el.classList.remove('hidden');
 
   const pad = 12, tipW = 240;

@@ -279,10 +279,12 @@ document.querySelectorAll('#login-modal .cancel-btn').forEach(btn => {
   btn.addEventListener('click', () => { pendingAuthAction = null; });
 });
 
-// Back to Settings afterwards, where the Account row confirms the sign-in.
+// Settings stays closed afterwards — the sign-in is done, so there is nothing
+// left to do there. The no-op (not null) keeps the reader where they were;
+// with nothing pending, handleAuthStateChange() would send them home instead.
 document.getElementById('account-signin-btn').addEventListener('click', () => {
   hideModal('settings-modal');
-  openLoginModal('Sign in to sync this inventory to your account.', openSettingsModal);
+  openLoginModal('Sign in to sync this inventory to your account.', () => {});
 });
 
 document.getElementById('account-signout-btn').addEventListener('click', () => {

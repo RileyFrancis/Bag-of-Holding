@@ -39,6 +39,10 @@ function normalizeCampaign(raw, code) {
     gmName: String(c.gmName ?? ''),
     memberCount: Number.isFinite(c.memberCount) ? c.memberCount : 0,
     lastPlayed: Number.isFinite(c.lastPlayed) ? c.lastPlayed : 0,
+    // The other members' campaign homebrew as last seen at the table — a cache
+    // (homebrew-share.js), so a character keeps the party's homebrew class
+    // between sessions. Their node is the truth whenever we are seated.
+    sharedHomebrew: Array.isArray(c.sharedHomebrew) ? c.sharedHomebrew : [],
   };
 }
 

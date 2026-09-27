@@ -13,7 +13,9 @@
 // The folders and who-sits-in-which are `state.homebrew.folders` / `placement`,
 // in the save file and synced — this is the account's own content, organised
 // the way they chose, not how one browser happens to show it. Which folders are
-// folded open is furniture, on its own localStorage key.
+// folded open is furniture, on its own localStorage key. Who each folder or
+// file is enabled for (`state.homebrew.enabled`), and what that makes usable,
+// is homebrew-share.js.
 
 const HOMEBREW_KINDS = [
   { id: 'class',      label: 'Class' },
@@ -31,7 +33,7 @@ const HOMEBREW_ROOT = null; // a node with no placement sits at the top level
 // MODEL
 // =============================================================================
 function blankHomebrew() {
-  return { entries: {}, folders: {}, placement: {} };
+  return { entries: {}, folders: {}, placement: {}, enabled: {} };
 }
 
 // Whatever the save held (nothing, for anything older than v4), made safe to
@@ -62,6 +64,13 @@ function normalizeHomebrew(raw) {
   Object.entries(raw.placement ?? {}).forEach(([key, folderId]) => {
     if (hb.folders[folderId]) hb.placement[key] = folderId;
   });
+  // Kept for any key — a custom item's `item:<id>` can't be checked against
+  // the roster from here, and a stale target only ever matches nothing.
+  Object.entries(raw.enabled ?? {}).forEach(([key, a]) => {
+    const characters = Array.isArray(a?.characters) ? a.characters.map(String) : [];
+    const campaigns  = Array.isArray(a?.campaigns)  ? a.campaigns.map(String)  : [];
+    if (characters.length || campaigns.length) hb.enabled[key] = { characters, campaigns };
+  });
   return hb;
 }
 
@@ -77,8 +86,7 @@ function homebrewKindLabel(kind) {
 function addHomebrewEntry(kind, data) {
   const id = newHomebrewId('hb_');
   state.homebrew.entries[id] = { ...data, id, kind, name: String(data?.name ?? 'Untitled') };
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
   return id;
 }
 
@@ -86,16 +94,15 @@ function updateHomebrewEntry(id, data) {
   const entry = state.homebrew.entries[id];
   if (!entry) return;
   state.homebrew.entries[id] = { ...data, id, kind: entry.kind, name: String(data?.name ?? entry.name) };
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
 }
 
 function deleteHomebrewEntry(id) {
   if (!state.homebrew.entries[id]) return;
   delete state.homebrew.entries[id];
   delete state.homebrew.placement[id];
-  debouncedSync();
-  renderHomebrewSection();
+  delete state.homebrew.enabled[id];
+  onHomebrewChanged();
 }
 
 // The seam class-features.js / species-traits.js / spells.js read through once
@@ -104,9 +111,11 @@ function homebrewEntriesOf(kind) {
   return Object.values(state.homebrew.entries).filter(e => e.kind === kind);
 }
 
-// Every file in the tree, as { key, kind, name, detail }. A custom item's key
-// is its template id under `item:`, so the same item carried by two characters
-// is one file. The active slot is read from the working copy, which is newer.
+// Every file in the tree, as { key, kind, name, detail, template | entryId }. A
+// custom item's key is its template id under `item:`, so the same item carried
+// by two characters is one file. The active slot is read from the working copy,
+// which is newer. A `_homebrew` template is someone's homebrew in use by this
+// character (homebrew-share.js), not an item they made — never a file here.
 function collectHomebrewFiles() {
   const files = new Map();
   const items = new Map(); // templateId → { template, owners[] }
@@ -116,7 +125,7 @@ function collectHomebrewFiles() {
     const db = live ? getCustomDb() : (slot.db ?? {});
     const owner = live ? state.character.name : slot.character.name;
     Object.values(db).forEach(t => {
-      if (!t || !t.id || t.variantOf) return;
+      if (!t || !t.id || t.variantOf || t._homebrew) return;
       const seen = items.get(t.id) ?? { template: t, owners: [] };
       if (!seen.owners.includes(owner)) seen.owners.push(owner);
       items.set(t.id, seen);
@@ -125,7 +134,7 @@ function collectHomebrewFiles() {
 
   items.forEach(({ template, owners }, id) => {
     const key = 'item:' + id;
-    files.set(key, { key, kind: 'item', name: template.name || 'Untitled item', detail: owners.join(', ') });
+    files.set(key, { key, kind: 'item', name: template.name || 'Untitled item', detail: owners.join(', '), template });
   });
   Object.values(state.homebrew.entries).forEach(e => {
     files.set(e.id, { key: e.id, kind: e.kind, name: e.name, detail: '', entryId: e.id });
@@ -162,16 +171,14 @@ function moveHomebrewNode(key, targetFolderId) {
   else delete state.homebrew.placement[key];
   // Dropping into a closed folder opens it, so the thing just moved is visible.
   if (targetFolderId) setHomebrewFolderOpen(targetFolderId, true);
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
 }
 
 function createHomebrewFolder(name, parentId = HOMEBREW_ROOT) {
   const id = newHomebrewId('hbf_');
   state.homebrew.folders[id] = { id, name, parentId };
   if (parentId) setHomebrewFolderOpen(parentId, true);
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
   return id;
 }
 
@@ -179,8 +186,7 @@ function renameHomebrewFolder(id, name) {
   const folder = state.homebrew.folders[id];
   if (!folder) return;
   folder.name = name;
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
 }
 
 // Deleting a folder never deletes homebrew: whatever was in it — files and
@@ -198,10 +204,10 @@ function deleteHomebrewFolder(id) {
     else delete state.homebrew.placement[key];
   });
   delete state.homebrew.folders[id];
+  delete state.homebrew.enabled[id];
   delete homebrewOpen[id];
   saveHomebrewOpen();
-  debouncedSync();
-  renderHomebrewSection();
+  onHomebrewChanged();
 }
 
 // =============================================================================
@@ -316,6 +322,8 @@ function homebrewFolderRow(folder, depth, count) {
     b.addEventListener('click', e => { e.stopPropagation(); onClick(); });
     actions.appendChild(b);
   };
+  btn('', 'Enable for campaigns or characters', () => openHomebrewAccess(folder.id));
+  actions.lastChild.appendChild(iconEl('show'));
   btn('+', 'New folder inside', () => {
     openFolderNameModal({ title: 'New Folder', value: '', confirmLabel: 'Create' },
       name => createHomebrewFolder(name, folder.id));
@@ -329,7 +337,7 @@ function homebrewFolderRow(folder, depth, count) {
     if (confirm(`Delete the folder “${folder.name}”?${note}`)) deleteHomebrewFolder(folder.id);
   }, true);
 
-  row.append(caret, name, countEl, actions);
+  row.append(caret, name, homebrewAccessChips(folder.id), countEl, actions);
   row.addEventListener('click', () => {
     setHomebrewFolderOpen(folder.id, !open);
     renderHomebrewSection();
@@ -357,7 +365,19 @@ function homebrewFileRow(file, depth) {
   kind.className = 'hb-kind';
   kind.dataset.kind = file.kind;
   kind.textContent = homebrewKindLabel(file.kind);
-  row.appendChild(kind);
+  row.append(homebrewAccessChips(file.key), kind);
+
+  const actions = document.createElement('span');
+  actions.className = 'hb-actions';
+  const access = document.createElement('button');
+  access.className = 'hb-btn';
+  access.title = 'Enable for campaigns or characters';
+  access.setAttribute('aria-label', access.title);
+  access.draggable = false;
+  access.appendChild(iconEl('show'));
+  access.addEventListener('click', e => { e.stopPropagation(); openHomebrewAccess(file.key); });
+  actions.appendChild(access);
+  row.appendChild(actions);
 
   // An account entry opens in the homebrew editor. A character's custom item
   // is edited from that character's Browse list, where its catalogue lives.
@@ -367,6 +387,30 @@ function homebrewFileRow(file, depth) {
     row.addEventListener('click', () => openHomebrewEntry(file.entryId));
   }
   return row;
+}
+
+// Who a row is enabled for, as small chips — a campaign's filled, a
+// character's outlined, one inherited from a folder dimmed. Two at most, then
+// a count, so a widely shared folder doesn't push its name off the row.
+function homebrewAccessChips(key) {
+  const box = document.createElement('span');
+  box.className = 'hb-chips';
+  const all = homebrewAccessSummary(key);
+  all.slice(0, 2).forEach(a => {
+    const chip = document.createElement('span');
+    chip.className = 'hb-chip' + (a.campaign ? ' campaign' : '') + (a.inherited ? ' inherited' : '');
+    chip.textContent = a.text;
+    chip.title = (a.campaign ? 'Campaign' : 'Character') + (a.inherited ? ' — from a folder above' : '');
+    box.appendChild(chip);
+  });
+  if (all.length > 2) {
+    const more = document.createElement('span');
+    more.className = 'hb-chip more';
+    more.textContent = '+' + (all.length - 2);
+    more.title = all.slice(2).map(a => a.text).join(', ');
+    box.appendChild(more);
+  }
+  return box;
 }
 
 // =============================================================================

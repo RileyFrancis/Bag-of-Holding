@@ -113,6 +113,7 @@ function applySavePayload(data) {
   state.activeCharacterId = norm.activeCharacterId;
   state.campaigns = normalizeCampaigns(data.campaigns);
   state.homebrew = normalizeHomebrew(data.homebrew);
+  invalidateUsableHomebrew();     // a pulled save may enable different things
   ensureCharacter();              // also loads the active slot into live state
   loadActiveCharacterIntoLive();
 }

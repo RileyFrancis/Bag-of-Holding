@@ -418,9 +418,27 @@ already uses** — class/subclass `features` as `data/classes.json` features
 (the subclass pick is `unlocks: ['subclass']` on a feature), species `traits`
 as `data/species.json` traits, a spell with `data/spells.json`'s keys, an item
 as an item template — so feeding homebrew into `allClasses()`/`allSpecies()`/
-the spell list is a read, not a translation. None of those registries read it
-yet. Its modal opts out of the shared backdrop close
+the spell list is a read, not a translation. Its modal opts out of the shared backdrop close
 (`data-backdrop-close="false"`) to ask before discarding a filled-in form.
+
+**Enabling** (`homebrew-share.js`): `state.homebrew.enabled[key] = { characters,
+campaigns }` on a folder or a file, and **a folder's targets reach everything
+inside it** — a file is enabled for the union of its own and every ancestor's.
+A character target is usable on that character alone; a campaign target by
+everyone at that table. `usableHomebrew()` answers for whatever is on screen
+(own character solo, own character seated, another member's sheet, a GM with
+nobody picked), and `allClasses()`/`allSpecies()`/`allSpells()` merge it in —
+**their signature gates include `homebrewUsableKey()`**, or a toggle wouldn't
+redraw the sheet. Usable items go into `state.db` flagged `_homebrew`, and
+`getCustomDb()` drops a flagged one **unless an instance still uses it** — a
+disabled item you carry stays; one you don't leaves the Browse list.
+
+Seated, each member publishes `parties/<code>/homebrew/<uid> { json }` (one
+JSON string, like cloud save) holding their campaign-enabled entries and their
+seated character's. Nodes count only while their uid is in the roster or is
+`meta.gmUid`. Other members' campaign homebrew is cached on the bookmark
+(`sharedHomebrew`) so a character keeps the party's homebrew class between
+sessions. Pacing, not security, same as shops.
 
 ### Browse-list folders and sorting
 

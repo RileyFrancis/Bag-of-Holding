@@ -51,6 +51,7 @@ function openCharModal(targetId = null, { isNew = false } = {}) {
   // species will arrive through the registries, and this is where they show up.
   fillDatalist(document.getElementById('class-options'), allClasses().map(d => d.name));
   fillDatalist(document.getElementById('species-options'), allSpecies().map(d => d.name));
+  fillDatalist(document.getElementById('background-options'), usableHomebrewOf('background').map(d => d.name));
   fillDatalist(document.getElementById('alignment-options'), ALIGNMENTS);
 
   renderCharClassRows();

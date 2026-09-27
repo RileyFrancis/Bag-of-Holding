@@ -116,9 +116,13 @@ async function sweepLegacySelfEntries(code, name) {
   } catch { /* a courtesy; a failure must not block the join */ }
 }
 
+// Someone's homebrew item (`_homebrew`, homebrew-share.js) is only this
+// character's to keep while they carry one — otherwise it comes and goes with
+// what is enabled, and must not be saved into their catalogue for good.
 function getCustomDb() {
   return Object.fromEntries(
-    Object.entries(state.db).filter(([id]) => !DEFAULT_ITEMS.find(t => t.id === id))
+    Object.entries(state.db).filter(([id, t]) =>
+      !DEFAULT_ITEMS.find(d => d.id === id) && (!t?._homebrew || homebrewItemInUse(id)))
   );
 }
 
@@ -380,6 +384,7 @@ function subscribeToParty(code) {
   subscribeToShops(code);     // the party's shops ride along with its roster
   subscribeToChat(code);      // and so does its conversation
   subscribeToBattlemap(code); // and the board they are standing on
+  subscribeToHomebrew(code);  // and whatever homebrew the table has been handed
 
   // The campaign's own record — a GM renaming it, or a first join that had only
   // the code, both arrive here, and the home-screen bookmark is refreshed from it.
@@ -389,6 +394,7 @@ function subscribeToParty(code) {
     const meta = snap.val();
     if (!meta) return;
     state.party.campaignName = meta.name ?? null;
+    state.party.gmUid = meta.gmUid ?? null;
     noteCampaignMeta(code, meta);
     updatePartyUI();
   });
@@ -437,6 +443,7 @@ function leaveParty() {
   unsubscribeFromShops();
   unsubscribeFromChat();
   unsubscribeFromBattlemap();
+  unsubscribeFromHomebrew();
 
   // Marks us offline, then cancels the onDisconnect. Cancelling alone used to be
   // the whole of this, which is how a deliberate leave left a lit dot.
@@ -450,7 +457,9 @@ function leaveParty() {
   state.party = {
     active: false, code: null, role: null, playerId: null, playerName: null,
     campaignName: null, viewingPlayerId: null, ownState: null, players: {},
+    gmUid: null, homebrew: {},
   };
+  refreshHomebrewConsumers(); // the table's homebrew leaves with the table
 
   // A GM's working copy is the placeholder — their own character was left
   // untouched in its slot, so it comes back now.
@@ -506,6 +515,9 @@ async function kickPlayer(playerId, displayName) {
 
   try {
     await firebaseDb.ref(`parties/${state.party.code}/players/${playerId}`).remove();
+    // Their shared homebrew stops counting with their seat (partyHomebrewMembers
+    // filters on the roster); the node is swept so it doesn't linger either.
+    firebaseDb.ref(`parties/${state.party.code}/homebrew/${playerId}`).remove().catch(() => {});
   } catch (e) {
     alert('Could not remove that player: ' + e.message);
   }
@@ -523,6 +535,7 @@ function debouncedSync() {
 
 function syncPartyState() {
   if (!state.party.active || !firebaseDb) return;
+  publishHomebrewToParty(); // a no-op unless what we share changed
 
   let targetId;
   if (state.party.role === 'gm') {
@@ -554,6 +567,7 @@ function loadPlayerStateIntoView(playerData) {
 
   state.instances = playerData.instances ? { ...playerData.instances } : {};
   state.equipped  = playerData.equipped  ? { ...playerData.equipped  } : {};
+  syncHomebrewItems();
   syncNextId();
   rebuildGrid();
   renderItemList();
@@ -589,6 +603,7 @@ function restoreOwnState() {
   DEFAULT_ITEMS.forEach(t => { state.db[t.id] = t; });
   Object.assign(state.db, own.customDb);
   state.party.ownState = null;
+  syncHomebrewItems();
   syncNextId();
   rebuildGrid();
   renderItemList();
@@ -624,6 +639,7 @@ function switchViewToOwn() {
     state.instances = {};
     state.db = {};
     DEFAULT_ITEMS.forEach(t => { state.db[t.id] = t; });
+    syncHomebrewItems(); // the table's homebrew, for the GM's shop editor
     initGrid();
     buildGrid();
     renderAllItems();

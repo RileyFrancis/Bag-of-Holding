@@ -125,8 +125,9 @@ loadDefaultSpells();
 // =============================================================================
 // THE REGISTRIES
 // =============================================================================
+// The app's spells, then usable homebrew ones (homebrew-share.js).
 function allSpells() {
-  return DEFAULT_SPELLS.slice();
+  return withHomebrewSpells(DEFAULT_SPELLS);
 }
 
 // Trimmed, case-insensitive — the same free-text match class-features.js uses
@@ -489,7 +490,8 @@ function spellSheetSignature() {
   const c = state.character || {};
   // Subclass is part of the signature — the Eldritch Knight/Arcane Trickster
   // check in `multiclassCasterLevel()` reads it, same as `classFeaturesSig`.
-  return classEntriesOf(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟');
+  return classEntriesOf(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟') +
+    '‖' + homebrewUsableKey(); // a homebrew spell enabled or edited under the sheet
 }
 
 function renderSpellSheet() {

@@ -126,9 +126,10 @@ loadDefaultClasses();
 // =============================================================================
 // THE REGISTRY
 // =============================================================================
-// The single seam custom classes will come through.
+// The single seam custom classes come through — homebrew classes, and homebrew
+// subclasses under their class, whenever they are usable (homebrew-share.js).
 function allClasses() {
-  return DEFAULT_CLASSES.slice();
+  return withHomebrewClasses(DEFAULT_CLASSES);
 }
 
 // Names are typed by hand — trimmed, case-insensitive; ids matched too, so a
@@ -307,6 +308,7 @@ function classFeaturesSignature() {
     classEntriesOf(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟'),
     c.level ?? '', c.race || '',
     showLockedFeatures ? '1' : '0',
+    homebrewUsableKey(), // a homebrew class enabled or edited under the sheet
   ].join('‖');
 }
 

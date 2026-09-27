@@ -326,3 +326,61 @@
   #homebrew-pick-grid { grid-template-columns: 1fr; }
   #homebrew-form .form-two-col { grid-template-columns: 1fr; }
 }
+
+/* ─── WHO IT IS ENABLED FOR ──────────────────────────────── */
+/* Chips on a tree row: a campaign's filled (the whole table), a character's
+   outlined (one person), one inherited from a folder above dimmed. */
+.hb-chips { display: inline-flex; gap: 4px; flex-shrink: 1; min-width: 0; overflow: hidden; }
+.hb-chips:empty { display: none; }
+.hb-chip {
+  flex-shrink: 0;
+  max-width: 140px;
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border2));
+  border-radius: 9px;
+}
+.hb-chip.campaign {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.hb-chip.inherited { opacity: 0.55; }
+.hb-chip.more { color: var(--text-dim); border-color: var(--border2); background: none; }
+
+/* The folder row's font is the display face; chips keep the body face. */
+.hb-folder .hb-chip { font-family: var(--font-body); font-weight: 600; letter-spacing: 0; }
+
+/* A file row's actions sit after its kind tag. */
+.hb-file .hb-actions { margin-left: 2px; }
+
+/* The modal. */
+.hb-access-group { margin-bottom: 14px; }
+.hb-access-group .field-label { display: block; margin-bottom: 6px; }
+.hb-access-hint {
+  margin-left: 6px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+.hb-access-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hb-access-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.hb-access-row input { width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
+.hb-access-row.inherited { cursor: default; color: var(--text-dim); }
+.hb-access-name { min-width: 0; overflow-wrap: anywhere; }
+.hb-access-detail { margin-left: auto; font-size: 11px; color: var(--text-dim); white-space: nowrap; }

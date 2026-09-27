@@ -88,6 +88,7 @@ In load order.
 | `campaigns.js` | Campaigns: the bookmark model, entering and leaving, the home section |
 | `homebrew.js` | The account's homebrew: its store, the home screen's file tree, drag-to-refile |
 | `homebrew-editor.js` | The New Homebrew panel: the kind picker, and each kind's form |
+| `homebrew-share.js` | Enabling homebrew for characters/campaigns, what is usable now, the party node |
 | `router.js` | The address bar: `home` / `character#<id>` / `campaign#<code>`, Back/Forward |
 | `character-sheet.js` | Page one of the 2024 sheet: abilities, skills, combat stats |
 | `class-features.js` | The class registry, and the sheet's Class Features section |

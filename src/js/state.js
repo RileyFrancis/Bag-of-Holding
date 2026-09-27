@@ -15,7 +15,7 @@ const state = {
   campaigns: {},          // { [code]: { code, name, role, characterId, gmName, memberCount, lastPlayed } }
   // The account's homebrew: its own entries, and the folder tree over them and
   // the roster's custom items (homebrew.js).
-  homebrew: { entries: {}, folders: {}, placement: {} },
+  homebrew: { entries: {}, folders: {}, placement: {}, enabled: {} },
   screen: 'app',          // 'app' | 'home' — the home screen is a page in front, never saved
 
   grid: [],               // 2D array [row][col] = instanceId | null
@@ -61,6 +61,8 @@ const state = {
     viewingPlayerId: null, // which player's inventory we're viewing (null = own for player, none for GM)
     ownState: null,        // saved own state while a player views another's inventory
     players: {},           // Firebase cache: { [uid]: { name, connected, lastSeen, character, instances, customDb } }
+    gmUid: null,           // from parties/<code>/meta — whose homebrew node counts as the GM's
+    homebrew: {},          // Firebase cache: { [uid]: { json } } — see homebrew-share.js
   },
 };
 

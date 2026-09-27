@@ -962,7 +962,9 @@
     <div class="form-two-col">
       <label class="field">
         <span>Background</span>
-        <input type="text" id="char-background-input" maxlength="40" placeholder="e.g. Soldier">
+        <input type="text" id="char-background-input" maxlength="40" placeholder="e.g. Soldier"
+               list="background-options">
+        <datalist id="background-options"><!-- usable homebrew backgrounds, fillDatalist() --></datalist>
       </label>
       <label class="field">
         <span>Alignment</span>
@@ -1201,6 +1203,27 @@
         <button class="homebrew-close-btn btn-sm">Cancel</button>
       </div>
     </section>
+  </div>
+</div>
+
+<!-- ===== HOMEBREW "ENABLED FOR" MODAL =====
+     Which campaigns and characters a homebrew folder or file is enabled for.
+     Changes apply as they are ticked. See src/js/homebrew-share.js. -->
+<div id="homebrew-access-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="homebrew-access-title">Enable</h2>
+    <p id="homebrew-access-note" class="modal-note"></p>
+    <div class="hb-access-group">
+      <div class="field-label">Campaigns <span class="hb-access-hint">everyone at the table</span></div>
+      <div id="homebrew-access-campaigns"></div>
+    </div>
+    <div class="hb-access-group">
+      <div class="field-label">Characters <span class="hb-access-hint">just that character</span></div>
+      <div id="homebrew-access-characters"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="cancel-btn btn-primary">Done</button>
+    </div>
   </div>
 </div>
 
@@ -1764,6 +1787,7 @@
      and collects custom items from the roster's slots. -->
 <script src="src/js/homebrew.js"></script>
 <script src="src/js/homebrew-editor.js"></script>
+<script src="src/js/homebrew-share.js"></script>
 <!-- After campaigns.js: the URL is written from which screen, character and
      campaign are on show. Only its popstate listener runs at load. -->
 <script src="src/js/router.js"></script>

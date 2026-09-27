@@ -65,9 +65,10 @@ loadDefaultSpecies();
 // =============================================================================
 // THE REGISTRY
 // =============================================================================
-// The single seam custom species will come through.
+// The single seam custom species come through — usable homebrew species
+// (homebrew-share.js) after the app's own.
 function allSpecies() {
-  return DEFAULT_SPECIES.slice();
+  return withHomebrewSpecies(DEFAULT_SPECIES);
 }
 
 // Trimmed, case-insensitive; ids matched too, so a stored id survives a rename.
@@ -132,7 +133,7 @@ let speciesTraitsSig = null;
 
 function speciesTraitsSignature() {
   const c = state.character || {};
-  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0'].join('‖');
+  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0', homebrewUsableKey()].join('‖');
 }
 
 function renderSpeciesTraits() {

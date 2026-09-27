@@ -226,6 +226,7 @@ function loadActiveCharacterIntoLive() {
   state.db = {};
   DEFAULT_ITEMS.forEach(t => { state.db[t.id] = t; });
   Object.assign(state.db, slot.db ?? {});
+  syncHomebrewItems();       // homebrew enabled for this character, or its table
   // A character with no layout of its own goes through loadSlotConfig(), so this
   // browser's pre-layout `dnd_slot_config` is still migrated. It returns early
   // once a layout is set.

@@ -1,8 +1,8 @@
 /* ============================================================
-   chat.css — the sidebar's Chat tab, and the Dice placeholder beside it
+   chat.css — the sidebar's Chat tab, and the larger chat modal Enter opens
 
-   Both are panes of the sidebar, so the tab chrome itself is still sidebar.css's
-   — this is only what is inside them.
+   The tab chrome itself is still sidebar.css's — this is only what is inside
+   the pane, plus the modal box the same log is moved into.
    ============================================================ */
 
 /* ─── THE PANE ───────────────────────────────────────────── */
@@ -251,3 +251,44 @@
 
 /* Reading someone else's sheet is read-only, but talking to them is not — the
    composer deliberately survives `party-readonly`, unlike the item controls. */
+
+/* ─── THE CHAT MODAL ─────────────────────────────────────── */
+/* The sidebar's log and composer, moved into a larger box (chat.js,
+   openChatModal()). A fixed-height column, like the tab: the log flexes and
+   scrolls, the composer stays put at the bottom. */
+.chat-modal-box {
+  width: 720px;
+  height: min(80vh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* the log scrolls, not the box */
+  padding-bottom: 14px;
+}
+.chat-modal-box h2 { flex-shrink: 0; margin-bottom: 10px; }
+
+.chat-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.chat-modal-close:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+#chat-modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A bigger room gets bigger type. */
+#chat-modal .chat-msg-name  { font-size: 12px; }
+#chat-modal .chat-msg-time  { font-size: 10px; }
+#chat-modal .chat-msg-text,
+#chat-modal .chat-roll-label,
+#chat-modal #chat-input     { font-size: 14px; }
+#chat-modal .chat-roll-detail { font-size: 11px; }

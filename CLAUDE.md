@@ -133,6 +133,12 @@ last 200 subscribed, nothing in the save file. `textContent`, never
 `innerHTML` — chat is the one pane where another player's typing lands in
 your browser continuously, and markdown.js is deliberately not involved.
 
+**Enter opens the chat modal** (`#chat-modal`; ✕, Escape or the backdrop
+close it). It has no log of its own — `openChatModal()` *moves* the tab's
+`#chat-empty`/`#chat-body` into it and `closeChatModal()` moves them back, so
+there is one log and one set of listeners. That is why it opts out of the
+shared backdrop close: hiding it any other way strands the log in the modal.
+
 **There is no `parties/<code>/rolls` — a roll is a chat message**
 (`kind: 'roll', roll: {...}`, `dice.js`), riding the log's existing ordering,
 subscription and cap. Rolling therefore works with **no campaign at all**;

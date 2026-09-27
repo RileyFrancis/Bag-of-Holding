@@ -1182,6 +1182,23 @@
   </div>
 </div>
 
+<!-- ===== CHAT MODAL =====
+     The same conversation as the sidebar's Chat tab, larger and in the middle
+     of the screen — opened by Enter, closed by its ✕ or Escape. It has no log
+     of its own: openChatModal() in src/js/chat.js *moves* the tab's log and
+     composer in here, and closeChatModal() moves them back, so there is one
+     log to render and one set of listeners. It handles its own backdrop click
+     for the same reason — the shared handler would hide it without putting
+     them back. -->
+<div id="chat-modal" class="modal hidden" data-backdrop-close="false">
+  <div class="modal-box chat-modal-box" role="dialog" aria-labelledby="chat-modal-title">
+    <h2 id="chat-modal-title">Chat</h2>
+    <button id="chat-modal-close" class="chat-modal-close" type="button"
+            title="Close (Esc)" aria-label="Close chat">✕</button>
+    <div id="chat-modal-body"></div>
+  </div>
+</div>
+
 <!-- ===== HOMEBREW MODAL =====
      Two faces in one panel: the six kinds to pick from, then that kind's
      editor. The form is built by src/js/homebrew-editor.js. -->

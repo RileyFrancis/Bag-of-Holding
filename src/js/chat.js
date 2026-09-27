@@ -269,6 +269,70 @@ function autoGrowChatInput() {
 }
 chatInputEl.addEventListener('input', autoGrowChatInput);
 
+// =============================================================================
+// THE CHAT MODAL — the same log, bigger, in the middle of the screen
+// =============================================================================
+// Enter opens it; its ✕ or Escape closes it. There is no second log: the tab's
+// empty state, log and composer are *moved* into the modal and back, so
+// renderChat() and every listener above keep working untouched.
+const chatTabEl       = document.getElementById('tab-chat');
+const chatModalEl     = document.getElementById('chat-modal');
+const chatModalBodyEl = document.getElementById('chat-modal-body');
+
+function chatModalIsOpen() {
+  return !chatModalEl.classList.contains('hidden');
+}
+
+function openChatModal() {
+  if (chatModalIsOpen()) return;
+  chatModalBodyEl.append(chatEmptyEl, chatBodyEl);
+  showModal('chat-modal');
+  // Moving an element resets its scroll, so land on the newest line.
+  onChatTabShown();
+  if (canChat()) chatInputEl.focus();
+}
+
+function closeChatModal() {
+  if (!chatModalIsOpen()) return;
+  chatInputEl.blur();
+  chatTabEl.append(chatEmptyEl, chatBodyEl);
+  hideModal('chat-modal');
+  onChatTabShown();
+}
+
+// Enter opens the chat from anywhere in the app — but not while typing, from
+// the home screen, mid-drag, or over another modal. A button *focused from the
+// keyboard* keeps Enter as its own (`:focus-visible`); one that merely kept
+// focus after a mouse click does not, or Enter would re-click whatever was
+// clicked last.
+function chatShortcutAllowed(e) {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.repeat) return false;
+  const t = e.target;
+  if (t && t.matches && t.matches('input, textarea, select')) return false;
+  if (t && t.isContentEditable) return false;
+  if (t && t !== document.body && t.matches && t.matches(':focus-visible')) return false;
+  if (document.querySelector('.modal:not(.hidden)')) return false;
+  if (state.screen !== 'app') return false;
+  return state.mode === 'idle';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && chatModalIsOpen()) {
+    e.preventDefault();
+    closeChatModal();
+    return;
+  }
+  if (e.key === 'Enter' && chatShortcutAllowed(e)) {
+    e.preventDefault(); // not a click on whatever button last kept focus
+    openChatModal();
+  }
+});
+
+document.getElementById('chat-modal-close').addEventListener('click', closeChatModal);
+// The shared backdrop handler skips this modal (`data-backdrop-close="false"`),
+// since hiding it alone would strand the log in here.
+document.getElementById('modal-backdrop').addEventListener('click', closeChatModal);
+
 // What "pinned" means, measured rather than assumed: within a line or so of the
 // bottom counts as following along, so a fractional scroll position or a
 // rounding difference does not unstick the log.

@@ -843,25 +843,12 @@
 .die-count:empty { display: none; }
 
 #dice-dock-roll {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 5px 2px;
+  padding: 6px 2px;
   font-size: 12px;
   font-weight: 700;
   border-radius: 14px;
 }
 #dice-dock-roll.hidden { display: none; }
-/* The handful, spelled out under the word — small, and allowed to wrap at each
-   " + " since the column is narrow. */
-#dice-dock-formula {
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.25;
-  opacity: 0.85;
-  overflow-wrap: anywhere;
-}
 
 #dice-dock-mod-input {
   width: 100%;

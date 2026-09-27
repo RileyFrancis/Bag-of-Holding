@@ -1012,7 +1012,6 @@ const diceDockBtn     = document.getElementById('dice-dock-btn');
 const diceDockPanel   = document.getElementById('dice-dock-panel');
 const diceDockFaces   = document.getElementById('dice-dock-faces');
 const diceDockRollBtn = document.getElementById('dice-dock-roll');
-const diceDockFormula = document.getElementById('dice-dock-formula');
 const diceDockModEl   = document.getElementById('dice-dock-mod-input');
 
 // faces → how many of that die are in the handful.
@@ -1070,9 +1069,7 @@ function renderDiceDock() {
     btn.classList.toggle('picked', n > 0);
     btn.querySelector('.die-count').textContent = n > 1 ? n : '';
   });
-  const pool = normalizePool(dockPoolGroups());
-  diceDockRollBtn.classList.toggle('hidden', !pool.length);
-  diceDockFormula.textContent = pool.length ? rollFormula({ pool, mod: dockMod() }) : '';
+  diceDockRollBtn.classList.toggle('hidden', !dockPool.size);
 }
 
 function addDockDie(faces, delta) {
@@ -1085,7 +1082,6 @@ function addDockDie(faces, delta) {
 function stepDockMod(delta) {
   const n = Math.max(-DOCK_MOD_LIMIT, Math.min(DOCK_MOD_LIMIT, dockMod() + delta));
   diceDockModEl.value = n ? n : '';
-  renderDiceDock();
 }
 
 function clearDock() {
@@ -1121,7 +1117,6 @@ diceDockFaces.addEventListener('contextmenu', e => {
 diceDockRollBtn.addEventListener('pointerdown', e => beginRollGesture(e, diceDockRollBtn, dockRollSpec));
 diceDockRollBtn.addEventListener('click', () => rollFromClick(dockRollSpec));
 
-diceDockModEl.addEventListener('input', renderDiceDock);
 // A typed-in number past the limit is pulled back to it once the box is left.
 diceDockModEl.addEventListener('change', () => stepDockMod(0));
 diceDockPanel.querySelectorAll('[data-mod-step]').forEach(b => {

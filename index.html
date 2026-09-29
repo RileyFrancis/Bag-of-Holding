@@ -3,8 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>D&D Inventory Manager</title>
+  <title>Bag of Holding - TTRPG Manager</title>
   <link rel="icon" href="img/favicon/favicon.ico">
+  <!-- /home, /character and /campaign are all this same page (_redirects);
+       without a canonical, search engines count them as duplicates. Absolute,
+       like og:image. -->
+  <link rel="canonical" href="https://bagofholding.io/">
   <!-- Link previews (Discord, Slack, iMessage, X…). Their fetchers read these
        straight out of this file and never run a script, so they must be static
        — and og:image must be an absolute URL, unlike every other path here.
@@ -21,6 +25,22 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Bag of Holding — a d20 on parchment">
   <meta name="twitter:card" content="summary_large_image">
+  <!-- Structured data for search results. Static for the same reason as the
+       tags above: crawlers read it straight out of this file. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Bag of Holding",
+    "url": "https://bagofholding.io/",
+    "description": "A grid inventory, character sheet, spellbook and party table for your TTRPG characters.",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires JavaScript",
+    "image": "https://bagofholding.io/img/og-preview.jpg",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
   <!-- Resolve the theme before first paint so the page never flashes the
        wrong palette. Kept inline and in <head> on purpose; src/js/theme.js
        (loaded at the bottom) owns everything after this. -->

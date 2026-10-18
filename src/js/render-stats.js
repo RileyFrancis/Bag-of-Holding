@@ -1,5 +1,5 @@
 // =============================================================================
-// RENDER-STATS — Header weight / encumbrance readout
+// RENDER-STATS — Weight / encumbrance readout, and the header name
 // =============================================================================
 'use strict';
 
@@ -23,7 +23,7 @@ function getZoneEncumbrance() {
 }
 
 // 0 = none, 1 = Encumbered, 2 = Heavily Encumbered. Zone placement overrides
-// weight-based encumbrance upward. The header's readout and the sheet's
+// weight-based encumbrance upward. The inventory's readout and the sheet's
 // Statuses section (statuses.js) both ask here, so they can never disagree.
 function encumbranceLevel() {
   const str = state.character.strength;
@@ -34,48 +34,39 @@ function encumbranceLevel() {
   return 0;
 }
 
+// The inventory's bottom-left readout: carried / the most that can be carried
+// before Encumbered. Its hover card (CSS-shown, so no timer) lists what each
+// level costs and marks the one the character is at.
 function updateWeightDisplay() {
   const str = state.character.strength;
   const normal = str * 15;
-  const enc = str * 30;
-  const heavy = str * 45;
   const carried = Math.round(totalCarriedWeight() * 100) / 100;
-
-  document.getElementById('weight-carried').textContent = `${carried} lb carried`;
-  document.getElementById('weight-limits').textContent  = `${normal} / ${enc} / ${heavy} lb`;
-
   const level = encumbranceLevel();
-  const statusEl = document.getElementById('encumbrance-status');
-  if (level >= 2) {
-    statusEl.textContent = 'Heavily Encumbered'; statusEl.className = 'heavy';
-  } else if (level >= 1) {
-    statusEl.textContent = 'Encumbered'; statusEl.className = 'enc';
-  } else {
-    statusEl.textContent = ''; statusEl.className = '';
-  }
 
-  // Dynamic bar max: expands from normal → enc → heavy as thresholds are crossed.
-  // Floored at 1 because a Strength of 0 is a legal score and makes all three
-  // thresholds 0 — without it every ratio below is 0/0, and a NaN length is
-  // dropped by the browser, leaving the bar silently showing its last width.
-  const barMax = Math.max(1, carried > enc ? heavy : (carried > normal ? enc : normal));
-  const pct    = Math.min(carried / barMax, 1) * 100;
+  document.getElementById('weight-carried').textContent  = carried;
+  document.getElementById('weight-capacity').textContent = normal;
+  const indicator = document.getElementById('weight-indicator');
+  indicator.dataset.level = level;
+  indicator.setAttribute('aria-label', `${carried} of ${normal} lb carried`
+    + (level >= 2 ? ', Heavily Encumbered' : level >= 1 ? ', Encumbered' : ''));
 
-  const fillEl = document.getElementById('weight-bar-fill');
-  fillEl.style.width = pct + '%';
-  // Keep gradient colors anchored to absolute weights by scaling backgroundSize
-  // so the color at the fill edge always reflects the real encumbrance level
-  fillEl.style.backgroundSize = (heavy / barMax * 100).toFixed(2) + '% 100%';
-
-  // Enc marker always visible at the normal threshold
-  document.getElementById('weight-enc-marker').style.left = (normal / barMax * 100) + '%';
-
-  // Heavy marker only appears once the bar has expanded into the heavy zone
-  const heavyMarkerEl = document.getElementById('weight-heavy-marker');
-  heavyMarkerEl.style.left = (enc / barMax * 100) + '%';
-  heavyMarkerEl.style.display = barMax === heavy ? '' : 'none';
+  document.querySelectorAll('#weight-card .weight-level').forEach(row => {
+    row.classList.toggle('current', Number(row.dataset.level) === level);
+  });
 
   // Header — the name only. Strength is read off the sheet and shown by the
-  // limits above rather than printed again as a number.
+  // capacity above rather than printed again as a number.
   document.getElementById('char-name-display').textContent = state.character.name;
 }
+
+// The effects are the Statuses' own descriptions (data/statuses.json), so the
+// card and the sheet's chips say the same thing. Static data, so filled once,
+// on first hover — statuses.js loads after this file.
+document.getElementById('weight-indicator').addEventListener('pointerenter', () => {
+  document.querySelectorAll('#weight-card .weight-level[data-status]').forEach(row => {
+    const desc = row.querySelector('.weight-level-desc');
+    const status = statusById(row.dataset.status);
+    if (desc.childElementCount || !status) return;
+    renderMarkdownInto(desc, status.description);
+  });
+});

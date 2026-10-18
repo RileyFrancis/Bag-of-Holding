@@ -160,25 +160,13 @@
     <!-- Whose sheet this is, and nothing else. Strength left because the
          character sheet owns the six ability scores and the grid has always
          sized itself from `abilities.str` — a second readout in the header was
-         one more place for it to be out of date, and the weight bar beside it
-         already says what that Strength buys in carrying capacity. Edit
+         one more place for it to be out of date, and the inventory's weight
+         readout already says what that Strength buys in carrying capacity. Edit
          Character left with it: the gear on the sheet opens the same dialog,
          for your own character and — since a GM is never read-only — for a
          player's too. -->
     <div id="char-summary">
       <span id="char-name-display">Unnamed Hero</span>
-    </div>
-    <div id="weight-bar-wrap">
-      <div id="weight-bar-track">
-        <div id="weight-bar-fill"></div>
-        <div id="weight-enc-marker" class="weight-marker"></div>
-        <div id="weight-heavy-marker" class="weight-marker heavy"></div>
-      </div>
-      <div id="weight-labels">
-        <span id="weight-carried">0 lb carried</span>
-        <span id="encumbrance-status"></span>
-        <span id="weight-limits"></span>
-      </div>
     </div>
     <div id="party-header-area">
       <button id="party-btn" class="btn-sm">&#9876; Party</button>
@@ -239,6 +227,32 @@
         <div id="grid-paper" class="paper-sheet">
           <div id="inventory-grid">
             <!-- cells injected by JS -->
+          </div>
+        </div>
+      </div>
+      <!-- The weight readout: carried / what can be carried before Encumbered,
+           in the bottom left of the inventory view only. A zero-height row like
+           the dice dock, so it hangs just above the stash when that is showing.
+           Hovering it opens the card of what each encumbrance level costs, the
+           current one marked — filled by updateWeightDisplay() in
+           src/js/render-stats.js, the effects read from data/statuses.json. -->
+      <div id="weight-dock">
+        <div id="weight-indicator" tabindex="0" aria-describedby="weight-card">
+          <span id="weight-carried">0</span><span class="weight-sep">/</span><span id="weight-capacity">0</span><span class="weight-unit">lb</span>
+          <div id="weight-card" role="tooltip">
+            <div class="weight-card-title">Carrying</div>
+            <div class="weight-level" data-level="0">
+              <div class="weight-level-head"><span>Unencumbered</span></div>
+              <div class="weight-level-desc tip-desc"><p>No penalty.</p></div>
+            </div>
+            <div class="weight-level" data-level="1" data-status="encumbered">
+              <div class="weight-level-head"><span>Encumbered</span></div>
+              <div class="weight-level-desc tip-desc"></div>
+            </div>
+            <div class="weight-level" data-level="2" data-status="heavily-encumbered">
+              <div class="weight-level-head"><span>Heavily Encumbered</span></div>
+              <div class="weight-level-desc tip-desc"></div>
+            </div>
           </div>
         </div>
       </div>

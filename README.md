@@ -8,7 +8,7 @@ space, and so does the loot you were greedy about.
 ## Features
 
 - **Grid-based inventory** — items occupy 2D shapes on a tetris-style grid
-- **Encumbrance that follows from it** — weight bar with STR-based carry zones
+- **Encumbrance that follows from it** — carried/capacity readout with STR-based carry zones
 - **Drag and drop** — within the grid, into containers, or onto equipment slots
 - **Character sheet** — abilities, skills, combat stats and class features, with
   drag-to-rearrange sections

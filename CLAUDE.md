@@ -361,7 +361,7 @@ synced like any sheet field. A status with `maxLevel` (Exhaustion) stacks —
 **each level is the id repeated in that list**, so picking it again is just
 another instance, and the chip's × takes one level off. **Derived** ones (`derived:` in the data file —
 Encumbered / Heavily Encumbered) are recomputed on every render from
-`encumbranceLevel()` in render-stats.js, the same function the header readout
+`encumbranceLevel()` in render-stats.js, the same function the inventory weight readout
 uses, and **never stored** — a saved copy would go stale the moment an item
 moved. The chips only redraw when their signature changes, or a sync would
 orphan an open hover card.

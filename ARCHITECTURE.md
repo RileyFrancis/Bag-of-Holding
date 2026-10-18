@@ -68,7 +68,7 @@ In load order.
 | `grid.js` | Fit tests, place/remove, `rebuildGrid`, id generation |
 | `render-grid.js` | `renderGrid`, `renderAllItems` |
 | `render-sidebar.js` | `renderItemList`, details panel |
-| `render-stats.js` | Header weight / encumbrance readout |
+| `render-stats.js` | Inventory weight / encumbrance readout and its hover card |
 | `drag-ghost.js` | The ghost element that follows the cursor |
 | `drag-scroll.js` | Edge auto-scroll: a held drag near a panel's edge pulls it along |
 | `interaction-placing.js` | PLACING mode |
@@ -120,7 +120,7 @@ that owns the element wins.
 | `tokens.css` | Both palettes, `--cell` / `--cols`, and the map of this set |
 | `base.css` | Reset, body, type, form controls, buttons |
 | `icons.css` | The icon PNGs as `.ico` glyphs, masked over `currentColor` |
-| `layout.css` | The app shell: header, weight bar, main split, panel resizing |
+| `layout.css` | The app shell: header, weight readout, main split, panel resizing |
 | `inventory.css` | The torn sheet, grid cells, placed items, the drag ghost |
 | `sidebar.css` | The right panel: browse list, folders, details, menus |
 | `modals.css` | Modal chrome, and the shape editor inside the item editor |

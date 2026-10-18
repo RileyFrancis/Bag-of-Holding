@@ -96,12 +96,52 @@
 /* The school's glyph, large in the card's top-right corner (.ico-school in
    icons.css). Pinned rather than laid out, so it doesn't push the meta line
    down; only the two lines beside it make room, the description runs under. */
+.spell-card.has-school-icon {
+  /* The icon's box, and how far past the card's corner the grime starts. */
+  --sci-top: 10px;
+  --sci-right: 12px;
+  --sci-size: 40px;
+  --grime-over: 4px;
+  /* The icon and the grime sit at z-index -1: under the card's text, but over
+     its background, which isolation keeps them from slipping beneath. */
+  isolation: isolate;
+}
 .spell-card .ico-school {
   position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 40px;
-  height: 40px;
+  top: var(--sci-top);
+  right: var(--sci-right);
+  width: var(--sci-size);
+  height: var(--sci-size);
+  z-index: -1;
+}
+/* On the card the grime is the card's, not the icon's (below). */
+.spell-card .ico-school::after { display: none; }
+
+/* The grime patch behind the icon. Its top-right corner sits --grime-over past
+   the card's own corner and is clipped back to the card (padding box, inner
+   radius), so it runs right up to both edges; its bottom-left corner is placed
+   so the icon's bottom-left corner is the midpoint of the patch's diagonal —
+   hence each size is twice the icon's reach from that corner. Two gradients,
+   intersected, fade it to nothing along the WHOLE left and bottom edges, not
+   only at the bottom-left corner. Painted after the icon at the same z-index,
+   so it lies over the glyph too. */
+.spell-card.has-school-icon::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: calc(-1 * var(--grime-over));
+  right: calc(-1 * var(--grime-over));
+  width: calc(2 * (var(--sci-right) + var(--sci-size) + var(--grime-over)));
+  height: calc(2 * (var(--sci-top) + var(--sci-size) + var(--grime-over)));
+  /* 112%: grime.png's transparent margin (about 4% a side) falls outside. */
+  background: url('../../img/grime.png') center / 112% 112% no-repeat;
+  opacity: 0.18;
+  -webkit-mask-image: linear-gradient(to left, #000, transparent), linear-gradient(to bottom, #000, transparent);
+          mask-image: linear-gradient(to left, #000, transparent), linear-gradient(to bottom, #000, transparent);
+  -webkit-mask-composite: source-in;
+          mask-composite: intersect;
+  clip-path: inset(var(--grime-over) var(--grime-over) 0 0 round 0 5px 0 0);
 }
 .spell-card.has-school-icon .spell-card-head,
 .spell-card.has-school-icon .spell-meta { padding-right: 50px; }

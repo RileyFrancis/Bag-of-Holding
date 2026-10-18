@@ -81,6 +81,9 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+/* The school's glyph leads the name — see .ico-school in icons.css. */
+.spell-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.spell-card-title .ico-school { width: 18px; height: 18px; }
 .spell-name {
   margin: 0;
   font-family: var(--font-display);
@@ -306,3 +309,5 @@
   font-size: 10px;
   color: var(--text-dim);
 }
+.spell-pick-meta:empty { display: none; }
+.spell-pick-card .ico-school { width: 16px; height: 16px; }

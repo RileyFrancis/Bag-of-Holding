@@ -414,13 +414,15 @@ function spellbookSections(available, classRows, prefs) {
 }
 
 // The meta line on a picker card — whichever axis isn't already the group
-// heading is the useful thing to print beside the spell's name; `all` has no
-// heading at all, so it gets both.
+// heading is the useful thing to print beside the spell's name. The school is
+// never printed: every card carries its glyph (schoolIcon()) instead, so in
+// Class mode the line is empty, and only an unrecognised school falls back to
+// its name.
 function spellPickerMeta(spell, classRows, prefs) {
   const classes = spellGrantingClasses(spell, classRows);
-  if (prefs.sortMode === 'school') return classes.join(', ') || (spell.school || '');
-  if (prefs.sortMode === 'all') return [spell.school, classes.join(', ')].filter(Boolean).join(' · ');
-  return spell.school || spellLevelLabel(spell.level);
+  const schoolText = schoolIconName(spell.school) ? '' : (spell.school || '');
+  if (prefs.sortMode === 'class') return schoolText;
+  return [schoolText, classes.join(', ')].filter(Boolean).join(' · ');
 }
 
 function renderSpellbookSettings(classRows, available) {
@@ -647,17 +649,42 @@ function renderSpellDesc(el, src) {
   el.appendChild(tpl.content.cloneNode(true));
 }
 
+// The eight schools that have a glyph (img/icon/spells/, .ico-school-* in
+// icons.css), keyed by the lower-cased name data/spells.json uses. Anything
+// else — homebrew, a typo — gets null and is printed as text instead.
+const SPELL_SCHOOLS_WITH_ICONS = ['abjuration', 'conjuration', 'divination', 'enchantment',
+  'evocation', 'illusion', 'necromancy', 'transmutation'];
+function schoolIconName(school) {
+  const key = String(school ?? '').trim().toLowerCase();
+  return SPELL_SCHOOLS_WITH_ICONS.includes(key) ? key : null;
+}
+function schoolIcon(school) {
+  const key = schoolIconName(school);
+  if (!key) return null;
+  const el = iconEl('school-' + key);
+  el.classList.add('ico-school');
+  el.title = String(school).trim();
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', el.title);
+  return el;
+}
+
 function spellCard(spell) {
   const card = document.createElement('article');
   card.className = 'spell-card';
 
   const head = document.createElement('div');
   head.className = 'spell-card-head';
+  const title = document.createElement('div');
+  title.className = 'spell-card-title';
+  const icon = schoolIcon(spell.school);
+  if (icon) title.appendChild(icon);
   const name = document.createElement('h5');
   name.className = 'spell-name';
   name.textContent = spell.name;
-  head.appendChild(name);
-  const schoolText = [spell.school, spell.source].filter(Boolean).join(' · ');
+  title.appendChild(name);
+  head.appendChild(title);
+  const schoolText = [icon ? null : spell.school, spell.source].filter(Boolean).join(' · ');
   if (schoolText) {
     const school = document.createElement('span');
     school.className = 'spell-school';
@@ -708,6 +735,8 @@ function spellPickerCard(spell, known, readOnly, metaText) {
   meta.textContent = metaText || '';
 
   card.append(dot, name, meta);
+  const icon = schoolIcon(spell.school);
+  if (icon) card.appendChild(icon);
   card.addEventListener('click', () => toggleKnownSpell(spell.id));
   return card;
 }

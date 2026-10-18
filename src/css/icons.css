@@ -49,6 +49,41 @@
 .ico-sun     { -webkit-mask-image: url('../../img/icon/sun.png');     mask-image: url('../../img/icon/sun.png'); }
 .ico-trash   { -webkit-mask-image: url('../../img/icon/trash.png');   mask-image: url('../../img/icon/trash.png'); }
 
+/* The eight schools of magic: `.ico ico-school ico-school-<name>`
+   (schoolIcon() in spells.js builds one). Unlike the icons above these carry
+   their own colour — a school is read by its tint as much as its glyph — so
+   each sets `color` to its --school-* token and names its glyph in
+   --school-glyph; the shared rule does the rest.
+
+   The glyph is cut by a second mask layer, a gradient, so it fades to 40% on
+   its left side. Over it, ::after lays the grime texture at 0% on the left
+   rising to 10% on the right — and since a mask clips everything inside the
+   element, the grime only ever shows within the glyph's strokes. */
+.ico-school {
+  position: relative;
+  -webkit-mask-image: var(--school-glyph), linear-gradient(to right, rgba(0, 0, 0, 0.4), #000);
+          mask-image: var(--school-glyph), linear-gradient(to right, rgba(0, 0, 0, 0.4), #000);
+  -webkit-mask-composite: source-in;
+          mask-composite: intersect;
+}
+.ico-school::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../../img/grime.png') center / 48px;
+  opacity: 0.1;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000);
+          mask-image: linear-gradient(to right, transparent, #000);
+}
+.ico-school-abjuration    { color: var(--school-abjuration);    --school-glyph: url('../../img/icon/spells/school-abjuration.svg'); }
+.ico-school-conjuration   { color: var(--school-conjuration);   --school-glyph: url('../../img/icon/spells/school-conjuration.svg'); }
+.ico-school-divination    { color: var(--school-divination);    --school-glyph: url('../../img/icon/spells/school-divination.svg'); }
+.ico-school-enchantment   { color: var(--school-enchantment);   --school-glyph: url('../../img/icon/spells/school-enchantment.svg'); }
+.ico-school-evocation     { color: var(--school-evocation);     --school-glyph: url('../../img/icon/spells/school-evocation.svg'); }
+.ico-school-illusion      { color: var(--school-illusion);      --school-glyph: url('../../img/icon/spells/school-illusion.svg'); }
+.ico-school-necromancy    { color: var(--school-necromancy);    --school-glyph: url('../../img/icon/spells/school-necromancy.svg'); }
+.ico-school-transmutation { color: var(--school-transmutation); --school-glyph: url('../../img/icon/spells/school-transmutation.svg'); }
+
 /* The plus is a hairline cross that reads thin next to bold button text, and
    the d20's engraved facets need room to separate — as do the treasure map's
    folds. All nudged rather than the type around them being changed. */

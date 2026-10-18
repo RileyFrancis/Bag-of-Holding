@@ -175,6 +175,18 @@
   --rarity-artifact:  #a02b1c;
   --rarity-special:   #b83a7d;
 
+  /* Schools of magic — the tint on each school's glyph (.ico-school-*), so a
+     spell list can be read by colour before shape. Per theme like the
+     rarities: the bright inks that glow by candlelight wash out on parchment. */
+  --school-abjuration:    #2f8fc4;
+  --school-conjuration:   #c8640e;
+  --school-divination:    #5a4fc8;
+  --school-enchantment:   #c93f8a;
+  --school-evocation:     #c62f24;
+  --school-illusion:      #6b7683;
+  --school-necromancy:    #4f9a0c;
+  --school-transmutation: #a8800a;
+
   /* Placed items + drag ghost */
   --item-label-fg:     #2a2015;
   --item-label-shadow: 0 1px 2px rgba(255, 248, 232, 0.85);
@@ -268,6 +280,15 @@
   --rarity-legendary: #ff9a2e;
   --rarity-artifact:  #ef5a48;
   --rarity-special:   #ff9fd0;
+
+  --school-abjuration:    #6cc8f5;
+  --school-conjuration:   #ff9a3c;
+  --school-divination:    #8f86ff;
+  --school-enchantment:   #ff8fca;
+  --school-evocation:     #ff5a4a;
+  --school-illusion:      #c9d2dc;
+  --school-necromancy:    #8cff2e;
+  --school-transmutation: #f2c94c;
 
   --item-label-fg:     rgba(255, 248, 232, 0.94);
   --item-label-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);

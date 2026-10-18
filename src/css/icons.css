@@ -57,7 +57,7 @@
 
    The glyph is cut by a second mask layer, a gradient, so it fades to 40% on
    its left side. Over it, ::after lays the grime texture at 0% on the left
-   rising to 10% on the right — and since a mask clips everything inside the
+   rising to 20% on the right — and since a mask clips everything inside the
    element, the grime only ever shows within the glyph's strokes. */
 .ico-school {
   position: relative;
@@ -71,7 +71,7 @@
   position: absolute;
   inset: 0;
   background: url('../../img/grime.png') center / 48px;
-  opacity: 0.1;
+  opacity: 0.2;
   -webkit-mask-image: linear-gradient(to right, transparent, #000);
           mask-image: linear-gradient(to right, transparent, #000);
 }

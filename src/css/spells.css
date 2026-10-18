@@ -68,6 +68,7 @@
 .spell-level-heading:first-child { margin-top: 0; }
 
 .spell-card {
+  position: relative;
   padding: 10px 14px;
   margin-bottom: 8px;
   background: var(--panel);
@@ -81,9 +82,6 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-/* The school's glyph leads the name — see .ico-school in icons.css. */
-.spell-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.spell-card-title .ico-school { width: 18px; height: 18px; }
 .spell-name {
   margin: 0;
   font-family: var(--font-display);
@@ -95,6 +93,18 @@
   font-style: italic;
   color: var(--text-dim);
 }
+/* The school's glyph, large in the card's top-right corner (.ico-school in
+   icons.css). Pinned rather than laid out, so it doesn't push the meta line
+   down; only the two lines beside it make room, the description runs under. */
+.spell-card .ico-school {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+}
+.spell-card.has-school-icon .spell-card-head,
+.spell-card.has-school-icon .spell-meta { padding-right: 50px; }
 .spell-meta {
   display: flex;
   flex-wrap: wrap;

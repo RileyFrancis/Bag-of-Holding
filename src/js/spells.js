@@ -675,15 +675,11 @@ function spellCard(spell) {
 
   const head = document.createElement('div');
   head.className = 'spell-card-head';
-  const title = document.createElement('div');
-  title.className = 'spell-card-title';
-  const icon = schoolIcon(spell.school);
-  if (icon) title.appendChild(icon);
   const name = document.createElement('h5');
   name.className = 'spell-name';
   name.textContent = spell.name;
-  title.appendChild(name);
-  head.appendChild(title);
+  head.appendChild(name);
+  const icon = schoolIcon(spell.school);
   const schoolText = [icon ? null : spell.school, spell.source].filter(Boolean).join(' · ');
   if (schoolText) {
     const school = document.createElement('span');
@@ -710,6 +706,8 @@ function spellCard(spell) {
   renderSpellDesc(desc, spell.description);
 
   card.append(head, meta, desc);
+  // The school's glyph rides the card's top-right corner, large — see .spell-card .ico-school.
+  if (icon) { card.classList.add('has-school-icon'); card.appendChild(icon); }
   return card;
 }
 

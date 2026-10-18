@@ -55,25 +55,21 @@
    each sets `color` to its --school-* token and names its glyph in
    --school-glyph; the shared rule does the rest.
 
-   Two layers, so the grime is NOT clipped to the glyph — it covers the icon's
-   whole square, strokes and background alike. A mask clips everything inside
-   the element it's on, so the element itself stays unmasked: ::before is the
-   glyph (cut by a second mask layer, a gradient, so it fades to 40% on its
-   left side), and ::after lays the grime over the square at 0% on the left
-   rising to 20% on the right. */
+   The glyph is drawn on ::before rather than the element itself — cut by a
+   second mask layer, a gradient, so it fades to 40% on its left side — which
+   leaves the element unmasked. A mask clips everything inside the element it's
+   on, so this is what lets something laid over an icon (the spell card's grime
+   patch, spells.css) spill past the glyph's strokes. */
 .ico-school {
   position: relative;
   background: none;
   -webkit-mask-image: none;
           mask-image: none;
 }
-.ico-school::before,
-.ico-school::after {
+.ico-school::before {
   content: '';
   position: absolute;
   inset: 0;
-}
-.ico-school::before {
   background-color: currentColor;
   -webkit-mask-image: var(--school-glyph), linear-gradient(to right, rgba(0, 0, 0, 0.4), #000);
           mask-image: var(--school-glyph), linear-gradient(to right, rgba(0, 0, 0, 0.4), #000);
@@ -85,15 +81,6 @@
           mask-repeat: no-repeat;
   -webkit-mask-size: contain;
           mask-size: contain;
-}
-.ico-school::after {
-  /* One copy, never tiled, and blown up past the box: grime.png has a
-     transparent margin that would draw a seam at every tile edge, and at 160%
-     that margin falls outside the icon. */
-  background: url('../../img/grime.png') center / 160% no-repeat;
-  opacity: 0.2;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000);
-          mask-image: linear-gradient(to right, transparent, #000);
 }
 .ico-school-abjuration    { color: var(--school-abjuration);    --school-glyph: url('../../img/icon/spells/school-abjuration.svg'); }
 .ico-school-conjuration   { color: var(--school-conjuration);   --school-glyph: url('../../img/icon/spells/school-conjuration.svg'); }

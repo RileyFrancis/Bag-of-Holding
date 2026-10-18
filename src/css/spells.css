@@ -114,8 +114,6 @@
   height: var(--sci-size);
   z-index: -1;
 }
-/* On the card the grime is the card's, not the icon's (below). */
-.spell-card .ico-school::after { display: none; }
 
 /* The grime patch behind the icon. Its top-right corner sits --grime-over past
    the card's own corner and is clipped back to the card (padding box, inner
@@ -136,7 +134,9 @@
   height: calc(2 * (var(--sci-top) + var(--sci-size) + var(--grime-over)));
   /* 112%: grime.png's transparent margin (about 4% a side) falls outside. */
   background: url('../../img/grime.png') center / 112% 112% no-repeat;
-  opacity: 0.18;
+  opacity: 0.14;
+  /* grime.png is neutral grey; warm it to a faint brown, like an old stain. */
+  filter: sepia(0.7);
   -webkit-mask-image: linear-gradient(to left, #000, transparent), linear-gradient(to bottom, #000, transparent);
           mask-image: linear-gradient(to left, #000, transparent), linear-gradient(to bottom, #000, transparent);
   -webkit-mask-composite: source-in;

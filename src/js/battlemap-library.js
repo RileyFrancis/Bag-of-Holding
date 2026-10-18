@@ -10,11 +10,19 @@
 function renderMapPanel() {
   const pane = document.getElementById('left-pane-map');
   if (!pane) return;
+  // Rebuilt on every map snapshot (a creature dragged, a wall drawn), so keep
+  // the reader's place in a long piece list rather than jumping to the top.
+  const oldBody = pane.querySelector('.shop-body');
+  const scroll = oldBody ? oldBody.scrollTop : 0;
+  const openId = pane.dataset.openId || '';
   pane.innerHTML = '';
   if (!state.party.active) return;
   const map = state.mapLibraryOpenId ? mapById(state.mapLibraryOpenId) : null;
   if (map) renderMapDetail(pane, map);
-  else renderMapList(pane);
+  else { renderMapList(pane); setMapHighlight(null); }
+  pane.dataset.openId = map ? map.id : '';
+  const body = pane.querySelector('.shop-body');
+  if (body && pane.dataset.openId === openId) body.scrollTop = scroll;
 }
 
 function renderMapList(pane) {
@@ -162,36 +170,13 @@ function renderMapDetail(pane, map) {
     seg.appendChild(b);
   });
   body.appendChild(seg);
-  const note = document.createElement('p');
-  note.className = 'shop-price-note';
-  note.textContent = map.revealed
-    ? 'The players can open this map whenever it is the one in play.'
-    : 'Only you can see this map. Lay the room out before they walk into it.';
-  body.appendChild(note);
 
   // ── The grid ──────────────────────────────────────────────────────────
   body.appendChild(mapSectionHdr('Grid'));
   body.appendChild(buildGridControls(map));
 
-  // ── Clearing out ──────────────────────────────────────────────────────
-  body.appendChild(mapSectionHdr('Clear'));
-  const clears = document.createElement('div');
-  clears.className = 'map-clear-row';
-  [
-    ['tokens',    'Creatures',  'creature',  mapTokens(map).length],
-    ['walls',     'Walls',      'wall',      mapWalls(map).length],
-    ['masks',     'Fog Edits',  'fog edit',  mapMasks(map).length],
-    ['elevation', 'Elevation',  'elevation region', mapElevationZones(map).length],
-  ].forEach(spec => {
-    const b = document.createElement('button');
-    b.className = 'btn-sm';
-    b.textContent = spec[1] + ' (' + spec[3] + ')';
-    b.disabled = !spec[3];
-    b.title = 'Remove every ' + spec[2] + ' from this map';
-    b.addEventListener('click', () => clearMapPieces(map.id, spec[0], spec[2]));
-    clears.appendChild(b);
-  });
-  body.appendChild(clears);
+  // ── What is on the board ──────────────────────────────────────────────
+  MAP_PIECE_SECTIONS.forEach(spec => body.appendChild(buildMapPieceSection(map, spec)));
 
   pane.appendChild(body);
 }
@@ -201,6 +186,88 @@ function mapSectionHdr(text) {
   h.className = 'shop-section-hdr';
   h.textContent = text;
   return h;
+}
+
+// Everything on the board, one section per kind: [model key, heading, the
+// word clearMapPieces() confirms with, the pieces, a row's name and subtitle].
+// Listed in the order they were placed (pieceTime()); hovering a row haloes
+// its piece on the map (setMapHighlight() in battlemap-view.js), clicking it
+// removes it, and the bin beside a heading removes the whole kind.
+const MAP_SHAPE_LABEL = { rect: 'Rectangle', circle: 'Circle', poly: 'Lasso' };
+const MAP_PIECE_SECTIONS = [
+  { kind: 'tokens', title: 'Creatures', word: 'creature', list: mapTokens,
+    name: t => t.name || 'Unnamed creature', sub: t => (HOSTILITY[t.hostility] || HOSTILITY.neutral).label },
+  { kind: 'walls', title: 'Walls', word: 'wall', list: mapWalls,
+    name: (w, i) => 'Wall ' + (i + 1), sub: w => MAP_SHAPE_LABEL[w.kind] || 'Rectangle' },
+  { kind: 'masks', title: 'Fog', word: 'fog edit', list: mapMasks,
+    name: m => m.mode === 'hide' ? 'Obscure' : 'Reveal', sub: m => MAP_SHAPE_LABEL[m.kind] || 'Rectangle' },
+  { kind: 'elevation', title: 'Elevation', word: 'elevation region', list: mapElevationZones,
+    name: z => { const h = elevZoneHeight(z); return (h > 0 ? '+' : '') + h + ' ft'; },
+    sub: z => MAP_SHAPE_LABEL[z.kind] || 'Rectangle' },
+];
+
+function buildMapPieceSection(map, spec) {
+  const wrap = document.createElement('div');
+  const pieces = spec.list(map).sort((a, b) => pieceTime(a) - pieceTime(b));
+
+  const hdr = mapSectionHdr(spec.title + ' (' + pieces.length + ')');
+  hdr.classList.add('map-piece-hdr');
+  const bin = document.createElement('button');
+  bin.type = 'button';
+  bin.className = 'map-piece-clear';
+  bin.title = 'Remove every ' + spec.word + ' from this map';
+  bin.disabled = !pieces.length;
+  bin.appendChild(iconEl('trash'));
+  bin.addEventListener('click', () => {
+    clearMapPieces(map.id, spec.kind, spec.word);
+    if (spec.kind === 'tokens') mapSelectedTokenId = null;
+    fogDirty = true;
+  });
+  hdr.appendChild(bin);
+  wrap.appendChild(hdr);
+
+  const list = document.createElement('div');
+  list.className = 'map-piece-list';
+  pieces.forEach((p, i) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'map-piece';
+    row.title = 'Remove from the map';
+    row.style.setProperty('--pc', mapPieceColor(spec.kind, p));
+    const dot = document.createElement('span');
+    dot.className = 'map-piece-dot';
+    const nm = document.createElement('span');
+    nm.className = 'map-piece-name';
+    nm.textContent = spec.name(p, i);
+    const sub = document.createElement('span');
+    sub.className = 'map-piece-sub';
+    sub.textContent = spec.sub(p);
+    const x = document.createElement('span');
+    x.className = 'map-piece-x';
+    x.textContent = '✕';
+    row.append(dot, nm, sub, x);
+    row.addEventListener('mouseenter', () => setMapHighlight(spec.kind, p.id));
+    row.addEventListener('mouseleave', () => setMapHighlight(null));
+    row.addEventListener('click', () => {
+      setMapHighlight(null);
+      if (spec.kind === 'tokens') {
+        removeToken(map.id, p.id);
+        if (mapSelectedTokenId === p.id) { mapSelectedTokenId = null; renderMapToolbar(); }
+      } else {
+        removePiece(map.id, spec.kind, p.id);
+      }
+      fogDirty = true;
+    });
+    list.appendChild(row);
+  });
+  if (!pieces.length) {
+    const empty = document.createElement('p');
+    empty.className = 'map-piece-empty';
+    empty.textContent = 'None';
+    list.appendChild(empty);
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 // The size and two offsets as number boxes, redrawing the map as they move. The
@@ -276,13 +343,6 @@ function buildGridControls(map) {
   show.appendChild(cb);
   show.appendChild(sp);
   wrap.appendChild(show);
-
-  const hint = document.createElement('p');
-  hint.className = 'shop-price-note';
-  hint.textContent = 'Pick the Grid tool on the map, then drag a corner or an edge of the map to grow '
-    + 'or shrink the squares — the far side stays put — and drag anywhere else to slide them. '
-    + 'Creatures snap to these squares whether the grid is drawn or not. Hex grids are not built yet.';
-  wrap.appendChild(hint);
 
   return wrap;
 }

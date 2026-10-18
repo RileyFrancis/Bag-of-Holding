@@ -47,6 +47,7 @@
 .ico-setting { -webkit-mask-image: url('../../img/icon/setting.png'); mask-image: url('../../img/icon/setting.png'); }
 .ico-show    { -webkit-mask-image: url('../../img/icon/show.png');    mask-image: url('../../img/icon/show.png'); }
 .ico-sun     { -webkit-mask-image: url('../../img/icon/sun.png');     mask-image: url('../../img/icon/sun.png'); }
+.ico-trash   { -webkit-mask-image: url('../../img/icon/trash.png');   mask-image: url('../../img/icon/trash.png'); }
 
 /* The plus is a hairline cross that reads thin next to bold button text, and
    the d20's engraved facets need room to separate — as do the treasure map's

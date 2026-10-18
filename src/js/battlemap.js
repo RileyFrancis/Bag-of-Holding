@@ -358,6 +358,14 @@ function removePiece(mapId, kind, id) {
   mapRef(mapId, kind + '/' + id).remove();
 }
 
+// When a piece was placed, read back out of its id (newPieceId() leads with
+// Date.now() in base 36) — so every piece already on a map has one, with no
+// field to add or migrate. 0 for an id that doesn't parse.
+function pieceTime(piece) {
+  const m = /^[a-z]+_([0-9a-z]+)_/.exec(String(piece?.id ?? ''));
+  return m ? parseInt(m[1], 36) : 0;
+}
+
 function clearMapPieces(mapId, kind, label) {
   if (!canEditMap() || !firebaseDb) return;
   if (!confirm(`Remove every ${label} from this map?`)) return;

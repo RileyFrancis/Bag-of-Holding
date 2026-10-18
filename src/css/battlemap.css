@@ -392,8 +392,59 @@
 }
 .map-grid-row .shop-price-input { width: 62px; }
 
-.map-clear-row { display: flex; flex-wrap: wrap; gap: 4px; }
-.map-clear-row .btn-sm { flex: 1; min-width: 78px; }
+/* The Maps pane's list of what is on the board — one section per kind, a bin
+   beside each heading. A row's --pc is the colour the piece is drawn in on the
+   map (mapPieceColor()), so the swatch matches the halo hovering it draws. */
+.map-piece-hdr { display: flex; align-items: center; gap: 6px; }
+.map-piece-clear {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color 0.15s, background 0.15s;
+}
+.map-piece-clear:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.map-piece-clear:disabled { opacity: 0.35; cursor: default; }
+
+.map-piece-list { display: flex; flex-direction: column; gap: 1px; }
+.map-piece {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 3px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text);
+  transition: background 0.15s;
+}
+.map-piece:hover { background: color-mix(in srgb, var(--pc) 16%, transparent); }
+.map-piece-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--pc);
+  background: color-mix(in srgb, var(--pc) 30%, transparent);
+}
+.map-piece-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-piece-sub { flex-shrink: 0; font-size: 10px; color: var(--text-dim); }
+.map-piece-x { flex-shrink: 0; font-size: 10px; color: var(--danger); opacity: 0; transition: opacity 0.15s; }
+.map-piece:hover .map-piece-x { opacity: 1; }
+.map-piece-empty { font-size: 10px; color: var(--text-dim); padding: 2px 6px; }
 
 /* ─── THE IMPORT DIALOG ──────────────────────────────────── */
 #map-modal-preview {

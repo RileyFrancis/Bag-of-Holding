@@ -404,6 +404,7 @@ function drawBattlemap() {
   drawMapFog(ctx, b);
   if (canEditMap()) drawMapMasks(ctx, map);
   drawMapTokens(ctx, map);
+  drawMapHighlight(ctx, map);
   drawMapDrawing(ctx);
   if (mapTool === 'grid' && canEditMap()) drawGridHandles(ctx, map);
 
@@ -1092,17 +1093,69 @@ function commitMapDrawing(map, d) {
   fogDirty = true;
 }
 
-// Topmost first — a fog edit sits over a wall on screen, so it comes off first.
-// Elevation sits between the two: it is usually the biggest region on the
-// board, background to a wall drawn over it, but still worth reaching before
-// scrolling all the way down to a wall underneath.
+// Newest first, whatever its kind — where a wall, a fog edit and a height zone
+// overlap, the one drawn last comes off first (pieceTime()), so an eraser
+// click undoes the stack in the order it was built.
 function eraseMapPieceAt(map, w) {
-  const mask = mapMasks(map).slice().reverse().find(m => pointInWall(w.x, w.y, m));
-  if (mask) { removePiece(map.id, 'masks', mask.id); fogDirty = true; return; }
-  const zone = mapElevationZones(map).slice().reverse().find(z => pointInWall(w.x, w.y, z));
-  if (zone) { removePiece(map.id, 'elevation', zone.id); fogDirty = true; return; }
-  const wall = mapWalls(map).slice().reverse().find(o => pointInWall(w.x, w.y, o));
-  if (wall) { removePiece(map.id, 'walls', wall.id); fogDirty = true; }
+  let best = null;
+  [['masks', mapMasks(map)], ['elevation', mapElevationZones(map)], ['walls', mapWalls(map)]].forEach(([kind, list]) => {
+    list.forEach(p => {
+      if (!pointInWall(w.x, w.y, p)) return;
+      if (!best || pieceTime(p) > pieceTime(best.piece)) best = { kind, piece: p };
+    });
+  });
+  if (!best) return;
+  removePiece(map.id, best.kind, best.piece.id);
+  fogDirty = true;
+}
+
+// The Maps pane's piece list (battlemap-library.js) points at one piece on the
+// board while it is hovered — { kind, id } or null. Session only.
+let mapHighlight = null;
+
+function setMapHighlight(kind, id) {
+  const same = kind && mapHighlight && mapHighlight.kind === kind && mapHighlight.id === id;
+  if (same || (!kind && !mapHighlight)) return;
+  mapHighlight = kind ? { kind, id } : null;
+  drawBattlemap();
+}
+
+// The colour each piece is drawn in on the board, so the pane's swatch and the
+// hover halo match what the GM is looking at.
+function mapPieceColor(kind, piece) {
+  if (kind === 'tokens') return hostilityColor(piece.hostility);
+  if (kind === 'walls') return MAP_MODE_TONE.wall;
+  if (kind === 'masks') return MAP_MODE_TONE[piece.mode === 'hide' ? 'fog-hide' : 'fog-show'];
+  const h = elevZoneHeight(piece);
+  return ELEVATION_TONE[h > 0 ? 'up' : h < 0 ? 'down' : 'neutral'].stroke;
+}
+
+// A glowing outline round the hovered piece, over everything else. A piece
+// that went away while hovered (removed from the list) simply draws nothing.
+function drawMapHighlight(ctx, map) {
+  if (!mapHighlight) return;
+  const piece = (map[mapHighlight.kind] || {})[mapHighlight.id];
+  if (!piece) return;
+  const color = mapPieceColor(mapHighlight.kind, piece);
+  ctx.save();
+  ctx.beginPath();
+  if (mapHighlight.kind === 'tokens') {
+    const at = tokenDrawPos(piece);
+    const r = tokenRadius(map, piece);
+    ctx.arc(at.x, at.y, r + Math.max(4 / mapCam.scale, r * 0.28), 0, Math.PI * 2);
+  } else {
+    traceMapShape(ctx, piece);
+  }
+  ctx.strokeStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14;
+  ctx.lineWidth = 7 / mapCam.scale;
+  ctx.globalAlpha = 0.45;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 2.5 / mapCam.scale;
+  ctx.stroke();
+  ctx.restore();
 }
 
 // =============================================================================
@@ -1133,7 +1186,7 @@ const MAP_MODES = [
   { id: 'fog-show',  label: 'Reveal',      hint: 'The players can always see the region' },
   { id: 'elev',      label: 'Height',      hint: 'A raised or lowered zone — set its height (ft from the base map) in the box, or right-click a zone to change it' },
 ];
-const MAP_ERASE_TOOL = { id: 'erase', label: 'Erase', hint: 'Click, or hold and drag, over a wall, a fog edit, or an elevation region to remove it' };
+const MAP_ERASE_TOOL = { id: 'erase', label: 'Erase', hint: 'Click, or hold and drag, over a wall, a fog edit, or an elevation region to remove it — the most recently drawn one first where they overlap' };
 
 // The height a freshly drawn Height zone starts at — only on the strip while the
 // Height tool is up. Existing zones are re-set by right-clicking them on the map

@@ -118,7 +118,7 @@ that owns the element wins.
 | File | Contents |
 |------|----------|
 | `tokens.css` | Both palettes, `--cell` / `--cols`, and the map of this set |
-| `base.css` | Reset, body, the grain overlay, type, form controls, buttons |
+| `base.css` | Reset, body, type, form controls, buttons |
 | `icons.css` | The icon PNGs as `.ico` glyphs, masked over `currentColor` |
 | `layout.css` | The app shell: header, weight bar, main split, panel resizing |
 | `inventory.css` | The torn sheet, grid cells, placed items, the drag ghost |

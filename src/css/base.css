@@ -14,21 +14,6 @@ html, body {
   overflow: hidden;
 }
 
-/* Parchment grain — a fixed overlay so every surface shares one paper
-   texture. Sits below modals (z 500+) and the drag ghost (z 1000). */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 4;
-  opacity: var(--grain-op);
-  background-image:
-    repeating-linear-gradient(0deg,   var(--grain-a) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(90deg,  var(--grain-b) 0 1px, transparent 1px 7px),
-    repeating-linear-gradient(115deg, var(--grain-a) 0 1px, transparent 1px 11px);
-}
-
 /* ─── LOADING SCREEN ─────────────────────────────────────── */
 /* Sits above everything (even modals — nothing else is up yet) while the
    boot-time blocking loads run. Faded and removed by hideLoadingScreen() in

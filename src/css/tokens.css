@@ -105,10 +105,7 @@
      scores 1.12 against the ground. */
   --on-bg: var(--paper);
 
-  /* Parchment grain + leather emboss */
-  --grain-a:    rgba(94, 66, 26, 0.055);
-  --grain-b:    rgba(120, 88, 40, 0.035);
-  --grain-op:   0.9;
+  /* Leather emboss */
   --emboss-hi:  rgba(255, 250, 235, 0.75);
   --emboss-lo:  rgba(90, 62, 26, 0.18);
   --shadow-soft: 0 2px 8px rgba(86, 60, 24, 0.18);
@@ -233,9 +230,6 @@
   --on-accent:   var(--ink);
   --danger:      #d9584f;
 
-  --grain-a:    rgba(255, 226, 170, 0.030);
-  --grain-b:    rgba(0, 0, 0, 0.16);
-  --grain-op:   0.8;
   --emboss-hi:  rgba(255, 228, 178, 0.10);
   --emboss-lo:  rgba(0, 0, 0, 0.45);
   --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.5);

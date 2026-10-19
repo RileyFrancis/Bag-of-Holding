@@ -131,10 +131,6 @@ document.getElementById('how-to-btn').addEventListener('click', () => {
   hideModal('settings-modal');
   showModal('how-to-modal');
 });
-document.getElementById('about-btn').addEventListener('click', () => {
-  hideModal('settings-modal');
-  showModal('about-modal');
-});
 document.querySelectorAll('.settings-back-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const modal = btn.closest('.modal');

@@ -519,6 +519,7 @@ function renderSpellSheetContent() {
   slotsBox.textContent = '';
   listBox.textContent = '';
   pickerBox.textContent = '';
+  hideSpellHoverCard(); // its row is gone, and no pointerleave will say so
 
   // Slots are drawn from the RAW class list, not `entries` — an Eldritch
   // Knight/Arcane Trickster contributes a real slot count via
@@ -719,7 +720,6 @@ function spellPickerCard(spell, known, readOnly, metaText) {
   card.type = 'button';
   card.className = 'spell-pick-card' + (known ? ' known' : '');
   card.disabled = readOnly;
-  card.title = spell.description || spell.name;
 
   const dot = document.createElement('span');
   dot.className = 'spell-pick-dot';
@@ -736,8 +736,65 @@ function spellPickerCard(spell, known, readOnly, metaText) {
   const icon = schoolIcon(spell.school);
   if (icon) card.appendChild(icon);
   card.addEventListener('click', () => toggleKnownSpell(spell.id));
+  card.addEventListener('pointerenter', () => scheduleSpellHoverCard(spell, card));
+  card.addEventListener('pointerleave', hideSpellHoverCard);
   return card;
 }
+
+// =============================================================================
+// THE HOVER CARD
+// =============================================================================
+// Hovering a row of Available Spells shows the spell in full — the same card
+// Spells Known draws, plus its level and classes, which a known spell gets from
+// its heading instead. Out beside the sidebar, at the row's height, so the list
+// stays readable under it. A short delay, not the item tooltip's 1.2 s: this is
+// a list read by running the pointer down it.
+const SPELL_HOVER_DELAY_MS = 300;
+const spellHoverEl = document.getElementById('spell-hover-card');
+let spellHoverTimer = null;
+
+function scheduleSpellHoverCard(spell, row) {
+  hideSpellHoverCard();
+  spellHoverTimer = setTimeout(() => showSpellHoverCard(spell, row), SPELL_HOVER_DELAY_MS);
+}
+
+function hideSpellHoverCard() {
+  clearTimeout(spellHoverTimer);
+  spellHoverTimer = null;
+  spellHoverEl.classList.add('hidden');
+  spellHoverEl.textContent = '';
+}
+
+function showSpellHoverCard(spell, row) {
+  if (!row.isConnected) return; // the list was redrawn under the timer
+  const card = spellCard(spell);
+  const line = document.createElement('div');
+  line.className = 'spell-hover-level';
+  line.textContent = [
+    spell.level === 0 ? 'Cantrip' : spellLevelLabel(spell.level),
+    spell.school,
+    spell.classes.join(', '),
+  ].filter(Boolean).join(' · ');
+  card.querySelector('.spell-card-head').after(line);
+  spellHoverEl.textContent = '';
+  spellHoverEl.appendChild(card);
+  spellHoverEl.classList.remove('hidden');
+
+  // Left of the sidebar, tops aligned with the row, kept inside the window.
+  const pad = 8;
+  const r = row.getBoundingClientRect();
+  const panel = row.closest('#sidebar')?.getBoundingClientRect() ?? r;
+  const w = spellHoverEl.offsetWidth;
+  const h = spellHoverEl.offsetHeight;
+  spellHoverEl.style.left = Math.max(pad, panel.left - w - pad) + 'px';
+  spellHoverEl.style.top = Math.max(pad, Math.min(r.top, window.innerHeight - h - pad)) + 'px';
+}
+
+// The card isn't anchored to anything that moves, so a scroll would leave it
+// beside the wrong row; and C/I/S can switch the view out from under it.
+document.addEventListener('scroll', hideSpellHoverCard, { capture: true });
+document.addEventListener('keydown', hideSpellHoverCard);
+window.addEventListener('resize', hideSpellHoverCard);
 
 function spellNote(text) {
   const p = document.createElement('p');

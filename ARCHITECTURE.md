@@ -11,6 +11,7 @@ as-is. Everything below follows from that.
 
 ```
 index.html              Static shell — every DOM element referenced by JS, with stable IDs
+about.html              The static /about page — plain HTML for search engines, no app scripts
 VERSION                 The app version, one line — bumped by hand
 _redirects              Cloudflare Pages: /home, /character, /campaign all serve index.html
 .env                    Firebase credentials for local dev (gitignored, optional)
@@ -146,6 +147,7 @@ that owns the element wins.
 | `appearance.css` | The Appearance page's colour rows and the hue wheel |
 | `auth.css` | The sign-in modal, the Settings account row, cloud conflict |
 | `home.css` | The home button, the roster page, and the character cards |
+| `about.css` | about.html only — not linked from index.html |
 
 ## The grid
 

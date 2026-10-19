@@ -13,6 +13,8 @@ import os
 import sys
 
 ROUTES = {'/home', '/character', '/campaign'}
+# Static pages served without their extension, as Cloudflare Pages does.
+PAGES = {'/about': '/about.html'}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -29,11 +31,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 return
             self.path = '/index.html'
+        elif path in PAGES:
+            self.path = PAGES[path]
         super().do_GET()
 
     def do_HEAD(self):
-        if self.path.partition('?')[0] in ROUTES:
+        path = self.path.partition('?')[0]
+        if path in ROUTES:
             self.path = '/index.html'
+        elif path in PAGES:
+            self.path = PAGES[path]
         super().do_HEAD()
 
 

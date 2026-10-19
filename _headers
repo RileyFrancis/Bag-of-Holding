@@ -1,0 +1,11 @@
+# Cloudflare Pages. index.html is always revalidated, but by default Pages lets a
+# browser keep everything else for 4 hours — so right after a deploy a returning
+# visitor gets the new page with their cached old scripts, and a renamed element
+# id is enough to throw at boot. The page and its code must change together:
+# `no-cache` still stores them, it just asks first (a cheap 304 via the ETag).
+/src/*
+  Cache-Control: no-cache
+/data/*
+  Cache-Control: no-cache
+/VERSION
+  Cache-Control: no-cache

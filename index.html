@@ -1647,14 +1647,16 @@
         </span>
         <span class="settings-nav-chev">&#8250;</span>
       </button>
-      <button id="about-btn" class="settings-nav-btn" type="button">
+      <!-- A link, not a modal: /about is a static page (about.html) so search
+           engines can read it. A new tab, so a seated session isn't dropped. -->
+      <a id="about-btn" class="settings-nav-btn" href="about" target="_blank" rel="noopener">
         <span class="settings-nav-icon">&#10070;</span>
         <span class="settings-nav-label">
           <span class="settings-nav-title">About</span>
           <span class="settings-nav-sub">About this project</span>
         </span>
-        <span class="settings-nav-chev">&#8250;</span>
-      </button>
+        <span class="settings-nav-chev">&#8599;</span>
+      </a>
     </div>
 
     <!-- The theme picker and the colour wheel now live on the Appearance page
@@ -1791,22 +1793,11 @@
   </div>
 </div>
 
-<!-- ===== ABOUT MODAL ===== -->
-<div id="about-modal" class="modal hidden">
-  <div class="modal-box">
-    <h2>About</h2>
-    <div class="info-body">
-      <p class="info-placeholder">Project information coming soon.</p>
-    </div>
-    <div class="modal-footer">
-      <button class="settings-back-btn btn-sm">&#8249; Back</button>
-      <button class="cancel-btn btn-sm">Close</button>
-    </div>
-  </div>
-</div>
-
 <!-- ===== ITEM TOOLTIP ===== -->
 <div id="item-tooltip" class="hidden"></div>
+<!-- The full spell card for a hovered row of Available Spells — built by
+     showSpellHoverCard() in src/js/spells.js. -->
+<div id="spell-hover-card" class="hidden" role="tooltip"></div>
 <!-- The Statuses section's picker — rows built by src/js/statuses.js. -->
 <div id="status-picker" class="hidden" role="menu"></div>
 

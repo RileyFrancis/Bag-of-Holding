@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About Bag of Holding - Free D&amp;D 5e Inventory &amp; Character Sheet</title>
+  <link rel="icon" href="img/favicon/favicon.ico">
+  <!-- A real page of its own, not a route of index.html: this is the text a
+       search engine can actually read, so it must be static HTML, never built
+       by a script. Pages serves about.html at /about (tools/serve.py locally).
+       One path segment, so the relative asset paths still resolve from the
+       root — see *URLs* in CLAUDE.md. -->
+  <link rel="canonical" href="https://bagofholding.io/about">
+  <meta name="description" content="Bag of Holding is a free, browser-based D&amp;D 5.5e character and campaign manager for character sheets, spellbooks, dice, shops, spatial inventory, and battle maps for your party.">
+  <meta name="theme-color" content="#8a5a1c">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Bag of Holding">
+  <meta property="og:title" content="About Bag of Holding">
+  <meta property="og:description" content="A free grid inventory, character sheet, spellbook and party table for your TTRPG characters.">
+  <meta property="og:url" content="https://bagofholding.io/about">
+  <meta property="og:image" content="https://bagofholding.io/img/og-preview.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Bag of Holding — a d20 on parchment">
+  <meta name="twitter:card" content="summary_large_image">
+  <!-- The same before-first-paint theme + accent resolution as index.html's
+       <head>; keep the two in step. -->
+  <script>
+    (function () {
+      var pref = null;
+      try { pref = localStorage.getItem('dnd_inventory_theme'); } catch (e) { /* private mode */ }
+      var dark = pref === 'dark' ||
+        ((!pref || pref === 'system') &&
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      try {
+        var c = JSON.parse(localStorage.getItem('dnd_inventory_colors'));
+        var v = c && c.vars && c.vars[dark ? 'dark' : 'light'];
+        if (v) for (var k in v) document.documentElement.style.setProperty(k, v[k]);
+      } catch (e) { /* absent or unreadable — the tokens' own gold stands */ }
+    })();
+  </script>
+  <!-- tokens first, as in index.html. inventory.css is here for `.paper-sheet`,
+       home.css for the banner and the sheet's width. -->
+  <link rel="stylesheet" href="src/css/tokens.css">
+  <link rel="stylesheet" href="src/css/base.css">
+  <link rel="stylesheet" href="src/css/inventory.css">
+  <link rel="stylesheet" href="src/css/home.css">
+  <link rel="stylesheet" href="src/css/about.css">
+</head>
+<body>
+
+<!-- The torn edge of `.paper-sheet` — a copy of index.html's filter. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <filter id="paper-fray" x="-6%" y="-6%" width="112%" height="112%"
+            color-interpolation-filters="sRGB" filterUnits="objectBoundingBox">
+      <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="5"
+                    seed="9" result="fray-noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="fray-noise" scale="34"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+
+<div id="about-screen">
+  <header class="home-banner">
+    <a class="home-banner-title" href="home">Bag of Holding</a>
+    <a class="btn-primary" href="home">Open the app</a>
+  </header>
+
+  <main class="home-inner paper-sheet about-page">
+    <div class="home-header">
+      <h1>About Bag of Holding</h1>
+    </div>
+
+    <p class="about-lede">
+      Bag of Holding is a free, browser-based D&amp;D 5.5e character and campaign manager for character sheets, spellbooks, dice, shops, spatial inventory, and battle maps for your party.
+    </p>
+
+    <h2>What it does</h2>
+    <ul>
+      <li><strong>Grid inventory.</strong> Drag, rotate and pack items into a
+        backpack grid. Containers have their own interiors. It will track the weight for you automatically.</li>
+      <li><strong>Character sheet.</strong> Abilities, skills, combat stats,
+        class features and species traits, with multiclassing, statuses, and
+        sections you can drag into your own layout.</li>
+      <li><strong>Spellbook.</strong> Spell slots worked out from the
+        multiclass spellcaster rules, Warlock Pact Magic kept separate, and a
+        searchable list of spells to pick from.</li>
+      <li><strong>Dice.</strong> Build a handful of mixed dice, roll with
+        advantage or disadvantage, and share rolls with the table.</li>
+      <li><strong>Coins and shops.</strong> A coin purse, plus shops the GM
+        stocks and reveals for the party to buy from.</li>
+      <li><strong>Campaigns.</strong> A GM and their players share one table:
+        live presence, chat, and each other's character sheets.</li>
+      <li><strong>Battle maps.</strong> Import a map, line a grid up on it, drop
+        creatures on the board, track initiative, and let fog of war hide
+        what the party can't see.</li>
+      <li><strong>Homebrew.</strong> Write your own items, classes, subclasses,
+        species and spells, and enable them for one character or a whole
+        campaign.</li>
+      <li><strong>Light and dark themes</strong>, plus an accent colour of your
+        choice.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      There's nothing to install. The app runs in your browser and works fully
+      signed out, saving your characters to that browser as you go. A free
+      account adds two things: <strong>cloud save</strong>, so your characters
+      follow you between devices, and <strong>party play</strong>, so you can
+      run or join a campaign with your group!
+    </p>
+
+    <h2>Who makes it</h2>
+    <p>
+      Bag of Holding is an open-source project by Riley Francis. The source code is on
+      <a href="https://github.com/RileyFrancis/TTRPG-Inventory-Manager" rel="noopener">GitHub</a>,
+      where bug reports and suggestions are welcome.
+    </p>
+
+    <h2>License and credits</h2>
+    <p>
+      The project's own code and content are licensed under
+      <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener">Creative
+      Commons Attribution-NonCommercial-ShareAlike 4.0</a> (CC BY-NC-SA 4.0).
+      Some icons are from <a href="https://www.flaticon.com/" rel="noopener">Flaticon</a>
+      and are credited on the <a href="icons.html">icon attributions</a> page.
+    </p>
+    <p class="about-fine">
+      D&amp;D is a trademark of Wizards of the Coast. Bag of Holding is an
+      unofficial fan project, not affiliated with or endorsed by them.
+    </p>
+
+    <p class="about-cta">
+      <a class="btn-primary" href="home">Open Bag of Holding</a>
+      <span id="about-version" class="about-fine"></span>
+    </p>
+  </main>
+</div>
+
+<script>
+  // Same VERSION file as the app's footer (main.js); absent, the line stays blank.
+  fetch('VERSION')
+    .then(r => (r.ok ? r.text() : ''))
+    .then(v => {
+      v = v.trim();
+      if (v && v[0] !== '<') document.getElementById('about-version').textContent = 'Version ' + v;
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

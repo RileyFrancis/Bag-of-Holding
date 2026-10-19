@@ -1,0 +1,64 @@
+/* ============================================================
+   about.css — the static /about page (about.html), not the app
+   ============================================================ */
+
+/* base.css pins the app shell to the window; this page is a document and
+   scrolls like one. The desk and torn sheet are the home screen's. */
+html, body { height: auto; overflow: auto; }
+body { background: var(--desk); }
+
+#about-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-banner a.home-banner-title { text-decoration: none; }
+.about-page a.btn-primary,
+.home-banner a.btn-primary { text-decoration: none; }
+
+/* ─── THE PAGE'S TEXT ────────────────────────────────────── */
+/* Reading size, not the app's 13px — this page is nothing but prose. */
+.about-page {
+  max-width: 760px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.about-page h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 28px 0 8px;
+}
+
+.about-page p { margin-bottom: 12px; }
+.about-page ul { margin: 0 0 12px 20px; }
+.about-page li { margin-bottom: 6px; }
+.about-page a:not(.btn-primary) { color: var(--accent); }
+
+.about-lede { font-size: 16px; }
+.about-fine { font-size: 12px; color: var(--text-dim); }
+
+.about-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
+/* The torn sheet's 62px margin is too much on a phone. */
+@media (max-width: 600px) {
+  .about-page {
+    width: calc(100% - 64px);
+    margin: 40px auto;
+    padding: 20px 4px 40px;
+  }
+  .home-banner { padding: 10px 16px; }
+}

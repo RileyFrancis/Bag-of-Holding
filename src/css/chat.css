@@ -204,6 +204,15 @@
   overflow-wrap: anywhere;
 }
 
+/* A spell cast (castMessageBody() in chat.js): the roll card's frame, with the
+   school's glyph where the die would be. */
+.chat-cast { padding-top: 8px; padding-bottom: 8px; }
+.chat-cast-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
 /* A natural 20 and a natural 1, recoloured whole — and the detail line says
    which in words, so the colour is never carrying the fact by itself. */
 .chat-roll.crit {

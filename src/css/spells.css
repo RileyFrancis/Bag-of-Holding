@@ -20,6 +20,22 @@
 #inventory-panel.spell-view #character-sheet { display: none; }
 
 /* ─── SPELL SLOTS ─────────────────────────────────────────── */
+/* The heading's rule carried by the row instead, so the rest buttons sit on
+   the line with it rather than under it. */
+.spell-slots-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 20px 0 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.spell-slots-head .sheet-h {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
 .spell-slots {
   display: flex;
   flex-wrap: wrap;
@@ -53,6 +69,36 @@
   font-weight: 700;
   color: var(--accent);
 }
+.spell-slot-of {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.spell-slot-tile.spent .spell-slot-count { color: var(--text-dim); }
+
+/* One per slot, filled while unspent — clicking one is the manual correction
+   (spellSlotTile() in spells.js). */
+.spell-slot-pips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  max-width: 80px;
+  margin-top: 2px;
+}
+.spell-slot-pip {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.12s;
+}
+.spell-slot-pip.full { background: var(--accent); }
+.spell-slot-pip:hover:not(:disabled) { transform: scale(1.2); }
+.spell-slot-pip:disabled { cursor: default; }
 
 /* ─── THE SPELL LIST ──────────────────────────────────────── */
 .spell-level-heading {
@@ -75,6 +121,137 @@
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+/* A Spells Known card is the cast button — click casts, a hold upcasts. */
+.spell-card.castable {
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.spell-card.castable:hover,
+.spell-card.castable:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-soft);
+  outline: none;
+}
+/* Nothing left to cast it with: still a card worth reading, just quieter. */
+.spell-card.castable.no-slots { opacity: 0.6; }
+.spell-card.castable.no-slots:hover { border-color: var(--border2); }
+
+.spell-card.cast { animation: spell-cast-flash 650ms ease-out; }
+.spell-card.no-slot { animation: spell-no-slot 380ms ease; }
+@keyframes spell-cast-flash {
+  from { box-shadow: 0 0 0 3px var(--accent), var(--shadow-soft); }
+  to   { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes spell-no-slot {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* ─── THE UPCAST WHEEL ────────────────────────────────────── */
+/* A ring of slot levels around the cursor, opened by holding a press on a
+   Spells Known card — the advantage wheel's sibling (dice.css), with the same
+   rule: it never takes a pointer event, the gesture is driven by the pointer
+   captured on the card. */
+#cast-wheel {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  pointer-events: none;
+  /* Read back by openCastWheel() to place the options and keep the ring on
+     screen — declared once, here. */
+  --cast-r: 64px;   /* origin to the middle of each option */
+  --cast-opt: 46px; /* one option's diameter */
+}
+.cast-wheel-anchor {
+  position: absolute;
+  left: var(--wx, 50%);
+  top: var(--wy, 50%);
+  width: 0;
+  height: 0;
+}
+.cast-wheel-opt {
+  position: absolute;
+  left: calc(var(--ox) - var(--cast-opt) / 2);
+  top: calc(var(--oy) - var(--cast-opt) / 2);
+  width: var(--cast-opt);
+  height: var(--cast-opt);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  box-shadow: var(--shadow-deep);
+  transition: color 0.12s, background 0.12s, border-color 0.12s, transform 0.14s ease;
+  animation: cast-wheel-in 160ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+.cast-wheel-level {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.cast-wheel-sub {
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+.cast-wheel-opt.pact { border-style: dashed; }
+.cast-wheel-opt.spent { opacity: 0.45; }
+.cast-wheel-opt.active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+.cast-wheel-opt.spent.active {
+  color: var(--paper);
+  background: var(--danger);
+  border-color: var(--danger);
+  opacity: 0.8;
+}
+/* What letting go will do, in words, in the middle of the ring. */
+.cast-wheel-caption {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  max-width: 96px;
+  padding: 3px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: var(--shadow-soft);
+}
+#cast-wheel.blocked .cast-wheel-caption { color: var(--danger); }
+
+/* Out of the pressed point, like the advantage wheel's two options. */
+@keyframes cast-wheel-in {
+  from { opacity: 0; transform: translate(calc(var(--ox) * -0.4), calc(var(--oy) * -0.4)) scale(0.8); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cast-wheel-opt { animation: none; }
+  .spell-card.no-slot { animation: none; }
+}
+
 .spell-card-head {
   display: flex;
   align-items: baseline;

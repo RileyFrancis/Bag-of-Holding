@@ -347,6 +347,17 @@ string the same way `class-features.js`'s `featureDescCache` is, since
   `renderSpellSheetContent()` directly, the same signature-bypass
   `toggleKnownSpell()` uses — neither changes classes/level, which is all
   `renderSpellSheet()`'s gate watches.
+- **Casting** (spells.js's CASTING section): a click on a Spells Known card
+  casts from the cheapest slot with one left (ordinary pool before Pact Magic
+  at the same level); a held press opens the upcast wheel, one option per
+  slot level ≥ the spell's in either pool. **`character.spellSlotsUsed` stores
+  slots *spent* per level, never slots left** — the maximum is always read
+  off the class tables, so a level-up's new slot arrives fresh. Slot usage is
+  in `spellSheetSignature()` so a synced cast redraws for viewers. A cast is a
+  chat message (`kind: 'cast'`, pushed by `postCastToChat()`, drawn by
+  chat.js's `castMessageBody()`), with `text` as the plain-line fallback.
+  Gated by `isReadOnly()` (a cast writes, unlike a roll). Long Rest refills
+  both pools, Short Rest Pact Magic only; a slot pip is the manual fix.
 - **Hiding a class or school never touches `knownSpells`** — same "filtered,
   not deleted" rule as a reclass (above): `known` is always computed from the
   full, unfiltered `available` pool, so a spell you've already picked keeps

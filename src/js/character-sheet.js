@@ -83,6 +83,8 @@ function defaultSheetFields() {
     // The written sections — Markdown, rendered by sheet-prose.js; plain strings here.
     backstory: '', appearance: '',
     knownSpells: [], // ids picked from the Spell Sheet's Available Spells panel — see spells.js
+    // Slots SPENT per spell level (index 0 = 1st), never slots left — see spells.js's casting.
+    spellSlotsUsed: { slots: [], pact: [] },
     statuses: [],    // ids from data/statuses.json the player has picked — see statuses.js
   };
 }

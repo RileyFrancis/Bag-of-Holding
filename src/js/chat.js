@@ -8,7 +8,8 @@
 // `subscribeToParty`); nothing about it is in the save file. `name` is stamped
 // at send time, not looked up when drawn. `textContent`, never innerHTML — this
 // is the one pane where another player's typing lands in your browser. A roll is
-// a message too (`kind: 'roll'`, drawn as a card by `rollMessageBody()`).
+// a message too (`kind: 'roll'`, drawn as a card by `rollMessageBody()`), and
+// so is a spell cast (`kind: 'cast'`, `castMessageBody()`).
 // See CLAUDE.md § Chat.
 
 // Only the tail is subscribed — a year-old campaign should not cost a year of
@@ -152,10 +153,11 @@ function renderChat() {
     const sameSpeaker = m.uid === lastUid && Number(m.at) - lastAt < 300000;
 
     const isRoll = m.kind === 'roll' && !!m.roll;
+    const isCast = m.kind === 'cast' && !!m.cast;
 
     const row = document.createElement('div');
     row.className = 'chat-msg' + (m.uid === me ? ' own' : '') +
-                    (sameSpeaker ? ' run-on' : '') + (isRoll ? ' roll' : '');
+                    (sameSpeaker ? ' run-on' : '') + (isRoll ? ' roll' : '') + (isCast ? ' cast' : '');
 
     if (!sameSpeaker) {
       const head = document.createElement('div');
@@ -176,7 +178,7 @@ function renderChat() {
     // A roll gets a card of its own, built from the payload never the sentence.
     // Everything else: textContent, never innerHTML — a chat line did not ask to
     // be formatted, so it is not parsed at all.
-    row.appendChild(isRoll ? rollMessageBody(m) : plainMessageBody(m));
+    row.appendChild(isRoll ? rollMessageBody(m) : isCast ? castMessageBody(m) : plainMessageBody(m));
 
     chatLogEl.appendChild(row);
     lastUid = m.uid;
@@ -225,6 +227,40 @@ function rollMessageBody(m) {
 
   text.append(label, detail);
   card.append(die, total, text);
+  return card;
+}
+
+// A cast (spells.js's `postCastToChat()`): the school's glyph where the roll
+// card has its die, the spell's name, and who cast it at what level.
+function castMessageBody(m) {
+  const c = m.cast;
+  const level = Number(c.level) || 0;
+
+  const card = document.createElement('div');
+  card.className = 'chat-roll chat-cast';
+
+  const icon = schoolIcon(c.school);
+  if (icon) {
+    icon.classList.add('chat-cast-icon');
+    card.appendChild(icon);
+  }
+
+  const text = document.createElement('span');
+  text.className = 'chat-roll-text';
+
+  const label = document.createElement('span');
+  label.className = 'chat-roll-label';
+  label.textContent = String(c.spell ?? 'a spell');
+
+  const detail = document.createElement('span');
+  detail.className = 'chat-roll-detail';
+  detail.textContent = [
+    String(c.character ?? '').trim(),
+    castLevelText(level, Number(c.baseLevel) || level, !!c.pact),
+  ].filter(Boolean).join(' · ');
+
+  text.append(label, detail);
+  card.appendChild(text);
   return card;
 }
 

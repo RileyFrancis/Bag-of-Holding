@@ -520,7 +520,15 @@
            that character has not turned it off in Character Setup. -->
       <div id="spell-sheet">
         <div class="sheet-scroll paper-sheet">
-          <h3 class="sheet-h">Spell Slots</h3>
+          <div class="spell-slots-head">
+            <h3 class="sheet-h">Spell Slots</h3>
+            <!-- Short Rest only refills Pact Magic, so it only shows beside a
+                 Warlock pool. Both hidden with no slots at all. -->
+            <button id="spell-short-rest" class="btn-sm hidden" type="button"
+                    title="Refill Pact Magic slots">Short Rest</button>
+            <button id="spell-long-rest" class="btn-sm hidden" type="button"
+                    title="Refill every spell slot">Long Rest</button>
+          </div>
           <div id="spell-slots" class="spell-slots"></div>
           <h3 class="sheet-h">Spells Known</h3>
           <div id="spell-list" class="spell-list"></div>
@@ -947,6 +955,15 @@
      options, one either side, and sliding onto one and letting go rolls that
      way. Disadvantage is on the left and advantage on the right because that is
      where they sit on a number line. Positioned from --wx / --wy in dice.js. -->
+<!-- The upcast wheel: held on a Spells Known card, one option per slot level
+     the spell could be cast with, in a ring around the cursor. Options are
+     built by openCastWheel() in spells.js; the hub caption names the pick. -->
+<div id="cast-wheel" class="hidden">
+  <div class="cast-wheel-anchor">
+    <div class="cast-wheel-caption"><!-- written by paintCastWheel() --></div>
+  </div>
+</div>
+
 <div id="roll-wheel" class="hidden">
   <div class="roll-wheel-anchor">
     <!-- Short on the buttons, spelled out in the caption under the hub. The

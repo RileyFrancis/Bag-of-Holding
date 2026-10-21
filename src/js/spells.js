@@ -493,7 +493,8 @@ function spellSheetSignature() {
   // Subclass is part of the signature — the Eldritch Knight/Arcane Trickster
   // check in `multiclassCasterLevel()` reads it, same as `classFeaturesSig`.
   return classEntriesOf(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟') +
-    '‖' + homebrewUsableKey(); // a homebrew spell enabled or edited under the sheet
+    '‖' + homebrewUsableKey() + // a homebrew spell enabled or edited under the sheet
+    '‖' + JSON.stringify(c.spellSlotsUsed ?? null); // a cast, synced in from whoever made it
 }
 
 function renderSpellSheet() {
@@ -530,14 +531,20 @@ function renderSpellSheetContent() {
   const pact = pactMagicSlots(character);
   const hasTotals = totals.some(n => n > 0);
   const hasPact = !!pact && pact.some(n => n > 0);
+  const readOnly = isReadOnly();
 
   if (hasTotals) {
-    totals.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count)); });
+    totals.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count, 'slots', readOnly)); });
   }
   if (hasPact) {
     if (hasTotals) slotsBox.appendChild(spellbookGroupHeading('Pact Magic'));
-    pact.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count)); });
+    pact.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count, 'pact', readOnly)); });
   }
+  const longRestBtn = document.getElementById('spell-long-rest');
+  const shortRestBtn = document.getElementById('spell-short-rest');
+  longRestBtn.classList.toggle('hidden', !hasTotals && !hasPact);
+  shortRestBtn.classList.toggle('hidden', !hasPact);
+  longRestBtn.disabled = shortRestBtn.disabled = readOnly;
   if (!hasTotals && !hasPact && (entries.length || casterLevel > 0)) {
     slotsBox.appendChild(spellNote('No spell slots yet — cantrips only.'));
   }
@@ -573,11 +580,10 @@ function renderSpellSheetContent() {
         lastLevel = spell.level;
         listBox.appendChild(spellLevelHeading(spell.level));
       }
-      listBox.appendChild(spellCard(spell));
+      listBox.appendChild(castableSpellCard(spell, readOnly));
     });
   }
 
-  const readOnly = isReadOnly();
   const sections = spellbookSections(available, classRows, spellbookPrefs);
   if (!sections.length) {
     pickerBox.appendChild(spellNote('Nothing matches the current filters.'));
@@ -611,9 +617,15 @@ function spellLevelLabel(level) {
   return `${level}${suffix} Level`;
 }
 
-function spellSlotTile(level, count) {
+// Slots left over slots in all, and a pip per slot — filled while unspent.
+// A pip is the manual fix for a cast made by mistake (or one made at the
+// table without the app): clicking a filled pip spends down to it, an empty
+// one refills up to it, the way a paper tracker is ticked.
+function spellSlotTile(level, count, pool, readOnly) {
+  const left = spellSlotsLeft(state.character, pool, level, count);
+
   const tile = document.createElement('div');
-  tile.className = 'spell-slot-tile';
+  tile.className = 'spell-slot-tile' + (left === 0 ? ' spent' : '');
 
   const lvl = document.createElement('span');
   lvl.className = 'spell-slot-level';
@@ -621,9 +633,26 @@ function spellSlotTile(level, count) {
 
   const n = document.createElement('span');
   n.className = 'spell-slot-count';
-  n.textContent = count;
+  n.textContent = left;
+  const of = document.createElement('span');
+  of.className = 'spell-slot-of';
+  of.textContent = ' / ' + count;
+  n.appendChild(of);
 
-  tile.append(lvl, n);
+  const pips = document.createElement('span');
+  pips.className = 'spell-slot-pips';
+  for (let i = 0; i < count; i++) {
+    const pip = document.createElement('button');
+    pip.type = 'button';
+    pip.className = 'spell-slot-pip' + (i < left ? ' full' : '');
+    pip.disabled = readOnly;
+    pip.setAttribute('aria-label', `${spellLevelLabel(level)} slot ${i + 1}: ${i < left ? 'unspent' : 'spent'}`);
+    // Pip i filled → i left (spend it and everything above); empty → i + 1 left.
+    pip.addEventListener('click', () => setSpellSlotsLeft(pool, level, count, i < left ? i : i + 1));
+    pips.appendChild(pip);
+  }
+
+  tile.append(lvl, n, pips);
   return tile;
 }
 
@@ -740,6 +769,316 @@ function spellPickerCard(spell, known, readOnly, metaText) {
   card.addEventListener('pointerleave', hideSpellHoverCard);
   return card;
 }
+
+// =============================================================================
+// CASTING — spending slots, and the upcast wheel
+// =============================================================================
+// A click on a Spells Known card casts it from the lowest slot that can; a held
+// press opens a wheel of every slot level it could be cast with instead. What
+// is stored is `character.spellSlotsUsed = { slots: [...], pact: [...] }` —
+// slots SPENT per level (index 0 = 1st), never slots left, so the maximum is
+// always whatever the class table says now: a level-up's new slot arrives
+// fresh, and a level lost never leaves a stale count behind. Saved and synced
+// like any sheet field. Gated by `isReadOnly()`, unlike a roll — a cast writes.
+const SPELL_SLOT_POOLS = ['slots', 'pact'];
+
+// Hold time before the wheel opens, and movement that opens it sooner — the
+// advantage wheel's own feel (dice.js), so the two gestures read alike.
+const CAST_WHEEL_HOLD_MS = 180;
+const CAST_WHEEL_REACH = 9;
+// Inside this radius, letting go casts the default pick.
+const CAST_WHEEL_DEADZONE = 24;
+
+const castWheelEl = document.getElementById('cast-wheel');
+
+function spellSlotsUsedOf(character, pool, level) {
+  const n = parseInt(character?.spellSlotsUsed?.[pool]?.[level - 1], 10);
+  return n > 0 ? n : 0;
+}
+
+function spellSlotsLeft(character, pool, level, total) {
+  return Math.max(0, total - spellSlotsUsedOf(character, pool, level));
+}
+
+// Rewritten whole, as a dense nine-number array — RTDB reads a sparse one back
+// as an object, which the reader above would survive but needn't.
+function setSpellSlotsUsed(pool, level, used) {
+  const c = state.character;
+  const arr = Array.from({ length: 9 }, (_, i) => spellSlotsUsedOf(c, pool, i + 1));
+  arr[level - 1] = Math.max(0, used);
+  c.spellSlotsUsed = { ...(c.spellSlotsUsed ?? {}), [pool]: arr };
+}
+
+function setSpellSlotsLeft(pool, level, total, left) {
+  if (isReadOnly()) return;
+  setSpellSlotsUsed(pool, level, total - Math.max(0, Math.min(total, left)));
+  renderSpellSheet(); // slot usage is in the signature
+  debouncedSync();
+}
+
+// A Long Rest refills everything; a Short Rest refills Pact Magic only.
+function restoreSpellSlots(pools) {
+  if (isReadOnly()) return;
+  const c = state.character;
+  c.spellSlotsUsed = { ...(c.spellSlotsUsed ?? {}) };
+  pools.forEach(pool => { c.spellSlotsUsed[pool] = Array(9).fill(0); });
+  renderSpellSheet();
+  debouncedSync();
+}
+
+document.getElementById('spell-long-rest').addEventListener('click', () => restoreSpellSlots(SPELL_SLOT_POOLS));
+document.getElementById('spell-short-rest').addEventListener('click', () => restoreSpellSlots(['pact']));
+
+// Every { pool, level, total, left } this spell could be cast with — any slot
+// at or above its own level, in either pool. Lowest level first, and the
+// ordinary pool before Pact Magic at the same level. A cantrip has none.
+function castOptions(character, spell) {
+  if (!(spell.level > 0)) return [];
+  const pools = {
+    slots: multiclassSpellSlots(multiclassCasterLevel(classEntriesOf(character))),
+    pact: pactMagicSlots(character) ?? [],
+  };
+  const opts = [];
+  SPELL_SLOT_POOLS.forEach(pool => pools[pool].forEach((total, i) => {
+    const level = i + 1;
+    if (total > 0 && level >= spell.level) {
+      opts.push({ pool, level, total, left: spellSlotsLeft(character, pool, level, total) });
+    }
+  }));
+  return opts.sort((a, b) => a.level - b.level || (a.pool === 'pact') - (b.pool === 'pact'));
+}
+
+// What a plain click spends: the cheapest slot that still has one left. For a
+// Warlock that's the pact slot at its own level — Pact Magic always casts at it.
+function defaultCastOption(options) {
+  return options.find(o => o.left > 0) ?? null;
+}
+
+function findSpellById(id) {
+  return allSpells().find(s => s.id === id) ?? null;
+}
+
+// The one write path. `opt` null on a cantrip; on a levelled spell with no
+// slot left, nothing is spent or said — the card shakes instead.
+function castSpell(spellId, opt) {
+  if (isReadOnly()) return;
+  const spell = findSpellById(spellId);
+  if (!spell) return;
+  if (spell.level > 0) {
+    if (!opt || opt.left <= 0) { flashSpellCard(spellId, 'no-slot'); return; }
+    setSpellSlotsUsed(opt.pool, opt.level, spellSlotsUsedOf(state.character, opt.pool, opt.level) + 1);
+  }
+  renderSpellSheet();
+  flashSpellCard(spellId, 'cast');
+  postCastToChat(spell, spell.level > 0 ? opt : null);
+  debouncedSync();
+}
+
+// Found again by id, because the cast above has just redrawn the list.
+function flashSpellCard(spellId, cls) {
+  const card = document.querySelector(`#spell-list .spell-card[data-spell-id="${CSS.escape(spellId)}"]`);
+  if (!card) return;
+  card.classList.remove('cast', 'no-slot');
+  void card.offsetWidth; // restart the animation on a second cast in a row
+  card.classList.add(cls);
+  card.addEventListener('animationend', () => card.classList.remove(cls), { once: true });
+}
+
+// "4th level", plus where the slot came from when that's not obvious.
+function castLevelText(level, baseLevel, pact) {
+  if (!(level > 0)) return 'Cantrip';
+  const text = spellLevelLabel(level).replace(' Level', ' level');
+  const notes = [level > baseLevel ? 'upcast' : '', pact ? 'Pact Magic' : ''].filter(Boolean);
+  return notes.length ? `${text} (${notes.join(', ')})` : text;
+}
+
+// Pushed from here rather than chat.js so a cast's shape stays in one file —
+// the same split as dice.js's `postRollToChat()`, and the same silent fall
+// through `canChat()` with no campaign. `text` is the whole sentence, for an
+// older client that draws any unknown `kind` as a plain line (and for the tab
+// bubble, which shows it as speech).
+function postCastToChat(spell, opt) {
+  if (typeof canChat !== 'function' || !canChat()) return;
+  chatFollowNewest();
+
+  const character = String(state.character?.name ?? '').trim();
+  const level = opt ? opt.level : 0;
+  const pact = opt?.pool === 'pact';
+  const sentence = `${character || chatAuthorName()} casts ${spell.name}` +
+    (level > 0 ? ` at ${castLevelText(level, spell.level, pact)}` : '') + '.';
+
+  firebaseDb.ref('parties/' + state.party.code + '/chat').push({
+    uid: ownPlayerId(),
+    name: chatAuthorName(),
+    kind: 'cast',
+    text: sentence,
+    cast: {
+      spell: spell.name, school: spell.school || '', character,
+      level, baseLevel: spell.level, pact,
+    },
+    at: firebase.database.ServerValue.TIMESTAMP,
+  }).catch(() => { /* the slot is spent either way */ });
+}
+
+// A Spells Known card, made castable. The hover card draws `spellCard()` too,
+// and must not be.
+function castableSpellCard(spell, readOnly) {
+  const card = spellCard(spell);
+  card.dataset.spellId = spell.id;
+  if (readOnly) return card;
+  card.classList.add('castable');
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  const opts = castOptions(state.character, spell);
+  const pick = defaultCastOption(opts);
+  if (spell.level > 0 && !pick) {
+    card.classList.add('no-slots');
+    card.title = 'No slots left';
+  } else {
+    card.title = opts.length > 1 ? 'Click to cast · hold to upcast' : 'Click to cast';
+  }
+  return card;
+}
+
+// The live press, or null.
+let castGesture = null;
+
+function beginCastGesture(e, card) {
+  if (e.button !== 0 || isReadOnly()) return;
+  if (e.target.closest('a')) return; // a link in the description is still a link
+  endCastGesture(false);
+  const spell = findSpellById(card.dataset.spellId);
+  if (!spell) return;
+  e.preventDefault(); // no text selection dragging out of the card
+
+  const options = castOptions(state.character, spell);
+  castGesture = {
+    spellId: spell.id, card, options,
+    pick: defaultCastOption(options), hover: null, shown: false,
+    x0: e.clientX, y0: e.clientY, pointerId: e.pointerId,
+    // One option is nothing to choose between — the wheel never opens.
+    timer: options.length > 1 ? setTimeout(openCastWheel, CAST_WHEEL_HOLD_MS) : null,
+  };
+  try { card.setPointerCapture(e.pointerId); } catch (_) { /* still works uncaptured */ }
+}
+
+// A ring of options around the cursor, the first at twelve o'clock, going
+// clockwise up the levels. Nudged only as far as it takes to stay on screen.
+function openCastWheel() {
+  const g = castGesture;
+  if (!g || g.shown) return;
+  g.shown = true;
+
+  const anchor = castWheelEl.querySelector('.cast-wheel-anchor');
+  anchor.querySelectorAll('.cast-wheel-opt').forEach(o => o.remove());
+
+  // Geometry read from the CSS that draws the wheel — one source of truth.
+  const cs = getComputedStyle(castWheelEl);
+  const radius = parseFloat(cs.getPropertyValue('--cast-r'));
+  const reach = radius + parseFloat(cs.getPropertyValue('--cast-opt')) / 2;
+  const pad = 6;
+
+  g.options.forEach((opt, i) => {
+    opt.angle = -Math.PI / 2 + (i / g.options.length) * Math.PI * 2;
+    const el = document.createElement('div');
+    el.className = 'cast-wheel-opt' + (opt.left > 0 ? '' : ' spent') + (opt.pool === 'pact' ? ' pact' : '');
+    el.style.setProperty('--ox', (Math.cos(opt.angle) * radius) + 'px');
+    el.style.setProperty('--oy', (Math.sin(opt.angle) * radius) + 'px');
+    el.style.animationDelay = (i * 18) + 'ms';
+    const lvl = document.createElement('span');
+    lvl.className = 'cast-wheel-level';
+    lvl.textContent = spellLevelLabel(opt.level).replace(' Level', '');
+    const sub = document.createElement('span');
+    sub.className = 'cast-wheel-sub';
+    sub.textContent = opt.pool === 'pact' ? `Pact · ${opt.left}` : `${opt.left} left`;
+    el.append(lvl, sub);
+    opt.el = el;
+    anchor.appendChild(el);
+  });
+
+  castWheelEl.style.setProperty('--wx', Math.max(reach + pad, Math.min(g.x0, window.innerWidth - reach - pad)) + 'px');
+  castWheelEl.style.setProperty('--wy', Math.max(reach + pad, Math.min(g.y0, window.innerHeight - reach - pad)) + 'px');
+  castWheelEl.classList.remove('hidden');
+  paintCastWheel();
+}
+
+// The option under the pointer, or — in the middle — the one a plain click
+// would spend. A spent one (or none at all) means letting go casts nothing.
+function paintCastWheel() {
+  const g = castGesture;
+  if (!g) return;
+  const shown = g.hover ?? g.pick;
+  g.options.forEach(o => o.el?.classList.toggle('active', o === shown));
+  const baseLevel = findSpellById(g.spellId)?.level ?? 1;
+  castWheelEl.querySelector('.cast-wheel-caption').textContent =
+    !shown ? 'No slots left'
+    : shown.left <= 0 ? 'None left'
+    : castLevelText(shown.level, baseLevel, shown.pool === 'pact');
+  castWheelEl.classList.toggle('blocked', !shown || shown.left <= 0);
+}
+
+function endCastGesture(cast) {
+  const g = castGesture;
+  if (!g) return;
+  castGesture = null;
+  clearTimeout(g.timer);
+  castWheelEl.classList.add('hidden');
+  castWheelEl.classList.remove('blocked');
+  try { g.card.releasePointerCapture(g.pointerId); } catch (_) { /* never captured */ }
+  if (!cast) return;
+  if (g.hover && g.hover.left <= 0) return; // let go on a spent option: backed out
+  // Re-read off the character rather than trusted from the press — a sync may
+  // have spent that slot while the wheel was open.
+  const spell = findSpellById(g.spellId);
+  const chosen = g.hover ?? g.pick;
+  const fresh = spell && chosen
+    ? castOptions(state.character, spell).find(o => o.pool === chosen.pool && o.level === chosen.level)
+    : null;
+  castSpell(g.spellId, fresh ?? null);
+}
+
+window.addEventListener('pointermove', e => {
+  const g = castGesture;
+  if (!g) return;
+  const dx = e.clientX - g.x0;
+  const dy = e.clientY - g.y0;
+  if (!g.shown && g.options.length > 1 && Math.hypot(dx, dy) > CAST_WHEEL_REACH) openCastWheel();
+  if (!g.shown) return;
+  if (Math.hypot(dx, dy) < CAST_WHEEL_DEADZONE) {
+    g.hover = null;
+  } else {
+    // The option whose direction is nearest the pointer's.
+    const a = Math.atan2(dy, dx);
+    const off = o => Math.abs(Math.atan2(Math.sin(a - o.angle), Math.cos(a - o.angle)));
+    g.hover = g.options.reduce((best, o) => off(o) < off(best) ? o : best);
+  }
+  paintCastWheel();
+});
+
+window.addEventListener('pointerup', () => endCastGesture(true));
+window.addEventListener('pointercancel', () => endCastGesture(false));
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && castGesture) endCastGesture(false);
+});
+
+const spellListEl = document.getElementById('spell-list');
+
+spellListEl.addEventListener('pointerdown', e => {
+  const card = e.target.closest('.spell-card.castable');
+  if (card) beginCastGesture(e, card);
+});
+
+// The keyboard's way in: Enter or Space on a focused card casts the default,
+// as a click does.
+spellListEl.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.spell-card.castable');
+  if (!card || card !== e.target) return;
+  e.preventDefault();
+  e.stopPropagation(); // or Enter would open the chat modal too
+  const spell = findSpellById(card.dataset.spellId);
+  if (spell) castSpell(spell.id, defaultCastOption(castOptions(state.character, spell)));
+});
 
 // =============================================================================
 // THE HOVER CARD

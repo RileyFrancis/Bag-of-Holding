@@ -586,6 +586,7 @@ window.addEventListener('keydown', e => {
     && !statusPickerIsOpen()
     && !diceDockIsOpen()
     && !rollGesture
+    && !castGesture
     && openTabMenuKey === null
     && !mapOpen
     && !sheetDrag;

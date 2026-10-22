@@ -533,18 +533,12 @@ function renderSpellSheetContent() {
   const hasPact = !!pact && pact.some(n => n > 0);
   const readOnly = isReadOnly();
 
-  if (hasTotals) {
-    totals.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count, 'slots', readOnly)); });
-  }
+  if (hasTotals) slotsBox.appendChild(spellSlotGroup(totals, 'slots', readOnly));
   if (hasPact) {
     if (hasTotals) slotsBox.appendChild(spellbookGroupHeading('Pact Magic'));
-    pact.forEach((count, i) => { if (count > 0) slotsBox.appendChild(spellSlotTile(i + 1, count, 'pact', readOnly)); });
+    slotsBox.appendChild(spellSlotGroup(pact, 'pact', readOnly));
   }
-  const longRestBtn = document.getElementById('spell-long-rest');
-  const shortRestBtn = document.getElementById('spell-short-rest');
-  longRestBtn.classList.toggle('hidden', !hasTotals && !hasPact);
-  shortRestBtn.classList.toggle('hidden', !hasPact);
-  longRestBtn.disabled = shortRestBtn.disabled = readOnly;
+  balanceSpellSlotRows();
   if (!hasTotals && !hasPact && (entries.length || casterLevel > 0)) {
     slotsBox.appendChild(spellNote('No spell slots yet — cantrips only.'));
   }
@@ -616,6 +610,45 @@ function spellLevelLabel(level) {
   const suffix = level === 1 ? 'st' : level === 2 ? 'nd' : level === 3 ? 'rd' : 'th';
   return `${level}${suffix} Level`;
 }
+
+// One pool's tiles. Its rows are evened out by `balanceSpellSlotRows()`.
+function spellSlotGroup(counts, pool, readOnly) {
+  const group = document.createElement('div');
+  group.className = 'spell-slot-group';
+  counts.forEach((count, i) => { if (count > 0) group.appendChild(spellSlotTile(i + 1, count, pool, readOnly)); });
+  return group;
+}
+
+// Plain wrapping would fill each row and leave the remainder alone on the
+// last (7 tiles → 6 + 1); this works out the fewest rows that fit, deals the
+// tiles across them as evenly as possible (7 → 4 + 3, or 3 + 2 + 2), and
+// marks each row's end with a break the CSS honours. Rows are centred. Re-run
+// on every redraw and every resize of the box — the slots sheet moves between
+// a narrow column and the full width of the list (spells.css).
+function balanceSpellSlotRows() {
+  const box = document.getElementById('spell-slots');
+  const width = box.clientWidth;
+  if (!width) return; // the view is hidden — the observer re-runs this on show
+  const cs = getComputedStyle(box);
+  const tileW = parseFloat(cs.getPropertyValue('--slot-tile-w'));
+  const gap = parseFloat(cs.getPropertyValue('--slot-gap'));
+  const fit = Math.max(1, Math.floor((width + gap) / (tileW + gap)));
+  box.querySelectorAll('.spell-slot-group').forEach(group => {
+    group.querySelectorAll('.spell-slot-break').forEach(b => b.remove());
+    const tiles = [...group.children];
+    const rows = Math.ceil(tiles.length / fit);
+    // The first `tiles % rows` rows take one extra, so longer rows lead.
+    let at = 0;
+    for (let r = 0; r < rows - 1; r++) {
+      at += Math.floor(tiles.length / rows) + (r < tiles.length % rows ? 1 : 0);
+      const br = document.createElement('span');
+      br.className = 'spell-slot-break';
+      tiles[at - 1].after(br);
+    }
+  });
+}
+
+new ResizeObserver(balanceSpellSlotRows).observe(document.getElementById('spell-slots'));
 
 // Slots left over slots in all, and a pip per slot — filled while unspent.
 // A pip is the manual fix for a cast made by mistake (or one made at the
@@ -816,7 +849,11 @@ function setSpellSlotsLeft(pool, level, total, left) {
   debouncedSync();
 }
 
-// A Long Rest refills everything; a Short Rest refills Pact Magic only.
+// A Long Rest refills everything; a Short Rest refills Pact Magic only. No
+// button calls these yet — the rest controls are to get a home of their own.
+function longRestSpellSlots()  { restoreSpellSlots(SPELL_SLOT_POOLS); }
+function shortRestSpellSlots() { restoreSpellSlots(['pact']); }
+
 function restoreSpellSlots(pools) {
   if (isReadOnly()) return;
   const c = state.character;
@@ -825,9 +862,6 @@ function restoreSpellSlots(pools) {
   renderSpellSheet();
   debouncedSync();
 }
-
-document.getElementById('spell-long-rest').addEventListener('click', () => restoreSpellSlots(SPELL_SLOT_POOLS));
-document.getElementById('spell-short-rest').addEventListener('click', () => restoreSpellSlots(['pact']));
 
 // Every { pool, level, total, left } this spell could be cast with — any slot
 // at or above its own level, in either pool. Lowest level first, and the

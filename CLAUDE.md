@@ -356,8 +356,14 @@ string the same way `class-features.js`'s `featureDescCache` is, since
   in `spellSheetSignature()` so a synced cast redraws for viewers. A cast is a
   chat message (`kind: 'cast'`, pushed by `postCastToChat()`, drawn by
   chat.js's `castMessageBody()`), with `text` as the plain-line fallback.
-  Gated by `isReadOnly()` (a cast writes, unlike a roll). Long Rest refills
-  both pools, Short Rest Pact Magic only; a slot pip is the manual fix.
+  Gated by `isReadOnly()` (a cast writes, unlike a roll). A slot pip is the
+  manual fix. `longRestSpellSlots()` (both pools) / `shortRestSpellSlots()`
+  (Pact Magic only) exist but have no buttons yet — they're to move elsewhere.
+  The slots are their own paper sheet (`.spell-slots-sheet`), to the right of
+  the spell list when `#spell-sheet` is ≥ 900px wide (a container query — the
+  panel's width, not the window's), stacked above it otherwise. Each pool's
+  tiles are dealt evenly across the fewest rows that fit
+  (`balanceSpellSlotRows()`, on a ResizeObserver — 7 → 4+3, not 6+1).
 - **Hiding a class or school never touches `knownSpells`** — same "filtered,
   not deleted" rule as a reclass (above): `known` is always computed from the
   full, unfiltered `available` pool, so a spell you've already picked keeps

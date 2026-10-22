@@ -519,19 +519,18 @@
            (the tab menu, or cycling with Tab), and only offered at all when
            that character has not turned it off in Character Setup. -->
       <div id="spell-sheet">
-        <div class="sheet-scroll paper-sheet">
-          <div class="spell-slots-head">
+        <!-- Two sheets of paper: the slots on their own, beside the spell
+             list when the panel is wide enough and above it when it isn't
+             (spells.css decides, by the panel's width, not the window's). -->
+        <div class="spell-sheet-layout">
+          <aside class="spell-slots-sheet paper-sheet">
             <h3 class="sheet-h">Spell Slots</h3>
-            <!-- Short Rest only refills Pact Magic, so it only shows beside a
-                 Warlock pool. Both hidden with no slots at all. -->
-            <button id="spell-short-rest" class="btn-sm hidden" type="button"
-                    title="Refill Pact Magic slots">Short Rest</button>
-            <button id="spell-long-rest" class="btn-sm hidden" type="button"
-                    title="Refill every spell slot">Long Rest</button>
+            <div id="spell-slots" class="spell-slots"></div>
+          </aside>
+          <div class="sheet-scroll paper-sheet spell-known-sheet">
+            <h3 class="sheet-h">Spells Known</h3>
+            <div id="spell-list" class="spell-list"></div>
           </div>
-          <div id="spell-slots" class="spell-slots"></div>
-          <h3 class="sheet-h">Spells Known</h3>
-          <div id="spell-list" class="spell-list"></div>
         </div>
       </div>
 

@@ -19,39 +19,88 @@
 #inventory-panel.spell-view #container-tabs,
 #inventory-panel.spell-view #character-sheet { display: none; }
 
+/* ─── THE TWO SHEETS ─────────────────────────────────────── */
+/* The slots are a sheet of their own: above the spell list by default, and
+   beside it (to the right) once the panel has room for both — the pair
+   centred together as one unit. Measured against
+   the panel, not the window — the side panels take a resizable share of it.
+   The breakpoint is the slots sheet, the gap and a spell list still worth
+   reading at that width. */
+#spell-sheet {
+  container-type: inline-size;
+  /* Reserved on both sides, so a scrollbar doesn't push the pair off centre. */
+  scrollbar-gutter: stable both-edges;
+}
+
+/* Stacked: the slots sheet as wide as the list under it. The gap between the
+   two is wider than one paper margin, since each sheet's paper overhangs its
+   content by half an inch (`.paper-sheet::before`) and the tears would meet. */
+.spell-slots-sheet {
+  max-width: 1100px;
+  margin: 62px auto 120px;
+  padding: 4px 22px 16px;
+}
+.spell-slots-sheet .sheet-h { margin-top: 16px; }
+.spell-known-sheet { margin-top: 0; }
+
+@container (min-width: 900px) {
+  .spell-sheet-layout {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 120px;
+  }
+  /* Two tiles to a row (2 × --slot-tile-w + --slot-gap + padding). Sticky, so the slots stay in sight while the spell
+     list scrolls past — the count is what a cast changes. */
+  .spell-slots-sheet {
+    order: 1; /* first in the markup so it tops the stacked layout */
+    flex: 0 0 262px;
+    margin: 62px 0;
+    position: sticky;
+    top: 62px;
+  }
+  .spell-known-sheet {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 62px 0;
+  }
+}
+
 /* ─── SPELL SLOTS ─────────────────────────────────────────── */
-/* The heading's rule carried by the row instead, so the rest buttons sit on
-   the line with it rather than under it. */
-.spell-slots-head {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  margin: 20px 0 10px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border);
-}
-.spell-slots-head .sheet-h {
-  flex: 1;
-  margin: 0;
-  padding: 0;
-  border-bottom: 0;
-}
 .spell-slots {
+  /* Read back by balanceSpellSlotRows() to work out how many tiles fit a
+     row — declared once, here. */
+  --slot-tile-w: 104px;
+  --slot-gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--slot-gap);
+}
+/* One pool's tiles, every row centred — a short last row too. Where the rows
+   end is decided by balanceSpellSlotRows(), which drops a full-width,
+   zero-height break after the last tile of each; the row gap is cancelled
+   for those, so a break costs no height. */
+.spell-slot-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 20px;
+  justify-content: center;
+  gap: var(--slot-gap);
+}
+.spell-slot-break {
+  flex-basis: 100%;
+  height: 0;
+  margin-top: calc(-1 * var(--slot-gap));
 }
 /* Warlock Pact Magic is a separate pool from the rest of #spell-slots (see
-   pactMagicSlots() in spells.js) — its heading forces a line break in the
-   wrapping flex row instead of sitting inline with a slot tile. */
-.spell-slots .spellbook-group-heading { flex-basis: 100%; margin: 4px 0 -2px; }
+   pactMagicSlots() in spells.js), headed between the two groups. Centred, to
+   sit over its centred tiles. */
+.spell-slots .spellbook-group-heading { margin: 4px 0 -2px; text-align: center; }
 .spell-slot-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-width: 76px;
+  width: var(--slot-tile-w);
   padding: 8px 14px;
   background: var(--field);
   border: 1px solid var(--border);

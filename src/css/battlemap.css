@@ -38,7 +38,7 @@
 /* The stash sits along the bottom of this panel, so the button lands on its
    header. The dice stack in the opposite corner solves that with
    `pointer-events: none` — it is a readout — but this one has to take clicks,
-   so the header is padded clear of it instead. Same move `#character-tabs`
+   so the header is padded clear of it instead. Same move `#container-tabs`
    makes for a collapsed panel's reopen button, and driven the same way: one
    class, set by the code that decides whether the button is there at all. */
 #inventory-panel.has-map-btn #stash-header { padding-left: 62px; }

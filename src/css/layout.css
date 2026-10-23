@@ -203,7 +203,12 @@
 #app.equip-collapsed   #show-equip-btn   { display: flex; }
 #app.sidebar-collapsed #show-sidebar-btn { display: flex; }
 
-/* Keep the character tabs clear of whichever button is showing. */
-#app.equip-collapsed   #character-tabs { padding-left: 42px; }
-#app.sidebar-collapsed #character-tabs { padding-right: 42px; }
+/* Keep the top of the middle panel clear of whichever button is showing. The
+   dice button has that corner when nothing is above it, so it steps aside. */
+#app.equip-collapsed   #container-tabs,
+#app.equip-collapsed   #viewing-banner { padding-left: 42px; }
+#app.sidebar-collapsed #container-tabs,
+#app.sidebar-collapsed #viewing-banner { padding-right: 42px; }
+#app.sidebar-collapsed #dice-dock-btn   { right: 46px; }
+#app.sidebar-collapsed #dice-dock-panel { right: 41px; }
 

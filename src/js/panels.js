@@ -59,7 +59,7 @@ function applyPanelLayout() {
   app.style.setProperty('--equip-w', panels.equip + 'px');
   app.style.setProperty('--sidebar-w', panels.sidebar + 'px');
   // One class per side drives everything: the panel and its handle go away, the
-  // round reopen button appears, and the character tabs make room for it.
+  // round reopen button appears, and the top of the middle panel makes room for it.
   app.classList.toggle('equip-collapsed', panels.equipCollapsed);
   app.classList.toggle('sidebar-collapsed', panels.sidebarCollapsed);
 }

@@ -1,5 +1,5 @@
 // =============================================================================
-// CHARACTER TABS — One tab per character, above the inventory
+// CHARACTER TABS — One tab per character, in the header
 // =============================================================================
 'use strict';
 

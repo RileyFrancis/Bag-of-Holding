@@ -168,6 +168,10 @@
     <div id="char-summary">
       <span id="char-name-display">Unnamed Hero</span>
     </div>
+    <!-- One tab per character — yours, plus everyone else in the party. In the
+         header rather than over the inventory: who you are looking at is a
+         question for the whole app, not the middle panel alone. -->
+    <div id="character-tabs"><!-- rendered by renderCharacterTabs() --></div>
     <div id="party-header-area">
       <button id="party-btn" class="btn-sm">&#9876; Party</button>
       <span id="party-code-badge" class="hidden"></span>
@@ -192,13 +196,14 @@
 
     <!-- ===== INVENTORY PANEL ===== -->
     <div id="inventory-panel">
-      <!-- One tab per character — yours, plus everyone else in the party -->
-      <div id="character-tabs"><!-- rendered by renderCharacterTabs() --></div>
+      <!-- The bag you are looking into: the main grid, or a placed container. Top
+           of the panel, where the character tabs were before they moved up
+           into the header. -->
+      <div id="container-tabs" class="hidden"></div>
       <div id="viewing-banner" class="hidden">
         <span id="viewing-banner-text"></span>
         <button id="return-to-own-btn" class="btn-sm">Return to Your Inventory</button>
       </div>
-      <div id="container-tabs" class="hidden"></div>
       <!-- The dice dock: a button in the top right of whatever this panel is
            showing, opening a column of faces to build a handful from, a Roll
            button, and a modifier. A zero-height row here, so it always hangs

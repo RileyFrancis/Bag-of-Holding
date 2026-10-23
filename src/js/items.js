@@ -347,6 +347,7 @@ function materializeMagicItems(list, records) {
       shape:       [[1]],
       properties:  [],
       image:       '',
+      consumable:  !!m.consumable,
       abstract:    true,
       magicOf:     m.id,
       variantSpecs: [],

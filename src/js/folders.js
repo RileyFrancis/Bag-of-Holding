@@ -13,18 +13,41 @@
 const FOLDERS_KEY = 'dnd_inventory_folders';
 const UNFILED_ID = '__unfiled';
 
-// The folders every browser starts with, and the rule that files an item into
-// each. First match wins; the last matches everything, so `defaultFolderIdFor`
-// always has an answer. Ordinary folders once created — not re-created.
+// The folders every browser starts with, in display order. `match` files an
+// item by what it IS — mundane and magic side by side, so a +1 Longsword sits
+// with the longswords. Rules are tried in DEFAULT_FOLDER_MATCH_ORDER, not this
+// order: an artifact is an Artifact before it is a weapon, coins and gems are
+// Treasure whatever else their tags say, a Necklace of Fireballs is jewelry
+// before it is a consumable. The last two split what is left — Gear takes
+// anything mundane (and containers), Wondrous Items anything magic — so
+// `defaultFolderIdFor` always has an answer. Ordinary folders once created —
+// not re-created.
 const DEFAULT_FOLDERS = [
-  { id: 'folder_magic',   name: 'Magic Items', match: t => hasTagWord(t, 'magic') },
-  { id: 'folder_weapons', name: 'Weapons',  match: t => hasTagWord(t, 'weapon') },
-  { id: 'folder_armor',   name: 'Armor',    match: t => hasTagWord(t, 'armor') || hasTagWord(t, 'shield') },
-  { id: 'folder_currency', name: 'Currency', match: t => hasTagWord(t, 'currency') || hasTagWord(t, 'valuable') },
-  { id: 'folder_gear',     name: 'Gear',     match: () => true },
+  { id: 'folder_weapons',     name: 'Weapons & Ammunition', match: t => hasTagWord(t, 'weapon') || hasTagWord(t, 'ammunition') },
+  { id: 'folder_armor',       name: 'Armor & Shields',      match: t => hasTagWord(t, 'armor') || hasTagWord(t, 'shield') },
+  { id: 'folder_apparel',     name: 'Apparel',              match: t => APPAREL_NAME.test(t.name) },
+  { id: 'folder_jewelry',     name: 'Jewelry',              match: t => hasTagWord(t, 'ring') || JEWELRY_NAME.test(t.name) },
+  { id: 'folder_implements',  name: 'Rods, Staffs & Wands', match: t => hasTagWord(t, 'rod') || hasTagWord(t, 'staff') || hasTagWord(t, 'wand') },
+  { id: 'folder_consumables', name: 'Consumables',          match: t => !!t.consumable || hasTagWord(t, 'potion') || hasTagWord(t, 'scroll') },
+  { id: 'folder_wondrous',    name: 'Wondrous Items',       match: t => hasTagWord(t, 'magic') },
+  { id: 'folder_tools',       name: 'Tools & Instruments',  match: t => hasTagWord(t, 'tool') || hasTagWord(t, 'instrument') },
+  { id: 'folder_gear',        name: 'Gear & Containers',    match: t => !!t.container || hasTagWord(t, 'container') || !hasTagWord(t, 'magic') },
+  { id: 'folder_currency',    name: 'Coins & Treasure',     match: t => hasTagWord(t, 'currency') || hasTagWord(t, 'valuable') || hasTagWord(t, 'trade') },
+  { id: 'folder_artifacts',   name: 'Artifacts',            match: t => t.rarity === 'artifact' },
 ];
 
-// Tags are free-form, so match on whole words: "martial mele weapon" is a weapon.
+const DEFAULT_FOLDER_MATCH_ORDER = [
+  'folder_artifacts', 'folder_currency', 'folder_weapons', 'folder_armor',
+  'folder_implements', 'folder_tools', 'folder_apparel', 'folder_jewelry',
+  'folder_consumables', 'folder_gear', 'folder_wondrous',
+];
+
+// Worn things that aren't armor, and small worn things — by name, since the
+// data's tags don't say where an item is worn. Rings go by their `ring` tag.
+const APPAREL_NAME = /\b(cloak|cape|mantle|robes?|boots|slippers|gloves|gauntlets|bracers|belt|girdle|hat|helm|cap|circlet|headband|goggles|lenses|eyes of|wraps|vestments|clothes|garb|sandals)\b/i;
+const JEWELRY_NAME = /\b(amulet|necklace|brooch|periapt|medallion|scarab|talisman|pendant|ioun stone|stone of good luck)\b/i;
+
+// Tags are free-form, so match on whole words: "martial melee weapon" is a weapon.
 function hasTagWord(t, word) {
   return (t.tags ?? []).some(tag => String(tag).toLowerCase().split(/\s+/).includes(word));
 }
@@ -33,10 +56,20 @@ function hasTagWord(t, word) {
 // deleting them all sticks instead of being undone on the next load.
 let foldersSeeded = false;
 
-// Defaults added after browsers had already been seeded. Each is laid down once
-// (at the top — it matches first), so deleting it sticks like the originals.
-const LATE_DEFAULT_FOLDER_IDS = ['folder_magic'];
-let lateFoldersSeeded = [];
+// Which generation of DEFAULT_FOLDERS this browser's folders were laid out
+// from. 1 is the original Weapons / Armor / Currency / Gear set; 2 is the
+// current one. Stored, so the upgrade below runs once and a folder deleted
+// afterwards stays deleted.
+const FOLDER_LAYOUT_VERSION = 2;
+let folderLayout = FOLDER_LAYOUT_VERSION;
+
+// The v1 defaults, by id — the upgrade renames one only while it still has
+// this name (a folder the user renamed is theirs). folder_magic was a v1.5
+// addition that the v2 folders replace.
+const V1_DEFAULT_NAMES = {
+  folder_weapons: 'Weapons', folder_armor: 'Armor', folder_currency: 'Currency',
+  folder_gear: 'Gear', folder_magic: 'Magic Items',
+};
 
 function loadFolders() {
   let data = null;
@@ -58,26 +91,42 @@ function loadFolders() {
       Object.entries(data.assign).map(([id, folderId]) => [currentTemplateId(id), folderId]));
     if (data.collapsed) state.folderCollapsed = { ...data.collapsed };
     foldersSeeded = !!data.seeded;
-    lateFoldersSeeded = Array.isArray(data.lateSeeded) ? data.lateSeeded : [];
+    folderLayout = Number(data.layout) || 1;
   }
 
   seedDefaultFolders();
-  seedLateDefaultFolders();
+  upgradeFolderLayout();
 }
 
-function seedLateDefaultFolders() {
-  const pending = LATE_DEFAULT_FOLDER_IDS.filter(id => !lateFoldersSeeded.includes(id));
-  if (!pending.length) return;
-  // No folders at all is a choice too (a flat list) — don't break it.
+// A browser seeded with the v1 folders gets the v2 set, once: untouched v1
+// folders take their new names, Magic Items goes (if nothing was filed into it
+// by hand), the new folders are added, and the defaults are put in their
+// display order ahead of the user's own folders. A browser with no folders at
+// all chose a flat list — that is left alone.
+function upgradeFolderLayout() {
+  if (folderLayout >= FOLDER_LAYOUT_VERSION) return;
+  folderLayout = FOLDER_LAYOUT_VERSION;
   if (state.folders.length) {
-    const taken = new Set(state.folders.map(f => f.name.toLowerCase()));
-    pending.forEach(id => {
-      const def = DEFAULT_FOLDERS.find(d => d.id === id);
-      if (!def || getFolder(id) || taken.has(def.name.toLowerCase())) return;
-      state.folders.unshift({ id: def.id, name: def.name });
+    const magic = getFolder('folder_magic');
+    const magicUsed = Object.values(state.folderAssign).includes('folder_magic');
+    if (magic && magic.name === V1_DEFAULT_NAMES.folder_magic && !magicUsed) {
+      state.folders = state.folders.filter(f => f.id !== 'folder_magic');
+      delete state.folderCollapsed.folder_magic;
+    }
+    state.folders.forEach(f => {
+      const def = DEFAULT_FOLDERS.find(d => d.id === f.id);
+      if (def && f.name === V1_DEFAULT_NAMES[f.id]) f.name = def.name;
     });
+    addMissingDefaultFolders();
+    const rank = id => {
+      const i = DEFAULT_FOLDERS.findIndex(d => d.id === id);
+      return i === -1 ? DEFAULT_FOLDERS.length : i;
+    };
+    state.folders = state.folders
+      .map((f, i) => ({ f, i }))
+      .sort((a, b) => rank(a.f.id) - rank(b.f.id) || a.i - b.i)
+      .map(x => x.f);
   }
-  lateFoldersSeeded = [...lateFoldersSeeded, ...pending];
   saveFolders();
 }
 
@@ -86,7 +135,6 @@ function seedLateDefaultFolders() {
 function seedDefaultFolders() {
   if (foldersSeeded) return;
   foldersSeeded = true;
-  lateFoldersSeeded = [...LATE_DEFAULT_FOLDER_IDS]; // a first run gets them all here
   addMissingDefaultFolders();
   saveFolders();
 }
@@ -108,7 +156,7 @@ function saveFolders() {
       assign:    state.folderAssign,
       collapsed: state.folderCollapsed,
       seeded:    foldersSeeded,
-      lateSeeded: lateFoldersSeeded,
+      layout:    folderLayout,
     }));
   } catch (e) { /* non-fatal */ }
 }
@@ -175,7 +223,8 @@ function explicitFolderOf(templateId) {
 function defaultFolderIdFor(templateId) {
   const t = state.db[templateId];
   if (!t) return null;
-  const def = DEFAULT_FOLDERS.find(d => d.match(t));
+  const id = DEFAULT_FOLDER_MATCH_ORDER.find(fid => DEFAULT_FOLDERS.find(d => d.id === fid).match(t));
+  const def = DEFAULT_FOLDERS.find(d => d.id === id);
   if (!def) return null;
   if (getFolder(def.id)) return def.id;
   const byName = state.folders.find(f => f.name.toLowerCase() === def.name.toLowerCase());

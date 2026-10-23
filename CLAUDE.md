@@ -509,7 +509,12 @@ sessions. Pacing, not security, same as shops.
 Folders (`folders.js`, own `localStorage` key) describe the *catalogue*, not
 the character — never saved or synced. `state.folderAssign` holds only
 overrides; an unlisted item follows tag/id/name matching, or lands in the
-virtual, never-stored **Unfiled**. Sorting (`item-sort.js`) is a **chain of
+virtual, never-stored **Unfiled**. Default folders file by **what an item is**,
+mundane and magic together; the rules run in `DEFAULT_FOLDER_MATCH_ORDER`, not
+display order (Artifacts and Treasure first, Gear/Wondrous split the rest by
+`magic`). Changing the default set means bumping `FOLDER_LAYOUT_VERSION` and
+teaching `upgradeFolderLayout()` the step — it renames only folders still
+carrying their old default name, so a user's rename survives. Sorting (`item-sort.js`) is a **chain of
 keys** (default rarity → name → weight); the toolbar's arrow negates the
 whole chain.
 

@@ -457,7 +457,7 @@ mode (a free cursor near an edge would scroll forever).
 
 ### Persistence
 
-`saveState`/`loadState` use `localStorage` key `dnd_inventory_v1`. Only custom
+`autoSave`/`autoLoad` use `localStorage` key `dnd_inventory_v1`. Only custom
 items are saved; defaults re-hydrate from `data/items.csv` on init. The
 payload is **version 4**: `{ version, activeCharacterId, characters,
 campaigns, homebrew }` — V1 (a single character at the top level, still what an older

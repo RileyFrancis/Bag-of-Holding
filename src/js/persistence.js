@@ -1,78 +1,10 @@
 // =============================================================================
-// PERSISTENCE — localStorage save/load and CSV export
+// PERSISTENCE — localStorage save/load
 // =============================================================================
 'use strict';
 
 const SAVE_KEY = 'dnd_inventory_v1';
 
-document.getElementById('save-btn').addEventListener('click', saveState);
-document.getElementById('load-btn').addEventListener('click', loadState);
-document.getElementById('export-csv-btn').addEventListener('click', exportItemsCSV);
-
-function csvField(val) {
-  const s = String(val ?? '');
-  return (s.includes(',') || s.includes('"') || s.includes('\n'))
-    ? '"' + s.replace(/"/g, '""') + '"'
-    : s;
-}
-
-function costToCSVStr(cost) {
-  const c = parseCostObj(cost);
-  const parts = [];
-  if (c.pp) parts.push(`${c.pp}pp`);
-  if (c.gp) parts.push(`${c.gp}gp`);
-  if (c.ep) parts.push(`${c.ep}ep`);
-  if (c.sp) parts.push(`${c.sp}sp`);
-  if (c.cp) parts.push(`${c.cp}cp`);
-  return parts.join(' ');
-}
-
-function variantSpecToCSVStr(s) {
-  const parens = [];
-  if (s.rarity) parens.push(s.rarity.replace(/_/g, ' '));
-  if (s.cost) parens.push(s.cost);
-  return parens.length ? `${s.label} (${parens.join(', ')})` : s.label;
-}
-
-function exportItemsCSV() {
-  const headers = ['name','rarity','description','cost','tags','damage','damageType',
-                   'attunement','stackSize','image','shape','container','containerRows','containerCols',
-                   'properties','mastery','source','variants'];
-  const rows = [headers.join(',')];
-  // Magic items are records in data/magic-items.json, not rows — a CSV row
-  // can't carry appliesTo, so exporting the ~1500 they materialize into would
-  // only flatten them.
-  Object.values(state.db).filter(t => !t.magicOf).forEach(t => {
-    const shapeStr = isStackable(t) ? '1' : normalizeShape(t.shape).map(r => r.join('')).join('|');
-    rows.push([
-      t.name,
-      t.rarity,
-      t.description || '',
-      costToCSVStr(t.cost),
-      (t.tags || []).join('|'),
-      t.damage || '',
-      t.damageType || '',
-      t.attunement ? 'true' : '',
-      isStackable(t) ? stackSizeOf(t) : '',
-      t.image || '',
-      shapeStr,
-      t.container ? 'true' : '',
-      t.containerRows != null ? t.containerRows : '',
-      t.containerCols != null ? t.containerCols : '',
-      (t.properties || []).join(';'),
-      t.mastery || '',
-      t.source || '',
-      (t.variantSpecs || []).map(variantSpecToCSVStr).join('; '),
-    ].map(csvField).join(','));
-  });
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'items.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-}
 document.getElementById('stash-all-btn').addEventListener('click', stashAllItems);
 document.getElementById('stash-delete-all-btn').addEventListener('click', () => {
   const activeContainerId = state.activeContainer;
@@ -135,23 +67,6 @@ function autoLoad() {
   try {
     applySavePayload(JSON.parse(raw));
   } catch {}
-}
-
-function saveState() {
-  autoSave();
-  flashButton(document.getElementById('save-btn'), 'Saved!');
-}
-
-function loadState() {
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) { alert('No saved data found.'); return; }
-  try {
-    applySavePayload(JSON.parse(raw));
-    renderLiveCharacter();
-    flashButton(document.getElementById('load-btn'), 'Loaded!');
-  } catch {
-    alert('Failed to load save data.');
-  }
 }
 
 function flashButton(btn, text) {

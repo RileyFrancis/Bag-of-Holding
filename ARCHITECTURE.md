@@ -79,7 +79,7 @@ In load order.
 | `interaction-context.js` | Item clicks, context menu |
 | `modals.js` | Tabs, filters, character / item-editor / stack modals |
 | `helpers.js` | Shared formatting and lookup helpers |
-| `persistence.js` | `saveState`, `loadState`, `exportItemsCSV` |
+| `persistence.js` | `autoSave`, `autoLoad`, save payload build/apply |
 | `theme.js` | Light/dark palette switching and the settings modal |
 | `panels.js` | Side-panel resize handles, collapse, and reopen buttons |
 | `appearance.js` | The accent colour, its per-theme resolution, and the hue wheel |

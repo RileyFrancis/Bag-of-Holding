@@ -5670,51 +5670,61 @@
       "variants": [
         {
           "id": "cantrip",
-          "label": "Cantrip"
+          "label": "Cantrip",
+          "cost": "30gp"
         },
         {
           "id": "level-1",
-          "label": "Level 1"
+          "label": "Level 1",
+          "cost": "50gp"
         },
         {
           "id": "level-2",
           "label": "Level 2",
-          "rarity": "uncommon"
+          "rarity": "uncommon",
+          "cost": "200gp"
         },
         {
           "id": "level-3",
           "label": "Level 3",
-          "rarity": "uncommon"
+          "rarity": "uncommon",
+          "cost": "300gp"
         },
         {
           "id": "level-4",
           "label": "Level 4",
-          "rarity": "rare"
+          "rarity": "rare",
+          "cost": "2000gp"
         },
         {
           "id": "level-5",
           "label": "Level 5",
-          "rarity": "rare"
+          "rarity": "rare",
+          "cost": "3000gp"
         },
         {
           "id": "level-6",
           "label": "Level 6",
-          "rarity": "very_rare"
+          "rarity": "very_rare",
+          "cost": "20000gp"
         },
         {
           "id": "level-7",
           "label": "Level 7",
-          "rarity": "very_rare"
+          "rarity": "very_rare",
+          "cost": "25000gp"
         },
         {
           "id": "level-8",
           "label": "Level 8",
-          "rarity": "very_rare"
+          "rarity": "very_rare",
+          "cost": "30000gp"
         },
         {
           "id": "level-9",
           "label": "Level 9",
-          "rarity": "legendary"
+          "rarity": "legendary",
+          "cost": "100000gp"
         }
       ],
       "description": "A Spell Scroll bears the words of a single spell, written in a mystical cipher. If the spell is on your spell list, you can read the scroll and cast its spell without Material components. Otherwise, the scroll is unintelligible. Casting the spell by reading the scroll requires the spell's normal casting time. Once the spell is cast, the scroll crumbles to dust. If the casting is interrupted, the scroll isn't lost.\n\nIf the spell is on your spell list but of a higher level than you can normally cast, you make an ability check using your spellcasting ability to determine whether you cast the spell. The DC equals 10 plus the spell's level. On a failed check, the spell disappears from the scroll with no other effect.\n\nThe level of the spell on the scroll determines the spell's saving throw DC and attack bonus, as well as the scroll's rarity, as shown in the following table.\n\n<table><tr><th>Spell Level</th><th>Rarity</th><th>Save DC</th><th>Attack Bonus</th></tr><tr><td>Cantrip</td><td>Common</td><td>13</td><td>+5</td></tr><tr><td>1</td><td>Common</td><td>13</td><td>+5</td></tr><tr><td>2</td><td>Uncommon</td><td>13</td><td>+5</td></tr><tr><td>3</td><td>Uncommon</td><td>15</td><td>+7</td></tr><tr><td>4</td><td>Rare</td><td>15</td><td>+7</td></tr><tr><td>5</td><td>Rare</td><td>17</td><td>+9</td></tr><tr><td>6</td><td>Very Rare</td><td>17</td><td>+9</td></tr><tr><td>7</td><td>Very Rare</td><td>18</td><td>+10</td></tr><tr><td>8</td><td>Very Rare</td><td>18</td><td>+10</td></tr><tr><td>9</td><td>Legendary</td><td>19</td><td>+11</td></tr></table>\n\n**Copying a Scroll into a Spellbook.** A Wizard spell on a Spell Scroll can be copied into a spellbook. When a spell is copied in this way, the copier must succeed on an Intelligence (Arcana) check with a DC equal to 10 plus the spell's level. On a successful check, the spell is copied. Whether the check succeeds or fails, the Spell Scroll is destroyed."

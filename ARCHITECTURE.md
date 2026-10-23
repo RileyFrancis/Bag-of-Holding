@@ -68,6 +68,7 @@ In load order.
 | `folders.js` | Browse-list folders: model, persistence, folder modals |
 | `item-sort.js` | The Browse list's sort order: the modes, their persistence, the menu |
 | `shapes.js` | Rotation, shape cell and bounding-box math |
+| `shape-painter.js` | The item shape painter dialog (both item forms), and the in-form preview |
 | `grid.js` | Fit tests, place/remove, `rebuildGrid`, id generation |
 | `render-grid.js` | `renderGrid`, `renderAllItems` |
 | `render-sidebar.js` | `renderItemList`, details panel |
@@ -126,7 +127,7 @@ that owns the element wins.
 | `layout.css` | The app shell: header, weight readout, main split, panel resizing |
 | `inventory.css` | The torn sheet, grid cells, placed items, the drag ghost |
 | `sidebar.css` | The right panel: browse list, folders, details, menus |
-| `modals.css` | Modal chrome, and the shape editor inside the item editor |
+| `modals.css` | Modal chrome, the item form's shape preview, and the shape painter |
 | `character.css` | The character tabs, and page one of the 2024 sheet |
 | `character-setup.css` | The sheet's gear button, and the class rows in the setup modal |
 | `sheet-layout.css` | The sheet's split containers, resize seams, drop feedback |

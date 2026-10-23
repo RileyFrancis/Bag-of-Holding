@@ -245,11 +245,8 @@
 .hb-check:has(input:disabled) { opacity: 0.45; cursor: default; }
 .hb-check input { width: 14px; height: 14px; margin: 0; }
 
-/* The item shape grid. */
-.hb-shape-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 8px; }
-.hb-shape-weight { margin-left: 8px; font-size: 12px; color: var(--text-dim); }
-.hb-shape-grid { display: grid; gap: 2px; width: fit-content; }
-.hb-shape-grid .shape-cell { width: 26px; height: 26px; padding: 0; }
+/* The item shape: a preview and a button (.shape-preview-row, modals.css). */
+.hb-shape-weight { font-size: 12px; color: var(--text-dim); }
 
 /* ─── LEVEL BY LEVEL ─────────────────────────────────────── */
 /* Twenty bands, like the class table in the book: an empty level is one quiet

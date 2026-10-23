@@ -442,49 +442,35 @@ function hbCostEl(f) {
   return row;
 }
 
-// The item editor's shape grid, in miniature: click a cell to fill it, the
-// buttons grow or shrink the box. Weight is the filled count, 1 lb per cell.
+// The item's shape, as a preview and a button into the same painter the New
+// Item dialog uses (shape-painter.js). Weight is the filled count, 1 lb a cell.
 function hbShapeEl(f) {
   const box = document.createElement('div');
-  box.className = 'hb-shape';
-  const controls = document.createElement('div');
-  controls.className = 'hb-shape-controls';
-  const grid = document.createElement('div');
-  grid.className = 'hb-shape-grid';
+  box.className = 'shape-preview-row';
+  const preview = document.createElement('button');
+  preview.type = 'button';
+  preview.className = 'shape-preview';
+  preview.title = 'Edit shape';
+  preview.setAttribute('aria-label', 'Edit shape');
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'btn-sm';
+  edit.textContent = 'Edit Shape';
   const weight = document.createElement('span');
   weight.className = 'hb-shape-weight';
 
-  const shape = () => hbEdit.values[f.key];
   const draw = () => {
-    const s = shape();
-    grid.style.gridTemplateColumns = `repeat(${s[0].length}, 26px)`;
-    grid.innerHTML = '';
-    s.forEach((row, r) => row.forEach((on, c) => {
-      const cell = document.createElement('button');
-      cell.type = 'button';
-      cell.className = 'shape-cell' + (on ? ' on' : '');
-      cell.setAttribute('aria-label', `Row ${r + 1}, column ${c + 1}`);
-      cell.addEventListener('click', () => { s[r][c] = s[r][c] ? 0 : 1; draw(); hbTouched(); });
-      grid.appendChild(cell);
-    }));
-    weight.textContent = `${shapeWeight(s)} lb`;
+    renderShapePreview(preview, hbEdit.values[f.key]);
+    weight.textContent = `${shapeWeight(hbEdit.values[f.key])} lb`;
   };
-  const btn = (text, onClick) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'btn-sm';
-    b.textContent = text;
-    b.addEventListener('click', () => { onClick(shape()); draw(); hbTouched(); });
-    controls.appendChild(b);
-  };
-  btn('+ Col', s => s.forEach(r => r.push(0)));
-  btn('− Col', s => { if (s[0].length > 1) s.forEach(r => r.pop()); });
-  btn('+ Row', s => s.push(Array(s[0].length).fill(0)));
-  btn('− Row', s => { if (s.length > 1) s.pop(); });
-  btn('Fill', s => s.forEach(r => r.fill(1)));
-  btn('Clear', s => s.forEach(r => r.fill(0)));
-  controls.appendChild(weight);
-  box.append(controls, grid);
+  const open = () => openShapePainter(hbEdit.values[f.key], shape => {
+    hbEdit.values[f.key] = shape;
+    draw();
+    hbTouched();
+  });
+  preview.addEventListener('click', open);
+  edit.addEventListener('click', open);
+  box.append(preview, edit, weight);
   draw();
   return box;
 }

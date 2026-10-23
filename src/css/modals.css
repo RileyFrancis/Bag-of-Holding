@@ -110,30 +110,67 @@
 }
 
 /* ─── SHAPE EDITOR ───────────────────────────────────────── */
+/* In the item form it is only a preview and a button; the drawing happens in
+   #shape-modal, the painter over it (shape-painter.js). */
 #shape-editor-section { margin-bottom: 12px; }
 #shape-editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 #shape-weight-display { font-size: 12px; color: var(--text-dim); }
 
-#shape-controls {
-  display: flex;
-  gap: 5px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-#shape-controls button {
-  background: var(--panel);
+.shape-preview-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.shape-preview {
+  display: grid;
+  gap: 1px;
+  width: fit-content;
+  padding: 5px;
+  background: var(--field);
   border: 1px solid var(--border2);
   border-radius: 4px;
-  padding: 3px 8px;
-  font-size: 11px;
+  transition: border-color 0.15s;
 }
-#shape-controls button:hover { border-color: var(--accent); }
+.shape-preview:hover { border-color: var(--accent); }
+.shape-preview-cell { width: 14px; height: 14px; border-radius: 2px; }
+.shape-preview-cell.on { background: var(--accent); }
 
-#shape-editor-grid {
+/* ─── SHAPE PAINTER ──────────────────────────────────────── */
+/* Over another modal: it takes its own clicks (a click beside the box cancels)
+   instead of letting them fall through to the shared backdrop, which would
+   close the item form underneath too. */
+#shape-modal { pointer-events: all; }
+#shape-modal .modal-box { width: auto; }
+
+#shape-painter-readout {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+#shape-painter-readout strong { color: var(--text); }
+
+/* A fixed size, so the box never resizes (and re-centres) as the canvas grows
+   under the pointer: room for the widest shape an inventory takes (15 cells)
+   plus its margins, 19 × 30px. The grid inside is placed by shape-painter.js,
+   not by layout — see the note at the top of that file. Past this, it scrolls. */
+#shape-painter-scroll {
+  position: relative;
+  width: 570px;
+  max-width: 100%;
+  height: min(570px, 55vh);
+  overflow: auto;
+  background: color-mix(in srgb, var(--field) 40%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+#shape-painter-grid {
+  position: absolute;
   display: grid;
   gap: 2px;
   width: fit-content;
+  touch-action: none; /* a drag paints, never scrolls */
+  user-select: none;
 }
+#shape-modal .modal-footer #shape-painter-clear { margin-right: auto; }
+
 .shape-cell {
   width: 28px;
   height: 28px;
@@ -147,5 +184,12 @@
   background: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 80%, white);
 }
-.shape-cell:hover:not(.on) { background: var(--panel); border-color: var(--accent); }
-
+.shape-cell:hover:not(.on):not(.blocked) { background: var(--panel); border-color: var(--accent); }
+/* Filling it would make the item bigger than an inventory allows. */
+.shape-cell.blocked {
+  background: transparent;
+  border-color: var(--border);
+  border-style: dashed;
+  opacity: 0.45;
+  cursor: not-allowed;
+}

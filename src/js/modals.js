@@ -266,51 +266,19 @@ function updateUnitWeightDisplay() {
     n >= 1 ? formatWeight(1 / n) : '—';
 }
 
-// Shape controls
-document.getElementById('sc-add-col').addEventListener('click', () => {
-  state.editorShape.forEach(r => r.push(0));
-  renderShapeEditor();
-});
-document.getElementById('sc-rem-col').addEventListener('click', () => {
-  if (state.editorShape[0].length <= 1) return;
-  state.editorShape.forEach(r => r.pop());
-  renderShapeEditor();
-});
-document.getElementById('sc-add-row').addEventListener('click', () => {
-  state.editorShape.push(Array(state.editorShape[0].length).fill(0));
-  renderShapeEditor();
-});
-document.getElementById('sc-rem-row').addEventListener('click', () => {
-  if (state.editorShape.length <= 1) return;
-  state.editorShape.pop();
-  renderShapeEditor();
-});
-document.getElementById('sc-clear').addEventListener('click', () => {
-  state.editorShape = state.editorShape.map(r => r.map(() => 0));
-  renderShapeEditor();
-});
-document.getElementById('sc-fill').addEventListener('click', () => {
-  state.editorShape = state.editorShape.map(r => r.map(() => 1));
-  renderShapeEditor();
-});
-
+// The shape is drawn in the painter (shape-painter.js); the form only shows it.
 function renderShapeEditor() {
-  const grid = document.getElementById('shape-editor-grid');
-  const shape = state.editorShape;
-  const rows = shape.length, cols = shape[0].length;
-  grid.style.gridTemplateColumns = `repeat(${cols}, 28px)`;
-  grid.innerHTML = '';
-  shape.forEach((row, r) => row.forEach((v, c) => {
-    const cell = document.createElement('div');
-    cell.className = 'shape-cell ' + (v ? 'on' : '');
-    cell.addEventListener('click', () => {
-      state.editorShape[r][c] = state.editorShape[r][c] ? 0 : 1;
-      renderShapeEditor();
-    });
-    grid.appendChild(cell);
-  }));
-  document.getElementById('shape-weight-val').textContent = shapeWeight(shape);
+  renderShapePreview(document.getElementById('shape-editor-preview'), state.editorShape);
+  document.getElementById('shape-weight-val').textContent = shapeWeight(state.editorShape);
 }
+function openItemShapePainter() {
+  openShapePainter(state.editorShape, shape => {
+    state.editorShape = shape;
+    renderShapeEditor();
+  });
+}
+document.getElementById('shape-editor-open').addEventListener('click', openItemShapePainter);
+document.getElementById('shape-editor-preview').addEventListener('click', openItemShapePainter);
 
 document.getElementById('save-item-btn').addEventListener('click', () => {
   const name = document.getElementById('f-name').value.trim();

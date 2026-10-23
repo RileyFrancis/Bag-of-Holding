@@ -27,7 +27,7 @@ const state = {
   dragging: null,         // { instanceId, anchorRow, anchorCol, origRow, origCol, origRotation }
   selected: null,         // { type:'instance'|'template', id } — shown in the Details tab
 
-  editorShape: [[1]],     // shape editor state (inside the item modal)
+  editorShape: [[1]],     // the item modal's shape (drawn in shape-painter.js)
   editingItemId: null,    // null = new item
 
   // Browse-list folders and sort — catalogue view, persisted per browser (not in the save file).

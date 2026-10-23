@@ -1195,20 +1195,18 @@
         </div>
       </div>
 
+      <!-- A preview only — the shape is drawn in #shape-modal, opened by the
+           button (or the preview itself). See src/js/shape-painter.js. -->
       <div id="shape-editor-section">
         <div id="shape-editor-header">
-          <span class="field-label">Shape (click cells to draw)</span>
+          <span class="field-label">Shape</span>
           <span id="shape-weight-display">Weight: <strong id="shape-weight-val">1</strong> lb</span>
         </div>
-        <div id="shape-controls">
-          <button type="button" id="sc-add-col">+ Col</button>
-          <button type="button" id="sc-rem-col">− Col</button>
-          <button type="button" id="sc-add-row">+ Row</button>
-          <button type="button" id="sc-rem-row">− Row</button>
-          <button type="button" id="sc-clear">Clear</button>
-          <button type="button" id="sc-fill">Fill All</button>
+        <div class="shape-preview-row">
+          <button type="button" id="shape-editor-preview" class="shape-preview" title="Edit shape"
+                  aria-label="Edit shape"></button>
+          <button type="button" id="shape-editor-open" class="btn-sm">Edit Shape</button>
         </div>
-        <div id="shape-editor-grid"></div>
       </div>
 
     </div>
@@ -1811,6 +1809,28 @@
   </div>
 </div>
 
+<!-- ===== SHAPE PAINTER =====
+     Opened over an item form (the New Item dialog, the homebrew Item kind), so
+     it comes after every other modal and paints on top of them. It handles its
+     own outside clicks — see src/js/shape-painter.js. -->
+<div id="shape-modal" class="modal hidden" data-backdrop-close="false">
+  <div class="modal-box">
+    <h2>Item Shape</h2>
+    <div id="shape-painter-readout">
+      <span>Weight: <strong id="shape-painter-weight">1</strong> lb</span>
+      <span>Size: <strong id="shape-painter-size">1 × 1</strong></span>
+    </div>
+    <div id="shape-painter-scroll">
+      <div id="shape-painter-grid"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" id="shape-painter-clear" class="btn-sm danger">Clear</button>
+      <button type="button" id="shape-painter-done" class="btn-primary">Done</button>
+      <button type="button" id="shape-painter-cancel" class="btn-sm">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== ITEM TOOLTIP ===== -->
 <div id="item-tooltip" class="hidden"></div>
 <!-- The full spell card for a hovered row of Available Spells — built by
@@ -1831,6 +1851,7 @@
 <script src="src/js/folders.js"></script>
 <script src="src/js/item-sort.js"></script>
 <script src="src/js/shapes.js"></script>
+<script src="src/js/shape-painter.js"></script>
 <script src="src/js/grid.js"></script>
 
 <script src="src/js/render-grid.js"></script>

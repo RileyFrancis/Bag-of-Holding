@@ -81,11 +81,17 @@ function renderTooltip(t, weight, x, y) {
   showTooltipAt(el, x, y);
 }
 
+// Narrowest the card gets, and widest it may grow to keep a long description
+// from running down the screen.
+const TOOLTIP_MIN_W = 240;
+const TOOLTIP_MAX_W = 560;
+
 // Beside the cursor, flipped or pulled back in wherever it would leave the window.
 function showTooltipAt(el, x, y) {
   el.classList.remove('hidden');
 
-  const pad = 12, tipW = 240;
+  const pad = 12;
+  const tipW = squareUpTooltip(el, Math.min(TOOLTIP_MAX_W, window.innerWidth - pad * 2));
   let left = x + pad, top = y + pad;
   if (left + tipW > window.innerWidth - pad) left = x - tipW - pad;
   el.style.left = left + 'px';
@@ -93,4 +99,22 @@ function showTooltipAt(el, x, y) {
   if (top + el.offsetHeight > window.innerHeight - pad) {
     el.style.top = (window.innerHeight - el.offsetHeight - pad) + 'px';
   }
+}
+
+// Widens a card taller than it is wide toward a square. Wrapped text keeps
+// roughly the same area at any width, so the side of that square is
+// √(width × height) — measured twice, since the fixed rows (name, weight, cost)
+// don't shrink as the text does. Returns the width it settled on.
+function squareUpTooltip(el, maxW) {
+  let w = TOOLTIP_MIN_W;
+  el.style.width = w + 'px';
+  for (let i = 0; i < 2; i++) {
+    const h = el.offsetHeight;
+    if (h <= w) break;
+    const next = Math.round(Math.min(maxW, Math.max(TOOLTIP_MIN_W, Math.sqrt(w * h))));
+    if (next <= w) break;
+    w = next;
+    el.style.width = w + 'px';
+  }
+  return w;
 }

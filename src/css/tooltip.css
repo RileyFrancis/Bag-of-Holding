@@ -6,7 +6,7 @@
 #item-tooltip {
   position: fixed;
   z-index: 9999;
-  width: 240px;
+  width: 240px; /* the narrowest; tooltip.js widens it — see squareUpTooltip() */
   background: var(--panel);
   border: 1px solid var(--border2);
   border-radius: 6px;
@@ -52,7 +52,8 @@
   line-height: 1.45;
 }
 
-/* Markdown, rendered by markdown.js. The tooltip is a fixed 240px and never
+/* Markdown, rendered by markdown.js. The tooltip is 240px, widened toward a
+   square for a long description (squareUpTooltip() in tooltip.js), and never
    scrolls (pointer-events: none up top), so this stays compact — a table
    just shrinks its own columns rather than growing the box. */
 .tip-desc > :first-child { margin-top: 0; }

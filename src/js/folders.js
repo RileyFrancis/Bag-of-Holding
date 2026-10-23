@@ -29,6 +29,7 @@ const DEFAULT_FOLDERS = [
   { id: 'folder_jewelry',     name: 'Jewelry',              match: t => hasTagWord(t, 'ring') || JEWELRY_NAME.test(t.name) },
   { id: 'folder_implements',  name: 'Rods, Staffs & Wands', match: t => hasTagWord(t, 'rod') || hasTagWord(t, 'staff') || hasTagWord(t, 'wand') },
   { id: 'folder_consumables', name: 'Consumables',          match: t => !!t.consumable || hasTagWord(t, 'potion') || hasTagWord(t, 'scroll') },
+  { id: 'folder_food',        name: 'Food & Drink',         match: t => hasTagWord(t, 'food') || hasTagWord(t, 'drink') },
   { id: 'folder_wondrous',    name: 'Wondrous Items',       match: t => hasTagWord(t, 'magic') },
   { id: 'folder_tools',       name: 'Tools & Instruments',  match: t => hasTagWord(t, 'tool') || hasTagWord(t, 'instrument') },
   { id: 'folder_gear',        name: 'Gear & Containers',    match: t => !!t.container || hasTagWord(t, 'container') || !hasTagWord(t, 'magic') },
@@ -37,7 +38,7 @@ const DEFAULT_FOLDERS = [
 ];
 
 const DEFAULT_FOLDER_MATCH_ORDER = [
-  'folder_artifacts', 'folder_currency', 'folder_weapons', 'folder_armor',
+  'folder_artifacts', 'folder_currency', 'folder_food', 'folder_weapons', 'folder_armor',
   'folder_implements', 'folder_tools', 'folder_apparel', 'folder_jewelry',
   'folder_consumables', 'folder_gear', 'folder_wondrous',
 ];
@@ -57,10 +58,10 @@ function hasTagWord(t, word) {
 let foldersSeeded = false;
 
 // Which generation of DEFAULT_FOLDERS this browser's folders were laid out
-// from. 1 is the original Weapons / Armor / Currency / Gear set; 2 is the
-// current one. Stored, so the upgrade below runs once and a folder deleted
+// from. 1 is the original Weapons / Armor / Currency / Gear set; 2 sorted by
+// what an item is; 3 added Food & Drink. Stored, so the upgrade below runs once and a folder deleted
 // afterwards stays deleted.
-const FOLDER_LAYOUT_VERSION = 2;
+const FOLDER_LAYOUT_VERSION = 3;
 let folderLayout = FOLDER_LAYOUT_VERSION;
 
 // The v1 defaults, by id — the upgrade renames one only while it still has
@@ -103,31 +104,47 @@ function loadFolders() {
 // by hand), the new folders are added, and the defaults are put in their
 // display order ahead of the user's own folders. A browser with no folders at
 // all chose a flat list — that is left alone.
+//
+// Each later step adds only the folders that version introduced (a default
+// the user deleted since must stay deleted), placed after its neighbour.
 function upgradeFolderLayout() {
   if (folderLayout >= FOLDER_LAYOUT_VERSION) return;
+  const from = folderLayout;
   folderLayout = FOLDER_LAYOUT_VERSION;
-  if (state.folders.length) {
-    const magic = getFolder('folder_magic');
-    const magicUsed = Object.values(state.folderAssign).includes('folder_magic');
-    if (magic && magic.name === V1_DEFAULT_NAMES.folder_magic && !magicUsed) {
-      state.folders = state.folders.filter(f => f.id !== 'folder_magic');
-      delete state.folderCollapsed.folder_magic;
-    }
-    state.folders.forEach(f => {
-      const def = DEFAULT_FOLDERS.find(d => d.id === f.id);
-      if (def && f.name === V1_DEFAULT_NAMES[f.id]) f.name = def.name;
-    });
-    addMissingDefaultFolders();
-    const rank = id => {
-      const i = DEFAULT_FOLDERS.findIndex(d => d.id === id);
-      return i === -1 ? DEFAULT_FOLDERS.length : i;
-    };
-    state.folders = state.folders
-      .map((f, i) => ({ f, i }))
-      .sort((a, b) => rank(a.f.id) - rank(b.f.id) || a.i - b.i)
-      .map(x => x.f);
-  }
+  if (state.folders.length && from < 2) upgradeFolderLayoutToV2(); // adds v3's too
+  else if (state.folders.length && from < 3) addDefaultFolderAfter('folder_food', 'folder_consumables');
   saveFolders();
+}
+
+// Adds one default folder (unless it, or a folder of its name, already
+// exists) just after `afterId`, or at the end of the defaults without it.
+function addDefaultFolderAfter(id, afterId) {
+  const def = DEFAULT_FOLDERS.find(d => d.id === id);
+  if (!def || getFolder(id) || state.folders.some(f => f.name.toLowerCase() === def.name.toLowerCase())) return;
+  const at = state.folders.findIndex(f => f.id === afterId);
+  state.folders.splice(at === -1 ? state.folders.length : at + 1, 0, { id: def.id, name: def.name });
+}
+
+function upgradeFolderLayoutToV2() {
+  const magic = getFolder('folder_magic');
+  const magicUsed = Object.values(state.folderAssign).includes('folder_magic');
+  if (magic && magic.name === V1_DEFAULT_NAMES.folder_magic && !magicUsed) {
+    state.folders = state.folders.filter(f => f.id !== 'folder_magic');
+    delete state.folderCollapsed.folder_magic;
+  }
+  state.folders.forEach(f => {
+    const def = DEFAULT_FOLDERS.find(d => d.id === f.id);
+    if (def && f.name === V1_DEFAULT_NAMES[f.id]) f.name = def.name;
+  });
+  addMissingDefaultFolders();
+  const rank = id => {
+    const i = DEFAULT_FOLDERS.findIndex(d => d.id === id);
+    return i === -1 ? DEFAULT_FOLDERS.length : i;
+  };
+  state.folders = state.folders
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => rank(a.f.id) - rank(b.f.id) || a.i - b.i)
+    .map(x => x.f);
 }
 
 // First run (and once for browsers whose folders predate the defaults) — adds

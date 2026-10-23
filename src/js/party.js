@@ -122,7 +122,7 @@ async function sweepLegacySelfEntries(code, name) {
 function getCustomDb() {
   return Object.fromEntries(
     Object.entries(state.db).filter(([id, t]) =>
-      !DEFAULT_ITEMS.find(d => d.id === id) && (!t?._homebrew || homebrewItemInUse(id)))
+      !DEFAULT_ITEM_IDS.has(id) && (!t?._homebrew || homebrewItemInUse(id)))
   );
 }
 
@@ -565,7 +565,8 @@ function loadPlayerStateIntoView(playerData) {
   DEFAULT_ITEMS.forEach(t => { state.db[t.id] = t; });
   if (playerData.customDb) Object.assign(state.db, playerData.customDb);
 
-  state.instances = playerData.instances ? { ...playerData.instances } : {};
+  // Another member's client may not have migrated to slug ids yet (items.js).
+  state.instances = playerData.instances ? migrateInstanceTemplateIds(playerData.instances) : {};
   state.equipped  = playerData.equipped  ? { ...playerData.equipped  } : {};
   syncHomebrewItems();
   syncNextId();
@@ -575,7 +576,7 @@ function loadPlayerStateIntoView(playerData) {
 }
 
 function applyRemoteEditToOwnState(playerData) {
-  if (playerData.instances !== undefined) state.instances = { ...playerData.instances };
+  if (playerData.instances !== undefined) state.instances = migrateInstanceTemplateIds(playerData.instances) ?? {};
   if (playerData.equipped  !== undefined) state.equipped  = { ...playerData.equipped  };
   if (playerData.customDb) Object.assign(state.db, playerData.customDb);
   syncNextId();
@@ -662,7 +663,7 @@ function computeCarriedWeightFor(instances, customDb) {
   DEFAULT_ITEMS.forEach(t => { db[t.id] = t; });
   Object.assign(db, customDb ?? {});
   return Object.values(instances ?? {}).reduce((sum, inst) => {
-    const t = db[inst.templateId];
+    const t = db[currentTemplateId(inst.templateId)];
     if (!t) return sum;
     return sum + (isStackable(t) ? unitWeight(t) * inst.stackCount : shapeWeight(getRotatedShape(t.shape, inst.rotation)));
   }, 0);

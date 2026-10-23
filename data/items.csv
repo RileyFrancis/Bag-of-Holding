@@ -4,57 +4,57 @@ Silver Piece,special,"Ooh, shiny!",1sp,currency|valuable,,,,50,,1,,,,,,PHB,
 Electrum Piece,special,"Ooh, shiny!",1ep,currency|valuable,,,,50,,1,,,,,,PHB,
 Gold Piece,special,"Ooh, shiny!",1gp,currency|valuable,,,,50,,1,,,,,,PHB,
 Platinum Piece,special,"Ooh, shiny!",1pp,currency|valuable,,,,50,,1,,,,,,PHB,
-Club,,,1sp,weapon|simple mele weapon,1d4,bludgeoning,,,,1|1,,,,Light,Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Dagger,,,2gp,weapon|simple mele weapon,1d4,piercing,,,,1,,,,Finesse; Light; Thrown (Range 20/60),Nick,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Greatclub,,,2sp,weapon|simple mele weapon,1d8,bludgeoning,,,,111|111|110|010|010,,,,Two-Handed,Push,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Handaxe,,,5gp,weapon|simple mele weapon,1d6,slashing,,,,1|1,,,,Light; Thrown (Range 20/60),Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Javelin,,,5sp,weapon|simple mele weapon,1d6,piercing,,,,1|1,,,,Thrown (Range 30/120),Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Light Hammer,,,2gp,weapon|simple mele weapon,1d4,bludgeoning,,,,1|1,,,,Light; Thrown (Range 20/60),Nick,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Mace,,,5gp,weapon|simple mele weapon,1d6,bludgeoning,,,,11|01|01,,,,,Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Quarterstaff,,,2sp,weapon|simple mele weapon,1d6,bludgeoning,,,,1|1|1|1,,,,Versatile (1d8),Topple,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Sickle,,,1gp,weapon|simple mele weapon,1d4,slashing,,,,1|1,,,,Light,Nick,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Spear,,,1gp,weapon|simple mele weapon,1d6,piercing,,,,1|1|1,,,,Thrown (Range 20/60); Versatile (1d8),Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Dart,,,5cp,weapon|simple ranged weapon,1d4,piercing,,4,,1,,,,Finesse; Thrown (Range 20/60),Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Light Crossbow,,,25gp,weapon|simple ranged weapon,1d8,piercing,,,,111|010|010,,,,"Ammunition (Range 80/320, Bolt); Loading; Two-Handed",Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Shortbow,,,25gp,weapon|simple ranged weapon,1d6,piercing,,,,1|1,,,,"Ammunition (Range 80/320, Arrow); Two-Handed",Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Sling,,,1sp,weapon|simple ranged weapon,1d4,bludgeoning,,,,1,,,,"Ammunition (Range 30/120, Bullet)",Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Battleaxe,,,10gp,weapon|martial mele weapon,1d8,slashing,,,,11|01|01,,,,Versatile (1d10),Topple,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Flail,,,10gp,weapon|martial mele weapon,1d8,bludgeoning,,,,1|1,,,,,Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Glaive,,,20gp,weapon|martial mele weapon,1d10,slashing,,,,11|01|01|01|01,,,,Heavy; Reach; Two-Handed,Graze,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Greataxe,,,30gp,weapon|martial mele weapon,1d12,slashing,,,,111|110|010|010,,,,Heavy; Two-Handed,Cleave,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Greatsword,,,50gp,weapon|martial mele weapon,2d6,slashing,,,,010|010|111|010,,,,Heavy; Two-Handed,Graze,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Halberd,,,20gp,weapon|martial mele weapon,1d10,slashing,,,,01|11|01|01|01,,,,Heavy; Reach; Two-Handed,Cleave,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Lance,,,10gp,weapon|martial mele weapon,1d10,piercing,,,,1|1|1|1|1|1,,,,Heavy; Reach; Two-Handed (unless mounted),Topple,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Longsword,,,15gp,weapon|martial mele weapon,1d8,slashing,,,,1|1|1,,,,Versatile (1d10),Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Maul,,,10gp,weapon|martial mele weapon,2d6,bludgeoning,,,,1111|1110|0010|0010|0010,,,,Heavy; Two-Handed,Topple,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Morningstar,,,15gp,weapon|martial mele weapon,1d8,piercing,,,,01|11|10,,,,,Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Pike,,,5gp,weapon|martial mele weapon,1d10,piercing,,,,010|111|111|010|010|010|110|010|010|010|010|010|010,,,,Heavy; Reach; Two-Handed,Push,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Rapier,,,25gp,weapon|martial mele weapon,1d8,piercing,,,,1|1,,,,Finesse,Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Scimitar,,,25gp,weapon|martial mele weapon,1d6,slashing,,,,1|1|1,,,,Finesse; Light,Nick,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Shortsword,,,10gp,weapon|martial mele weapon,1d6,piercing,,,,1|1,,,,Finesse; Light,Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Trident,,,5gp,weapon|martial mele weapon,1d8,piercing,,,,1|1|1|1,,,,Thrown (Range 20/60); Versatile (1d10),Topple,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Warhammer,,,15gp,weapon|martial mele weapon,1d8,bludgeoning,,,,111|010|010,,,,Versatile (1d10),Push,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-War Pick,,,5gp,weapon|martial mele weapon,1d8,piercing,,,,1|1,,,,Versatile (1d10),Sap,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Whip,,,2gp,weapon|martial mele weapon,1d4,slashing,,,,11|01,,,,Finesse; Reach,Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Blowgun,,,10gp,weapon|martial ranged weapon,1,piercing,,,,1,,,,"Ammunition (Range 25/100, Needle); Loading",Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Hand Crossbow,,,75gp,weapon|martial ranged weapon,1d6,piercing,,,,11|01,,,,"Ammunition (Range 30/120, Bolt); Light; Loading",Vex,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Heavy Crossbow,,,50gp,weapon|martial ranged weapon,1d10,piercing,,,,01110|11111|01110|01110|01110|00100,,,,"Ammunition (Range 100/400, Bolt); Heavy; Loading; Two-Handed",Push,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Longbow,,,50gp,weapon|martial ranged weapon,1d8,piercing,,,,1|1,,,,"Ammunition (Range 150/600, Arrow); Heavy; Two-Handed",Slow,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Musket,,,500gp,weapon|martial ranged weapon,1d12,piercing,,,,11111|11111,,,,"Ammunition (Range 40/120, Bullet); Loading; Two-Handed",Slow,DMG,+1 (uncommon); +2 (rare); +3 (very rare)
-Pistol,,,250gp,weapon|martial ranged weapon,1d10,piercing,,,,11|10,,,,"Ammunition (Range 30/90, Bullet); Loading",Vex,DMG,+1 (uncommon); +2 (rare); +3 (very rare)
-Padded Armor,,,5gp,armor|light armor,,,,,,101|111|111,,,,AC 11 + Dex; Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Leather Armor,,,10gp,armor|light armor,,,,,,1001|1111|0110|0110,,,,AC 11 + Dex,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Studded Leather Armor,,,45gp,armor|light armor,,,,,,1001|1111|1111|0110|0010,,,,AC 12 + Dex,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Hide Armor,,,10gp,armor|medium armor,,,,,,1001|1111|1111|0110,,,,AC 12 + Dex (max 2),,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Chain Shirt,,,50gp,armor|medium armor,,,,,,010010|111111|011110|011110|011110,,,,AC 13 + Dex (max 2),,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Scale Mail,,,50gp,armor|medium armor,,,,,,01100110|11111111|11111111|01111110|01111110|00111100|00111100,,,,AC 14 + Dex (max 2); Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Breastplate,,,400gp,armor|medium armor,,,,,,1001|1111|1111|1111|1111|0110,,,,AC 14 + Dex (max 2),,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Half Plate Armor,,,750gp,armor|medium armor,,,,,,01000010|11111111|11111111|01111110|01111110|01111110|01100110,,,,AC 15 + Dex (max 2); Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Ring Mail,,,30gp,armor|heavy armor,,,,,,01000010|11111111|11111111|01111110|01111110|01111110|01100110,,,,AC 14; Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Chain Mail,,,75gp,armor|heavy armor,,,,,,0010000100|0111111110|1111111111|1111111111|0011111100|0011111100|0011111100|0001111100|0000001100,,,,AC 16; Str 13; Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Splint Armor,,,200gp,armor|heavy armor,,,,,,0010000100|0111111110|1111111111|1111111111|0011111100|0011111100|0011111100|0011111100|0011111100,,,,AC 17; Str 15; Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Plate Armor,,,1500gp,armor|heavy armor,,,,,,00100000100|01110101110|11111111111|11111111111|00111111100|00111111100|00111111100|00011111000|00011111000|00001110000,,,,AC 18; Str 15; Stealth Disadvantage,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
-Shield,,,10gp,armor|shield,,,,,,11|11|11,,,,AC +2,,PHB,+1 (uncommon); +2 (rare); +3 (very rare)
+Club,,,1sp,weapon|simple melee weapon,1d4,bludgeoning,,,,1|1,,,,Light,Slow,PHB,
+Dagger,,,2gp,weapon|simple melee weapon,1d4,piercing,,,,1,,,,Finesse; Light; Thrown (Range 20/60),Nick,PHB,
+Greatclub,,,2sp,weapon|simple melee weapon,1d8,bludgeoning,,,,111|111|110|010|010,,,,Two-Handed,Push,PHB,
+Handaxe,,,5gp,weapon|simple melee weapon|axe,1d6,slashing,,,,1|1,,,,Light; Thrown (Range 20/60),Vex,PHB,
+Javelin,,,5sp,weapon|simple melee weapon,1d6,piercing,,,,1|1,,,,Thrown (Range 30/120),Slow,PHB,
+Light Hammer,,,2gp,weapon|simple melee weapon,1d4,bludgeoning,,,,1|1,,,,Light; Thrown (Range 20/60),Nick,PHB,
+Mace,,,5gp,weapon|simple melee weapon,1d6,bludgeoning,,,,11|01|01,,,,,Sap,PHB,
+Quarterstaff,,,2sp,weapon|simple melee weapon,1d6,bludgeoning,,,,1|1|1|1,,,,Versatile (1d8),Topple,PHB,
+Sickle,,,1gp,weapon|simple melee weapon,1d4,slashing,,,,1|1,,,,Light,Nick,PHB,
+Spear,,,1gp,weapon|simple melee weapon,1d6,piercing,,,,1|1|1,,,,Thrown (Range 20/60); Versatile (1d8),Sap,PHB,
+Dart,,,5cp,weapon|simple ranged weapon,1d4,piercing,,4,,1,,,,Finesse; Thrown (Range 20/60),Vex,PHB,
+Light Crossbow,,,25gp,weapon|simple ranged weapon,1d8,piercing,,,,111|010|010,,,,"Ammunition (Range 80/320, Bolt); Loading; Two-Handed",Slow,PHB,
+Shortbow,,,25gp,weapon|simple ranged weapon,1d6,piercing,,,,1|1,,,,"Ammunition (Range 80/320, Arrow); Two-Handed",Vex,PHB,
+Sling,,,1sp,weapon|simple ranged weapon,1d4,bludgeoning,,,,1,,,,"Ammunition (Range 30/120, Bullet)",Slow,PHB,
+Battleaxe,,,10gp,weapon|martial melee weapon|axe,1d8,slashing,,,,11|01|01,,,,Versatile (1d10),Topple,PHB,
+Flail,,,10gp,weapon|martial melee weapon,1d8,bludgeoning,,,,1|1,,,,,Sap,PHB,
+Glaive,,,20gp,weapon|martial melee weapon,1d10,slashing,,,,11|01|01|01|01,,,,Heavy; Reach; Two-Handed,Graze,PHB,
+Greataxe,,,30gp,weapon|martial melee weapon|axe,1d12,slashing,,,,111|110|010|010,,,,Heavy; Two-Handed,Cleave,PHB,
+Greatsword,,,50gp,weapon|martial melee weapon|sword,2d6,slashing,,,,010|010|111|010,,,,Heavy; Two-Handed,Graze,PHB,
+Halberd,,,20gp,weapon|martial melee weapon,1d10,slashing,,,,01|11|01|01|01,,,,Heavy; Reach; Two-Handed,Cleave,PHB,
+Lance,,,10gp,weapon|martial melee weapon,1d10,piercing,,,,1|1|1|1|1|1,,,,Heavy; Reach; Two-Handed (unless mounted),Topple,PHB,
+Longsword,,,15gp,weapon|martial melee weapon|sword,1d8,slashing,,,,1|1|1,,,,Versatile (1d10),Sap,PHB,
+Maul,,,10gp,weapon|martial melee weapon,2d6,bludgeoning,,,,1111|1110|0010|0010|0010,,,,Heavy; Two-Handed,Topple,PHB,
+Morningstar,,,15gp,weapon|martial melee weapon,1d8,piercing,,,,01|11|10,,,,,Sap,PHB,
+Pike,,,5gp,weapon|martial melee weapon,1d10,piercing,,,,010|111|111|010|010|010|110|010|010|010|010|010|010,,,,Heavy; Reach; Two-Handed,Push,PHB,
+Rapier,,,25gp,weapon|martial melee weapon|sword,1d8,piercing,,,,1|1,,,,Finesse,Vex,PHB,
+Scimitar,,,25gp,weapon|martial melee weapon|sword,1d6,slashing,,,,1|1|1,,,,Finesse; Light,Nick,PHB,
+Shortsword,,,10gp,weapon|martial melee weapon|sword,1d6,piercing,,,,1|1,,,,Finesse; Light,Vex,PHB,
+Trident,,,5gp,weapon|martial melee weapon,1d8,piercing,,,,1|1|1|1,,,,Thrown (Range 20/60); Versatile (1d10),Topple,PHB,
+Warhammer,,,15gp,weapon|martial melee weapon,1d8,bludgeoning,,,,111|010|010,,,,Versatile (1d10),Push,PHB,
+War Pick,,,5gp,weapon|martial melee weapon,1d8,piercing,,,,1|1,,,,Versatile (1d10),Sap,PHB,
+Whip,,,2gp,weapon|martial melee weapon,1d4,slashing,,,,11|01,,,,Finesse; Reach,Slow,PHB,
+Blowgun,,,10gp,weapon|martial ranged weapon,1,piercing,,,,1,,,,"Ammunition (Range 25/100, Needle); Loading",Vex,PHB,
+Hand Crossbow,,,75gp,weapon|martial ranged weapon,1d6,piercing,,,,11|01,,,,"Ammunition (Range 30/120, Bolt); Light; Loading",Vex,PHB,
+Heavy Crossbow,,,50gp,weapon|martial ranged weapon,1d10,piercing,,,,01110|11111|01110|01110|01110|00100,,,,"Ammunition (Range 100/400, Bolt); Heavy; Loading; Two-Handed",Push,PHB,
+Longbow,,,50gp,weapon|martial ranged weapon,1d8,piercing,,,,1|1,,,,"Ammunition (Range 150/600, Arrow); Heavy; Two-Handed",Slow,PHB,
+Musket,,,500gp,weapon|martial ranged weapon,1d12,piercing,,,,11111|11111,,,,"Ammunition (Range 40/120, Bullet); Loading; Two-Handed",Slow,DMG,
+Pistol,,,250gp,weapon|martial ranged weapon,1d10,piercing,,,,11|10,,,,"Ammunition (Range 30/90, Bullet); Loading",Vex,DMG,
+Padded Armor,,,5gp,armor|light armor,,,,,,101|111|111,,,,AC 11 + Dex; Stealth Disadvantage,,PHB,
+Leather Armor,,,10gp,armor|light armor,,,,,,1001|1111|0110|0110,,,,AC 11 + Dex,,PHB,
+Studded Leather Armor,,,45gp,armor|light armor,,,,,,1001|1111|1111|0110|0010,,,,AC 12 + Dex,,PHB,
+Hide Armor,,,10gp,armor|medium armor,,,,,,1001|1111|1111|0110,,,,AC 12 + Dex (max 2),,PHB,
+Chain Shirt,,,50gp,armor|medium armor,,,,,,010010|111111|011110|011110|011110,,,,AC 13 + Dex (max 2),,PHB,
+Scale Mail,,,50gp,armor|medium armor,,,,,,01100110|11111111|11111111|01111110|01111110|00111100|00111100,,,,AC 14 + Dex (max 2); Stealth Disadvantage,,PHB,
+Breastplate,,,400gp,armor|medium armor,,,,,,1001|1111|1111|1111|1111|0110,,,,AC 14 + Dex (max 2),,PHB,
+Half Plate Armor,,,750gp,armor|medium armor,,,,,,01000010|11111111|11111111|01111110|01111110|01111110|01100110,,,,AC 15 + Dex (max 2); Stealth Disadvantage,,PHB,
+Ring Mail,,,30gp,armor|heavy armor,,,,,,01000010|11111111|11111111|01111110|01111110|01111110|01100110,,,,AC 14; Stealth Disadvantage,,PHB,
+Chain Mail,,,75gp,armor|heavy armor,,,,,,0010000100|0111111110|1111111111|1111111111|0011111100|0011111100|0011111100|0001111100|0000001100,,,,AC 16; Str 13; Stealth Disadvantage,,PHB,
+Splint Armor,,,200gp,armor|heavy armor,,,,,,0010000100|0111111110|1111111111|1111111111|0011111100|0011111100|0011111100|0011111100|0011111100,,,,AC 17; Str 15; Stealth Disadvantage,,PHB,
+Plate Armor,,,1500gp,armor|heavy armor,,,,,,00100000100|01110101110|11111111111|11111111111|00111111100|00111111100|00111111100|00011111000|00011111000|00001110000,,,,AC 18; Str 15; Stealth Disadvantage,,PHB,
+Shield,,,10gp,armor|shield,,,,,,11|11|11,,,,AC +2,,PHB,
 Alchemist's Supplies,,"An alembic, a mortar and pestle, glass beakers, pouches of reagents and a stirring rod.",50gp,tool|artisan's tools,,,,,,1111|1111,,,,"Ability: Intelligence; Utilize: Identify a substance (DC 15) or start a fire (DC 15); Craft: Acid, Alchemist's Fire, Component Pouch, Oil, Paper, Perfume",,PHB,
 Brewer's Supplies,,"A siphon, tubing, a stirring rod, a thermometer and a sack of hops.",20gp,tool|artisan's tools,,,,,,111|111|111,,,,Ability: Intelligence; Utilize: Detect poison or impurities in a drink (DC 15) or identify alcohol (DC 10); Craft: Antitoxin,,PHB,
 Calligrapher's Supplies,,"Ink, a dozen sheets of parchment and three quills with spare nibs.",10gp,tool|artisan's tools,,,,,,01|11|11,,,,"Ability: Dexterity; Utilize: Write text with impressive flourishes (DC 10) or determine whether handwriting is forged (DC 15); Craft: Ink, Spell Scroll",,PHB,
@@ -92,11 +92,8 @@ Lyre,,A small U-shaped frame of wood strung across an open soundbox.,30gp,tool|m
 Pan Flute,,A row of hollow pipes of graduated length bound together.,12gp,tool|musical instrument,,,,,,11,,,,Ability: Charisma; Utilize: Play a known tune (DC 10) or improvise a song (DC 15),,PHB,
 Shawm,,A double-reed wooden pipe with a flared bell.,2gp,tool|musical instrument,,,,,,1,,,,Ability: Charisma; Utilize: Play a known tune (DC 10) or improvise a song (DC 15),,PHB,
 Viol,,"A bowed wooden instrument with a fretted neck, played upright on the knee.",30gp,tool|musical instrument,,,,,,1,,,,Ability: Charisma; Utilize: Play a known tune (DC 10) or improvise a song (DC 15),,PHB,
-Adamantine Chain Shirt,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 13 + Dex modifier (max 2).",,armor|immunity|combat|medium armor,,,,,,0,,,,,,DMG,
-Adamantine Scale Mail,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 14 + Dex modifier (max 2) and you have disadvantage on Stealth.",,armor|immunity|combat|medium armor,,,,,,0,,,,,,DMG,
-Adamantine Breastplate,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 14 + Dex modifier (max 2).",,armor|immunity|combat|medium armor,,,,,,0,,,,,,DMG,
-Adamantine Half Plate,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 15 + Dex modifier (max 2) and you have disadvantage on Stealth.",,armor|immunity|combat|medium armor,,,,,,0,,,,,,DMG,
-Adamantine Ring Mail,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 14 and you have disadvantage on Stealth.",,armor|immunity|combat|heavy armor,,,,,,0,,,,,,DMG,
-Adamantine Chain Mail,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 16 and you have disadvantage on Stealth.\n\nRequires a Strength score of at least 13 to use.",,armor|immunity|combat|heavy armor,,,,,,0,,,,,,DMG,
-Adamantine Splint,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 17 and you have disadvantage on Stealth.\n\nRequires a Strength score of at least 15 to use.",,armor|immunity|combat|heavy armor,,,,,,0,,,,,,DMG,
-Adamantine Plate,uncommon,"This suit of armor is reinforced with adamantine, one of the hardest substances in existence. While you’re wearing it, any Critical Hit against you becomes a normal hit.\n\nWhile equipped, your AC becomes 18 and you have disadvantage on Stealth.\n\nRequires a Strength score of at least 15 to use.",,armor|immunity|combat|heavy armor,,,,,,0,,,,,,DMG,
+Arrows,,"Ammunition for a bow. Sold in bundles of 20.",5cp,ammunition,,,,20,,1,,,,,,PHB,
+Bolts,,"Ammunition for a crossbow. Sold in bundles of 20.",5cp,ammunition,,,,13,,1,,,,,,PHB,
+Firearm Bullets,,"Ammunition for a firearm. Sold in boxes of 10.",3sp,ammunition,,,,5,,1,,,,,,PHB,
+Needles,,"Ammunition for a blowgun. Sold in bundles of 50.",2cp,ammunition,,,,50,,1,,,,,,PHB,
+Sling Bullets,,"Ammunition for a sling. Sold in pouches of 20.",0.2cp,ammunition,,,,13,,1,,,,,,PHB,

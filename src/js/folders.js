@@ -17,6 +17,7 @@ const UNFILED_ID = '__unfiled';
 // each. First match wins; the last matches everything, so `defaultFolderIdFor`
 // always has an answer. Ordinary folders once created — not re-created.
 const DEFAULT_FOLDERS = [
+  { id: 'folder_magic',   name: 'Magic Items', match: t => hasTagWord(t, 'magic') },
   { id: 'folder_weapons', name: 'Weapons',  match: t => hasTagWord(t, 'weapon') },
   { id: 'folder_armor',   name: 'Armor',    match: t => hasTagWord(t, 'armor') || hasTagWord(t, 'shield') },
   { id: 'folder_currency', name: 'Currency', match: t => hasTagWord(t, 'currency') || hasTagWord(t, 'valuable') },
@@ -31,6 +32,11 @@ function hasTagWord(t, word) {
 // Whether the default folders have been laid down for this browser. Stored, so
 // deleting them all sticks instead of being undone on the next load.
 let foldersSeeded = false;
+
+// Defaults added after browsers had already been seeded. Each is laid down once
+// (at the top — it matches first), so deleting it sticks like the originals.
+const LATE_DEFAULT_FOLDER_IDS = ['folder_magic'];
+let lateFoldersSeeded = [];
 
 function loadFolders() {
   let data = null;
@@ -47,12 +53,32 @@ function loadFolders() {
         .filter(f => f && f.id && typeof f.name === 'string')
         .map(f => ({ id: String(f.id), name: f.name }));
     }
-    if (data.assign)    state.folderAssign    = { ...data.assign };
+    // Keys are template ids, so pre-slug ones are translated (items.js).
+    if (data.assign) state.folderAssign = Object.fromEntries(
+      Object.entries(data.assign).map(([id, folderId]) => [currentTemplateId(id), folderId]));
     if (data.collapsed) state.folderCollapsed = { ...data.collapsed };
     foldersSeeded = !!data.seeded;
+    lateFoldersSeeded = Array.isArray(data.lateSeeded) ? data.lateSeeded : [];
   }
 
   seedDefaultFolders();
+  seedLateDefaultFolders();
+}
+
+function seedLateDefaultFolders() {
+  const pending = LATE_DEFAULT_FOLDER_IDS.filter(id => !lateFoldersSeeded.includes(id));
+  if (!pending.length) return;
+  // No folders at all is a choice too (a flat list) — don't break it.
+  if (state.folders.length) {
+    const taken = new Set(state.folders.map(f => f.name.toLowerCase()));
+    pending.forEach(id => {
+      const def = DEFAULT_FOLDERS.find(d => d.id === id);
+      if (!def || getFolder(id) || taken.has(def.name.toLowerCase())) return;
+      state.folders.unshift({ id: def.id, name: def.name });
+    });
+  }
+  lateFoldersSeeded = [...lateFoldersSeeded, ...pending];
+  saveFolders();
 }
 
 // First run (and once for browsers whose folders predate the defaults) — adds
@@ -60,6 +86,7 @@ function loadFolders() {
 function seedDefaultFolders() {
   if (foldersSeeded) return;
   foldersSeeded = true;
+  lateFoldersSeeded = [...LATE_DEFAULT_FOLDER_IDS]; // a first run gets them all here
   addMissingDefaultFolders();
   saveFolders();
 }
@@ -81,6 +108,7 @@ function saveFolders() {
       assign:    state.folderAssign,
       collapsed: state.folderCollapsed,
       seeded:    foldersSeeded,
+      lateSeeded: lateFoldersSeeded,
     }));
   } catch (e) { /* non-fatal */ }
 }

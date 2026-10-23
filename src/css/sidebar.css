@@ -125,6 +125,9 @@
    indent — see #item-list.foldered .item-card below. */
 .item-card.item-card-variant { margin-left: 16px; opacity: 0.92; }
 #item-list.foldered .item-card.item-card-variant { margin-left: 26px; }
+/* A magic family's second level (Weapon +1 → Longsword +1) — one step further in. */
+.item-card.item-card-variant.item-card-depth-2 { margin-left: 32px; }
+#item-list.foldered .item-card.item-card-variant.item-card-depth-2 { margin-left: 42px; }
 
 .item-card-swatch {
   width: 10px;

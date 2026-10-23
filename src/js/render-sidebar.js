@@ -8,21 +8,44 @@
 // collapse state's cousin `collapsedFeatures`: not saved, not synced.
 const expandedVariantIds = new Set();
 
+// The Browse list's search/rarity/tag filter for the render in progress, or
+// null with none set. Module-level so appendVariantRows can prune a family
+// to its matching members without threading it through every call.
+let listFilter = null;
+
+function itemPasses(t) {
+  if (!listFilter) return true;
+  const { search, rarityF, tagF } = listFilter;
+  if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search)) return false;
+  if (rarityF && t.rarity !== rarityF) return false;
+  if (tagF && !t.tags.includes(tagF)) return false;
+  return true;
+}
+
+function familyPasses(t) {
+  return itemPasses(t) || !!t.variantIds?.some(id => state.db[id] && familyPasses(state.db[id]));
+}
+
+// While filtering, a family the filter only reaches *inside* opens itself and
+// shows just the matching members; one that matches as a whole (a search for
+// its own name) stays as the reader left it, with everything in it.
+function familyOpen(t) {
+  return expandedVariantIds.has(t.id) || (!!listFilter && !itemPasses(t) && familyPasses(t));
+}
+
 function renderItemList() {
   const listEl = document.getElementById('item-list');
   const search = document.getElementById('item-search').value.trim().toLowerCase();
   const rarityF = document.getElementById('rarity-filter').value;
   const tagF = document.getElementById('tag-filter').value;
 
-  const items = Object.values(state.db).filter(t => {
-    // A variant is never a top-level entry — it's shown nested under its base
-    // (see appendVariantRows), reached by expanding the base's dog-ear tag.
-    if (t.variantOf) return false;
-    if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search)) return false;
-    if (rarityF && t.rarity !== rarityF) return false;
-    if (tagF && !t.tags.includes(tagF)) return false;
-    return true;
-  });
+  listFilter = (search || rarityF || tagF) ? { search, rarityF, tagF } : null;
+
+  // A variant is never a top-level entry — it's shown nested under its base
+  // (see appendVariantRows), reached by expanding the base's dog-ear tag. A
+  // family is listed if anything in it passes, so a search for "Longsword +2"
+  // finds it inside Weapon, +1, +2, or +3.
+  const items = Object.values(state.db).filter(t => !t.variantOf && familyPasses(t));
 
   // The chosen order (item-sort.js) — grouping only buckets an already-sorted list.
   sortItems(items);
@@ -137,12 +160,13 @@ function buildItemCard(t, opts = {}) {
   card.dataset.templateId = t.id;
   if (state.placing && state.placing.templateId === t.id) card.classList.add('placing');
   if (t.variantOf || opts.indent) card.classList.add('item-card-variant');
+  if (opts.depth > 1) card.classList.add('item-card-depth-2');
   // opts.indent means this is the base's own row, nested under its dog-ear —
   // it must behave like a plain placeable item there, not a second toggle.
   const hasVariants = !!t.variantIds?.length && !opts.indent;
   if (hasVariants) {
     card.classList.add('has-variants');
-    if (expandedVariantIds.has(t.id)) card.classList.add('variants-expanded');
+    if (familyOpen(t)) card.classList.add('variants-expanded');
     const tag = document.createElement('div');
     tag.className = 'item-card-variant-tag';
     tag.title = `${t.variantIds.length} variant${t.variantIds.length > 1 ? 's' : ''}`;
@@ -162,10 +186,14 @@ function buildItemCard(t, opts = {}) {
   nm.textContent = t.name;
   const sub = document.createElement('div');
   sub.className = 'item-card-sub';
-  const w = isStackable(t)
-    ? `${formatWeight(unitWeight(t))} lb ea · stack ×${stackSizeOf(t)}`
-    : `${shapeWeight(t.shape)} lb`;
-  sub.textContent = `${RARITY_META[t.rarity]?.label} · ${w}`;
+  // A magic family's header (items.js) is a choice of items, not one.
+  const w = t.abstract
+    ? `${t.familySize} option${t.familySize === 1 ? '' : 's'}`
+    : isStackable(t)
+      ? `${formatWeight(unitWeight(t))} lb ea · stack ×${stackSizeOf(t)}`
+      : `${shapeWeight(t.shape)} lb`;
+  const rarity = t.rarityVaries ? 'Rarity varies' : RARITY_META[t.rarity]?.label;
+  sub.textContent = `${rarity} · ${w}`;
 
   info.appendChild(nm);
   info.appendChild(sub);
@@ -184,6 +212,7 @@ function buildItemCard(t, opts = {}) {
     let dragging = false;
 
     const onMove = me => {
+      if (t.abstract) return; // a family header only folds — nothing to drag
       if (!dragging && Math.hypot(me.clientX - startX, me.clientY - startY) < 5) return;
       if (!dragging) {
         dragging = true;
@@ -242,7 +271,7 @@ function buildItemCard(t, opts = {}) {
         // reached as the first row of the unfolded family (see
         // appendVariantRows), where it's a plain card like any variant.
         if (hasVariants) {
-          if (expandedVariantIds.has(tid)) expandedVariantIds.delete(tid);
+          if (familyOpen(t)) expandedVariantIds.delete(tid);
           else expandedVariantIds.add(tid);
           renderItemList();
           return;
@@ -303,6 +332,7 @@ function buildItemCard(t, opts = {}) {
   card.addEventListener('pointerleave', clearTooltip);
   card.addEventListener('contextmenu', e => {
     e.preventDefault();
+    if (t.abstract) return; // no item to edit, delete or file on its own
     showTemplateContextMenu(t.id, e.clientX, e.clientY);
   });
 
@@ -316,17 +346,25 @@ function buildItemCard(t, opts = {}) {
 // The base item leads the list as a row of itself (opts.indent) — its own
 // card no longer places it (see buildItemCard's click handler), so the plain,
 // unenhanced item has to be reachable somewhere once the family is unfolded.
-function appendVariantRows(listEl, t, folderId) {
-  if (!t.variantIds?.length || !expandedVariantIds.has(t.id)) return;
-  const selfCard = buildItemCard(t, { indent: true });
-  if (folderId) selfCard.dataset.folderId = folderId;
-  listEl.appendChild(selfCard);
+// A magic family's header is `abstract` — nothing to place — so it has no such
+// row, and its rows may be headers themselves (Weapon +1 → each weapon), drawn
+// one level deeper.
+function appendVariantRows(listEl, t, folderId, depth = 1) {
+  if (!t.variantIds?.length || !familyOpen(t)) return;
+  if (!t.abstract) {
+    const selfCard = buildItemCard(t, { indent: true, depth });
+    if (folderId) selfCard.dataset.folderId = folderId;
+    listEl.appendChild(selfCard);
+  }
+  // The whole family when the header itself matched; otherwise just the hits.
+  const all = itemPasses(t);
   t.variantIds.forEach(vid => {
     const variant = state.db[vid];
-    if (!variant) return;
-    const card = buildItemCard(variant);
+    if (!variant || (!all && !familyPasses(variant))) return;
+    const card = buildItemCard(variant, { depth });
     if (folderId) card.dataset.folderId = folderId;
     listEl.appendChild(card);
+    appendVariantRows(listEl, variant, folderId, depth + 1);
   });
 }
 
@@ -461,6 +499,8 @@ function populateDetailsPanel(t, inst) {
   }
 
   document.getElementById('details-attunement-row').classList.toggle('hidden', !t.attunement);
+  document.getElementById('details-attunement-val').textContent =
+    t.attunementNote ? `Required ${t.attunementNote}` : 'Required';
 
   const sourceRow = document.getElementById('details-source-row');
   if (t.source) {

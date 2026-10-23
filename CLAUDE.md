@@ -81,7 +81,19 @@ appended to `DEFAULT_ITEMS` so each is placeable/sellable like any other item.
 **A variant is never a top-level Browse entry** — `renderItemList()` filters
 out anything with `variantOf`; on a card with variants, the whole card's click
 just expands the fold (`expandedVariantIds`, session-only) rather than placing
-or opening details.
+or opening details. A filter reaches *into* a family (`familyPasses()`), so a
+search for "Longsword +2" opens the fold to just that card.
+
+**Magic items are records, not rows** (`data/magic-items.json`,
+`materializeMagicItems()`). "Any melee weapon" is `appliesTo`, crossed with
+every matching items.csv base at load — ~350 records become ~1,500 templates,
+so a magic weapon inherits its base's shape instead of copying it. A family's
+header is an **`abstract` template**: a real `state.db` entry (so the list,
+tooltip and folders need no special path) that can never be placed, dragged,
+sold or saved — guard any new way of placing/selling an item against it. A
+level with one option collapses (Blackrazor is just an item, not a family of
+one). `srd: false` descriptions are original summaries — DMG-only text is
+copyrighted and must not be pasted in.
 
 ### Side panels
 
@@ -412,8 +424,11 @@ while typing, a modal is open, or `state.mode !== 'idle'`.
 ### Coins
 
 Ordinary stackable items — the purse is a readout over `state.instances`.
-**A default item's id is its CSV row number**, so it shifts if a row is
-inserted above it — never hardcode one. Coins are found by identity
+**A default item's id is the slug of its name** (`itemSlug()`) — renaming a
+row changes it, so add the old id to `LEGACY_ITEM_IDS`; never hardcode one.
+Ids were once row numbers: every intake of saved instances (`characterSlot()`,
+party snapshots, `folderAssign`) goes through `migrateInstanceTemplateIds()`/
+`currentTemplateId()`, and that table is frozen. Coins are found by identity
 (`getCoinTemplates()`: the `currency`-tagged item whose cost is exactly one of
 its own denomination).
 

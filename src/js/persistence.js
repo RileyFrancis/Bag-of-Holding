@@ -39,7 +39,10 @@ function exportItemsCSV() {
                    'attunement','stackSize','image','shape','container','containerRows','containerCols',
                    'properties','mastery','source','variants'];
   const rows = [headers.join(',')];
-  Object.values(state.db).forEach(t => {
+  // Magic items are records in data/magic-items.json, not rows — a CSV row
+  // can't carry appliesTo, so exporting the ~1500 they materialize into would
+  // only flatten them.
+  Object.values(state.db).filter(t => !t.magicOf).forEach(t => {
     const shapeStr = isStackable(t) ? '1' : normalizeShape(t.shape).map(r => r.join('')).join('|');
     rows.push([
       t.name,

@@ -5,6 +5,7 @@
 
 function startPlacing(templateId) {
   if (isReadOnly()) return;
+  if (state.db[templateId]?.abstract) return; // a magic family's header — see items.js
   cancelPlacing();
   state.mode = 'placing';
   state.placing = { templateId, rotation: 0 };

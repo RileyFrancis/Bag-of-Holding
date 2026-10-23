@@ -22,6 +22,7 @@ src/js/                 Application logic, one file per concern
 data/
   items.csv             Default item database, loaded at startup
   _item_dtypes.csv      Reference: the allowed values for each items.csv column
+  magic-items.json      DMG magic items — overlays on items.csv bases, materialized at load
   classes.json          The classes the app knows, and the features each grants
   species.json          The species the app knows, and the traits each grants
   spell-slots.json      Spell slots each class grants, indexed by that class's level
@@ -36,6 +37,7 @@ tools/
   make-og-image.py      Draws img/og-preview.jpg, the link-preview picture (needs Pillow)
   shape-editor.html     Standalone helper for drawing item shapes
   spell-editor.html     Standalone helper for authoring data/spells.json entries
+  validate-items.py     Checks items.csv + magic-items.json (ids, bases, shapes, name clashes)
 ```
 
 ## Load order is behavior
@@ -195,9 +197,12 @@ silently fail to replicate a deletion.
 
 ## Data files
 
-`data/items.csv` is the default item database — one row per item, and **an
-item's `id` is its row number**, so inserting a row above another changes its id.
-Never write one into the code.
+`data/items.csv` is the default item database — one row per mundane item. **An
+item's `id` is the slug of its name** (`itemSlug()`: `War Pick` → `war-pick`), so
+rows can be inserted or reordered freely, but renaming one changes its id — add
+the old id to `LEGACY_ITEM_IDS` in `items.js` when you do. Ids used to be row
+numbers; that table translates them wherever saved instances arrive. Never write
+an id into the code.
 
 | Column | Notes |
 |--------|-------|
@@ -218,6 +223,28 @@ Never write one into the code.
 `data/_item_dtypes.csv` lists the allowed values for every column and is the
 reference to check against. `tools/shape-editor.html` draws a shape visually and
 prints the `shape` string to paste in.
+
+`data/magic-items.json` is `{ license, items: [...] }`, one record per DMG entry
+(not per item). A record with `appliesTo` is an **overlay**: crossed with every
+items.csv base it matches, each result inheriting the base's shape/damage/
+stacking. Records may carry `variants` (tiers, colours, giant kinds).
+
+| Field | Notes |
+|-------|-------|
+| `id` | Slug of `name`; generated ids are `<id>`, `<id>~<variant>`, `<id>@<base>`, `<id>~<variant>@<base>` |
+| `type`, `typeNote` | The DMG type line — `Weapon` / `Any Melee Weapon` |
+| `rarity`, `attunement`, `attunementNote` | As items.csv, plus who may attune (`by a Wizard`) |
+| `srd` | `true` = SRD 5.2 text, verbatim (CC-BY-4.0, see `license`); `false` = an original summary — never paste DMG-only text |
+| `consumable` | Halves the default price |
+| `appliesTo` | `{ any: [[words]], bases: [ids], except: [ids] }` — a clause's words must all be whole words of a base's tags |
+| `nameFormat` | `{base}` / `{variant}` tokens — `Flame Tongue {base}`, `{base} {variant}` |
+| `variants` | `[{ id, label, rarity?, attunement?, note?, cost? }]` — `note` is appended to the description |
+| `shape`, `stackSize`, `damage`, … `container*` | Standalone items only — an overlay inherits them |
+| `cost` | Optional; otherwise the DMG price for the rarity (+ the base's cost) |
+
+`python3 tools/validate-items.py` mirrors the loader and fails on an unknown
+base, an overlay matching nothing, a bad shape, or two items with one name —
+run it after editing either file.
 
 `data/classes.json` and `data/species.json` are the class and species
 registries — `{ id, name, source?, features: [...], subclasses?: [...] }` and

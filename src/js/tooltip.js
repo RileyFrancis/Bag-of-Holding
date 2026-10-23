@@ -53,7 +53,7 @@ function renderTooltip(t, weight, x, y) {
     ? `<div class="tip-row"><span>Cost</span><span>${escapeHTML(formatCost(t.cost))}</span></div>`
     : '';
   const attuneHtml = t.attunement
-    ? `<div class="tip-attune">Requires Attunement</div>`
+    ? `<div class="tip-attune">Requires Attunement${t.attunementNote ? ' ' + escapeHTML(t.attunementNote) : ''}</div>`
     : '';
   // Left empty here — a custom item's description is Markdown and syncs to
   // Firebase, so it is filled below through renderMarkdownInto, the only

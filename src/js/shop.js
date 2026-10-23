@@ -866,7 +866,7 @@ function resolveShopTemplate(entry) {
   if (!snap) return null;
   const sameId = state.db[entry.templateId];
   if (sameId && sameId.name === snap.name) return sameId.id;
-  const byName = Object.values(state.db).find(t => t.name === snap.name);
+  const byName = Object.values(state.db).find(t => t.name === snap.name && !t.abstract);
   if (byName) return byName.id;
   const id = newTemplateId();
   state.db[id] = { ...snap, id };

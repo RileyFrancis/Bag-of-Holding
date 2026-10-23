@@ -129,7 +129,7 @@ function normalizeCharacterMeta(meta, id) {
 function characterSlot(meta, rest = {}) {
   return {
     character:   normalizeCharacterMeta(meta),
-    instances:   rest.instances   ?? {},
+    instances:   migrateInstanceTemplateIds(rest.instances) ?? {}, // pre-slug ids, see items.js
     equipped:    rest.equipped    ?? {},
     equipLayout: rest.equipLayout ?? [],
     db:          rest.db          ?? {},

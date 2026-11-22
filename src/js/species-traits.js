@@ -1,21 +1,23 @@
 // =============================================================================
 // SPECIES TRAITS — what a character's species gives them, and the sheet section
 // =============================================================================
+// Same shape as class-features.js: a registry over `data/species.json` and a
+// section that draws it with that file's `buildFeatureCard()` and CSS. Species is
+// matched by name (`race`, free text); it is one field, so cards carry no tag.
+// A trait's `level` is optional (defaults to 1).
 'use strict';
 
-// Same shape as class-features.js (read that header first): a registry over
-// `data/species.json` and a section that draws it, both sharing that file's
-// `featureCard()` and CSS. Species is matched by name (`race`, free text); it is
-// one field, not a list, so there is no per-card tag. `level` on a trait is
-// optional (defaults to 1) and the level badge is drawn only when levels differ.
-// See CLAUDE.md § Species traits.
-
-// =============================================================================
-// LOADING THE SPECIES
-// =============================================================================
 let DEFAULT_SPECIES = [];
 
-function loadDefaultSpecies() {
+// Session-only, not persisted.
+let showLockedTraits = false;
+
+// Last signature the trait cards were drawn for (see _getSpeciesTraitsSignature).
+let speciesTraitsSig = null;
+
+// ─── LOADING THE SPECIES ───
+
+function _loadDefaultSpecies() {
   try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', 'data/species.json', false); // synchronous
@@ -25,14 +27,14 @@ function loadDefaultSpecies() {
     // made of HTML — the guard firebase-config.js and class-features.js use.
     const body = xhr.responseText.trim();
     if (body.startsWith('<')) throw new Error('not JSON');
-    DEFAULT_SPECIES = sanitizeSpeciesList(JSON.parse(body).species);
+    DEFAULT_SPECIES = _sanitizeSpeciesList(JSON.parse(body).species);
   } catch (e) {
     DEFAULT_SPECIES = []; // not fatal — the sheet is usable with no species known
   }
 }
 
 // A species with no usable traits is dropped.
-function sanitizeSpeciesList(raw) {
+function _sanitizeSpeciesList(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map(s => {
     const id = String(s?.id ?? '').trim();
@@ -45,8 +47,8 @@ function sanitizeSpeciesList(raw) {
   }).filter(Boolean);
 }
 
-// `level` is optional here (defaults to 1), where a class feature's is required
-// — almost every species trait is level 1.
+// One species trait in its stored shape, or null when unusable. `level` is
+// optional here (defaults to 1), where a class feature's is required.
 function sanitizeTrait(t) {
   const id = String(t?.id ?? '').trim();
   const name = String(t?.name ?? '').trim();
@@ -55,104 +57,96 @@ function sanitizeTrait(t) {
   return {
     id, name,
     level: Number.isFinite(level) ? Math.max(1, Math.min(20, level)) : 1,
-    description: normalizeDescription(t?.description), // shared, as below
+    description: normalizeDescription(t?.description), // shared with class-features.js
     unlocks: normalizeUnlocks(t?.unlocks),              // shared with class-features.js
   };
 }
 
-loadDefaultSpecies();
+_loadDefaultSpecies();
 
-// =============================================================================
-// THE REGISTRY
-// =============================================================================
-// The single seam custom species come through — usable homebrew species
-// (homebrew-share.js) after the app's own.
-function allSpecies() {
-  return withHomebrewSpecies(DEFAULT_SPECIES);
+// ─── THE REGISTRY ───
+
+// Every usable species: the defaults, then usable homebrew (homebrew-share.js).
+function getAllSpecies() {
+  return getSpeciesWithHomebrew(DEFAULT_SPECIES);
 }
 
 // Trimmed, case-insensitive; ids matched too, so a stored id survives a rename.
-function findSpeciesByName(name) {
+function _findSpeciesByName(name) {
   const key = String(name ?? '').trim().toLowerCase();
   if (!key) return null;
-  return allSpecies().find(s => s.name.toLowerCase() === key || s.id === key) ?? null;
+  return getAllSpecies().find(s => s.name.toLowerCase() === key || s.id === key) ?? null;
 }
 
 // One place, so a species that ever counts levels differently has somewhere to land.
-function characterSpeciesLevel(character, _speciesDef) {
+function _getCharacterSpeciesLevel(character, _speciesDef) {
   return Math.max(1, Math.min(20, parseInt(character?.level, 10) || 1));
 }
 
 // Everything the species offers, by level then written order. `owned` is the
 // level gate; the section chooses what to draw.
-function speciesTraitsFor(character) {
-  const def = findSpeciesByName(character?.race);
+function _getSpeciesTraitRows(character) {
+  const def = _findSpeciesByName(character?.race);
   if (!def) return [];
-  const level = characterSpeciesLevel(character, def);
+  const level = _getCharacterSpeciesLevel(character, def);
   return def.traits
     .map((t, i) => ({ ...t, speciesName: def.name, order: i, owned: t.level <= level }))
     .sort((a, b) => a.level - b.level || a.order - b.order);
 }
 
 // The name typed that this app has never heard of, or '' when blank or known.
-function unknownSpeciesName(character) {
+function _getUnknownSpeciesName(character) {
   const typed = String(character?.race ?? '').trim();
-  return typed && !findSpeciesByName(typed) ? typed : '';
+  return typed && !_findSpeciesByName(typed) ? typed : '';
 }
 
-// =============================================================================
-// UNLOCKS
-// =============================================================================
-// A trait may name parts of the sheet it brings with it, exactly as a class
-// feature may — same key space, same `data-unlocked-by` markup. The two are
-// unioned by `applyFeatureUnlocks()` in class-features.js, which owns the
-// mechanism; these two functions are this file's half of the answer.
-function speciesUnlockKeys(character) {
+// ─── UNLOCKS ───
+// A trait may name sheet parts it brings, exactly as a class feature may (same
+// key space, same `data-unlocked-by` markup). class-features.js owns the
+// mechanism and unions both halves in `renderClassFeatures()`.
+
+// Keys unlocked by the character's owned species traits.
+function getSpeciesUnlockKeys(character) {
   const keys = new Set();
-  speciesTraitsFor(character).forEach(row => {
+  _getSpeciesTraitRows(character).forEach(row => {
     if (row.owned) row.unlocks.forEach(k => keys.add(k));
   });
   return keys;
 }
 
-// A species the app does not know disables the mechanism. A BLANK species is
-// authoritative — it grants and hides nothing.
-function speciesUnlocksAreAuthoritative(character) {
-  return !unknownSpeciesName(character);
+// Whether species unlocks can be trusted: an unknown species disables the
+// mechanism, while a BLANK species is authoritative (it grants and hides nothing).
+function areSpeciesUnlocksAuthoritative(character) {
+  return !_getUnknownSpeciesName(character);
 }
 
-// =============================================================================
-// THE SECTION
-// =============================================================================
-// Session-only, not persisted.
-let showLockedTraits = false;
+// ─── THE SECTION ───
 
-// Only changes with the character's species, level, and the toggle — skip the
-// rebuild otherwise (`renderCharacterSheet()` calls this on every keystroke).
-let speciesTraitsSig = null;
-
-function speciesTraitsSignature() {
+// The section changes only with species, level, homebrew and the toggle, and
+// `renderCharacterSheet()` calls it on every keystroke; this gates the rebuild.
+function _getSpeciesTraitsSignature() {
   const c = state.character || {};
-  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0', homebrewUsableKey()].join('‖');
+  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0', getHomebrewUsableKey()].join('‖');
 }
 
+// Draws the species traits section of the sheet.
 function renderSpeciesTraits() {
   const box = document.getElementById('sheet-species-traits');
   const btn = document.getElementById('trait-toggle-locked');
   if (!box) return;
 
-  const sig = speciesTraitsSignature();
+  const sig = _getSpeciesTraitsSignature();
   if (sig === speciesTraitsSig) return;
   speciesTraitsSig = sig;
 
-  const rows = speciesTraitsFor(state.character);
-  const locked = rows.filter(r => !r.owned).length;
+  const rows = _getSpeciesTraitRows(state.character);
+  const lockedCount = rows.filter(r => !r.owned).length;
 
   // A toggle that cannot change what you see is noise.
   if (btn) {
-    btn.classList.toggle('hidden', locked === 0);
+    btn.classList.toggle('hidden', lockedCount === 0);
     setIconLabel(btn, showLockedTraits ? 'hide' : 'show',
-      showLockedTraits ? 'Hide locked' : `Show all (${locked})`);
+      showLockedTraits ? 'Hide locked' : `Show all (${lockedCount})`);
     btn.title = showLockedTraits
       ? 'Show only the traits you have'
       : 'Also show traits from levels you have not reached';
@@ -161,7 +155,7 @@ function renderSpeciesTraits() {
   box.textContent = '';
 
   if (!rows.length) {
-    box.appendChild(speciesEmptyState(state.character));
+    box.appendChild(_buildSpeciesEmptyState(state.character));
     return;
   }
 
@@ -169,20 +163,20 @@ function renderSpeciesTraits() {
   // differ — for a species almost everything is level 1, and a column of
   // identical "1"s is noise.
   const drawn = rows.filter(r => r.owned || showLockedTraits);
-  const graded = drawn.some(r => r.level > 1);
+  const isGraded = drawn.some(r => r.level > 1);
 
   drawn.forEach(row => {
-    box.appendChild(featureCard({ ...row, showClass: false },
-      { badge: graded, scope: 'species' }));
+    box.appendChild(buildFeatureCard({ ...row, showClass: false },
+      { badge: isGraded, scope: 'species' }));
   });
 
   // Every trait is locked and the reader has chosen not to see them.
-  if (!box.children.length) box.appendChild(featureNote('Nothing unlocked at this level yet.'));
+  if (!box.children.length) box.appendChild(buildFeatureNote('Nothing unlocked at this level yet.'));
 }
 
-function speciesEmptyState(character) {
-  const unknown = unknownSpeciesName(character);
-  return featureNote(unknown
+function _buildSpeciesEmptyState(character) {
+  const unknown = _getUnknownSpeciesName(character);
+  return buildFeatureNote(unknown
     ? `No traits known for “${unknown}”.`
     : 'Set a species in Character Setup to see its traits.');
 }

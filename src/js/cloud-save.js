@@ -3,18 +3,15 @@
 // =============================================================================
 'use strict';
 
-// While signed in, the save follows the account. The whole save is stored as one
-// JSON string at `users/{uid}/save`, not a tree — RTDB drops nulls and empty
-// objects and the save file is full of both, so a tree write would silently fail
-// to replicate a deletion. `buildSavePayload()` / `applySavePayload()` are the
-// single shape shared with the local copy. Conflicts are last-writer-wins except
-// the first sign-in with real data on both sides (`openCloudConflictModal`).
-// See CLAUDE.md § Accounts and cloud save.
+// The save is one JSON string at `users/{uid}/save`, not a tree: RTDB drops nulls
+// and empty objects, so a tree write would silently fail to replicate a deletion.
+// Last writer wins, except a first sign-in with real data on both sides
+// (`_openCloudConflictModal`).
 
-const CLOUD_SAVE_DEBOUNCE = 1200;
+const CLOUD_SAVE_DEBOUNCE_MS = 1200; // ms of quiet before a change is pushed
 
 // Identifies this tab, so our own writes don't bounce back as remote changes.
-const cloudClientId = Math.random().toString(36).slice(2, 10);
+const CLOUD_CLIENT_ID = Math.random().toString(36).slice(2, 10);
 
 // Who the ref belongs to. Held here rather than read back off state.auth so the
 // two cannot disagree halfway through a sign-in.
@@ -26,20 +23,18 @@ let cloudStatusDetail = '';
 let pendingRemoteSave = null; // waits for the drag in progress to finish
 let remoteRetryTimer = null;
 
-// =============================================================================
-// LIFECYCLE
-// =============================================================================
-// Called by auth.js on every sign-in and sign-out.
+// ─── LIFECYCLE ───────────────────────────────────────────────────────────────
+// Restarts cloud sync for the new user, or stops it on sign-out; auth.js calls it.
 function onAuthUserChanged(user) {
-  stopCloudSync();
+  _stopCloudSync();
   cloudUser = user || null;
-  if (!cloudUser || !firebaseDb) { setCloudStatus('off'); return; }
+  if (!cloudUser || !firebaseDb) { _setCloudStatus('off'); return; }
 
   cloudSaveRef = firebaseDb.ref(`users/${cloudUser.uid}/save`);
-  reconcileWithCloud();
+  _reconcileWithCloud();
 }
 
-function stopCloudSync() {
+function _stopCloudSync() {
   cloudUser = null;
   clearTimeout(cloudWriteTimer);
   clearTimeout(remoteRetryTimer);
@@ -49,91 +44,86 @@ function stopCloudSync() {
   if (cloudSaveRef) { cloudSaveRef.off(); cloudSaveRef = null; }
 }
 
-function cloudSyncActive() {
+function _isCloudSyncActive() {
   return !!(cloudSaveRef && cloudUser);
 }
 
 // What the account holds versus what this browser holds, on first sign-in.
-async function reconcileWithCloud() {
-  setCloudStatus('syncing');
+async function _reconcileWithCloud() {
+  _setCloudStatus('syncing');
 
   let remote;
   try {
     remote = (await cloudSaveRef.get()).val();
   } catch (err) {
-    setCloudStatus('error', cloudErrorDetail(err));
+    _setCloudStatus('error', _getCloudErrorDetail(err));
     return;
   }
 
   const localJson = JSON.stringify(buildSavePayload());
 
   // Nothing up there yet — this browser's inventory becomes the account's.
-  if (!remote || !remote.json) { pushCloudSave(); listenForRemoteSaves(); return; }
+  if (!remote || !remote.json) { _pushCloudSave(); _listenForRemoteSaves(); return; }
 
   // Same thing on both sides, or nothing of our own worth keeping.
   if (remote.json === localJson || !hasLocalSave()) {
-    applyCloudSave(remote, { force: true });
-    listenForRemoteSaves();
+    _applyCloudSave(remote, { force: true });
+    _listenForRemoteSaves();
     return;
   }
 
-  openCloudConflictModal(remote, localJson);
+  _openCloudConflictModal(remote, localJson);
 }
 
-function listenForRemoteSaves() {
+function _listenForRemoteSaves() {
   if (!cloudSaveRef) return;
   cloudSaveRef.on('value', snap => {
     const remote = snap.val();
     if (!remote || !remote.json) return;
-    if (remote.updatedBy === cloudClientId) { setCloudStatus('synced'); return; } // our own echo
-    applyCloudSave(remote);
-  }, err => setCloudStatus('error', cloudErrorDetail(err)));
+    if (remote.updatedBy === CLOUD_CLIENT_ID) { _setCloudStatus('synced'); return; } // our own echo
+    _applyCloudSave(remote);
+  }, err => _setCloudStatus('error', _getCloudErrorDetail(err)));
 }
 
-// =============================================================================
-// WRITING
-// =============================================================================
-// debouncedSync() calls this on every change, the same signal that writes
-// localStorage.
+// ─── WRITING ─────────────────────────────────────────────────────────────────
+// Queues a debounced push of the save; scheduleSaveAndSync() calls this on every change.
 function scheduleCloudSave() {
-  if (!cloudSyncActive()) return;
+  if (!_isCloudSyncActive()) return;
   // While someone else's inventory is on screen, `state` is theirs — pushing it
   // to our account would overwrite our own save with their sheet.
   if (state.party.viewingPlayerId !== null) return;
 
   clearTimeout(cloudWriteTimer);
-  setCloudStatus('syncing');
-  cloudWriteTimer = setTimeout(pushCloudSave, CLOUD_SAVE_DEBOUNCE);
+  _setCloudStatus('syncing');
+  cloudWriteTimer = setTimeout(_pushCloudSave, CLOUD_SAVE_DEBOUNCE_MS);
 }
 
-function pushCloudSave() {
-  if (!cloudSyncActive()) return;
+function _pushCloudSave() {
+  if (!_isCloudSyncActive()) return;
   if (state.party.viewingPlayerId !== null) return;
 
   cloudSaveRef.set({
     json: JSON.stringify(buildSavePayload()),
     updatedAt: Date.now(),
-    updatedBy: cloudClientId,
+    updatedBy: CLOUD_CLIENT_ID,
   }).then(
-    () => setCloudStatus('synced'),
-    err => setCloudStatus('error', cloudErrorDetail(err)),
+    () => _setCloudStatus('synced'),
+    err => _setCloudStatus('error', _getCloudErrorDetail(err)),
   );
 }
 
-// =============================================================================
-// READING
-// =============================================================================
+// ─── READING ─────────────────────────────────────────────────────────────────
 // Mid-drag the dragged item is out of the grid and the ghost is following the
 // cursor; replacing the whole save underneath that would strand it. Hold the
 // incoming save and try again shortly.
-function applyCloudSave(remote, { force = false } = {}) {
+function _applyCloudSave(remote, { force = false } = {}) {
   if (!force && state.mode !== 'idle') {
     pendingRemoteSave = remote;
     clearTimeout(remoteRetryTimer);
     remoteRetryTimer = setTimeout(() => {
       const held = pendingRemoteSave;
       pendingRemoteSave = null;
-      if (held) applyCloudSave(held);
+      if (held) _applyCloudSave(held);
     }, 1000);
     return;
   }
@@ -142,81 +132,78 @@ function applyCloudSave(remote, { force = false } = {}) {
   try {
     payload = JSON.parse(remote.json);
   } catch {
-    setCloudStatus('error', 'the account holds a save this version cannot read');
+    _setCloudStatus('error', 'the account holds a save this version cannot read');
     return;
   }
 
   applySavePayload(payload);
-  autoSave(); // keep the local copy in step — NOT debouncedSync(), which would push it back
+  autoSave(); // not scheduleSaveAndSync(), which would push it straight back
   renderLiveCharacter(); // the whole working copy was just replaced
   renderHomeScreen();
   retryMissingRoute();          // the character a character# URL asked for may be here now
   syncRoute({ replace: true }); // the save may name another active character — not a navigation
-  setCloudStatus('synced');
+  _setCloudStatus('synced');
 }
 
-// =============================================================================
-// FIRST SIGN-IN: TWO INVENTORIES
-// =============================================================================
+// ─── FIRST SIGN-IN: TWO INVENTORIES ──────────────────────────────────────────
 // `describeSavePayload` in characters.js reads either save version.
-function describeSave(payload, savedAt) {
+function _describeSave(payload, savedAt) {
   const when = savedAt ? new Date(savedAt).toLocaleString() : 'unknown date';
   return `${describeSavePayload(payload)}\nlast saved ${when}`;
 }
 
-function openCloudConflictModal(remote, localJson) {
+function _openCloudConflictModal(remote, localJson) {
   let remotePayload = null;
   try { remotePayload = JSON.parse(remote.json); } catch { /* shown as unreadable */ }
 
   document.getElementById('cloud-local-summary').textContent =
-    describeSave(JSON.parse(localJson), null).replace('last saved unknown date', 'in this browser now');
+    _describeSave(JSON.parse(localJson), null).replace('last saved unknown date', 'in this browser now');
   document.getElementById('cloud-remote-summary').textContent =
-    remotePayload ? describeSave(remotePayload, remote.updatedAt) : 'Unreadable save';
+    remotePayload ? _describeSave(remotePayload, remote.updatedAt) : 'Unreadable save';
 
   const keepLocal = () => {
     hideModal('cloud-conflict-modal');
-    pushCloudSave();          // this browser wins; the account is overwritten
-    listenForRemoteSaves();
+    _pushCloudSave();          // this browser wins; the account is overwritten
+    _listenForRemoteSaves();
   };
   const keepRemote = () => {
     hideModal('cloud-conflict-modal');
-    applyCloudSave(remote, { force: true });
-    listenForRemoteSaves();
+    _applyCloudSave(remote, { force: true });
+    _listenForRemoteSaves();
   };
 
   // Fresh listeners each time — the modal can be opened again on the next
   // sign-in, and a stale handler would resolve against the wrong save.
-  const localBtn  = replaceWithClone(document.getElementById('cloud-keep-local'));
-  const remoteBtn = replaceWithClone(document.getElementById('cloud-keep-remote'));
+  const localBtn  = _replaceWithClone(document.getElementById('cloud-keep-local'));
+  const remoteBtn = _replaceWithClone(document.getElementById('cloud-keep-remote'));
   localBtn.addEventListener('click', keepLocal);
   remoteBtn.addEventListener('click', keepRemote);
 
-  setCloudStatus('syncing', 'waiting for you to choose');
+  _setCloudStatus('syncing', 'waiting for you to choose');
   showModal('cloud-conflict-modal');
 }
 
-function replaceWithClone(el) {
+function _replaceWithClone(el) {
   const clone = el.cloneNode(true);
   el.parentNode.replaceChild(clone, el);
   return clone;
 }
 
-// =============================================================================
-// STATUS
-// =============================================================================
-function cloudErrorDetail(err) {
+// ─── STATUS ──────────────────────────────────────────────────────────────────
+function _getCloudErrorDetail(err) {
   if (err && err.code === 'PERMISSION_DENIED') {
     return 'your database rules do not allow users/<uid>/save — see database.rules.example.json';
   }
   return (err && err.message) || 'unknown error';
 }
 
-function setCloudStatus(status, detail = '') {
+function _setCloudStatus(status, detail = '') {
   cloudStatus = status;
   cloudStatusDetail = detail;
   updateCloudStatusUI();
 }
 
+// Shows the current sync status in the Settings account row.
 function updateCloudStatusUI() {
   const el = document.getElementById('account-sync-status');
   if (!el) return;

@@ -3,27 +3,87 @@
 // =============================================================================
 'use strict';
 
-// The map is the third view of the middle panel (`state.view === 'map'`,
-// `.map-view` on `#inventory-panel`), beside the grid and the character sheet —
-// but it is not a view of a *character*, so it is reached from the corner button
-// and a GM with nobody selected may be on it.
-//
-// One `<canvas>`, drawn on demand (not a rAF loop) — every path that changes the
-// screen ends in `drawBattlemap()`. The camera is this browser's furniture: not
-// saved, never synced. The fog is a second canvas at the picture's resolution,
-// rebuilt only when something that could change visibility moves, then read
-// twice (drawn over the map, and sampled under each creature). See CLAUDE.md § Battle maps.
+// The map is the middle panel's third view (`state.view === 'map'`). It is not a
+// view of a character, so a GM with nobody selected may be on it. One canvas,
+// drawn on demand: every path that changes the screen ends in drawBattlemap().
+// The camera is browser furniture, never saved or synced. The fog is a second
+// canvas at the picture's resolution, rebuilt only when visibility could change.
 
-// =============================================================================
-// THE VIEW'S OWN STATE
-// =============================================================================
-let mapOpen = false;
+// ─── CONSTANTS ───
+
+const FOG_MAX_DIM = 1600; // px, the fog canvas's longer side at most
+// Fog-edge softness as a fraction of the map's longer side, so it reads the same
+// on any map size.
+const FOG_BLUR_FRACTION = 0.008;
+const FOG_BLUR_MIN_PX = 2;
+
+const MAP_MIN_SCALE = 0.05;
+const MAP_MAX_SCALE = 8;
+
+// Grid handle reach in screen pixels: something the hand aims at stays the same
+// size however far the board is zoomed.
+const GRID_HANDLE_PX = 13;
+
+// `ix`/`iy` run 0→1 across the map; the pivot is always `1 - i`.
+const GRID_HANDLE_SPOTS = [
+  { ix: 0,   iy: 0,   axis: null },   // the four corners: both axes speak
+  { ix: 1,   iy: 0,   axis: null },
+  { ix: 0,   iy: 1,   axis: null },
+  { ix: 1,   iy: 1,   axis: null },
+  { ix: 0.5, iy: 0,   axis: 'y' },    // the four edges: only the axis they face
+  { ix: 0.5, iy: 1,   axis: 'y' },
+  { ix: 0,   iy: 0.5, axis: 'x' },
+  { ix: 1,   iy: 0.5, axis: 'x' },
+];
+
+// The GM's view of the terrain; players see only its effect on the fog. Raised
+// reads warm, lowered cool, so the two are never confused. Height 0 is neutral.
+const ELEVATION_TONE = {
+  up:      { fill: 'rgba(235, 150, 60, 0.16)', stroke: 'rgba(245, 175, 90, 0.95)' },
+  down:    { fill: 'rgba(90, 150, 230, 0.14)', stroke: 'rgba(120, 175, 240, 0.9)' },
+  neutral: { fill: 'rgba(150, 150, 150, 0.12)', stroke: 'rgba(180, 180, 180, 0.85)' },
+};
+
+// A drawing's colour comes from its mode, independent of its shape.
+const MAP_MODE_TONE = {
+  'wall':      'rgba(255, 92, 92, 0.95)',
+  'fog-hide':  'rgba(150, 110, 220, 0.95)',
+  'fog-show':  'rgba(90, 210, 130, 0.95)',
+  'elev':      'rgba(245, 175, 90, 0.95)',
+};
+
+// Image px; a smaller shape is a click that slipped, not a wall.
+const MAP_MIN_SHAPE = 6;
+// A lasso stops taking points past this (~9000 screen px of path at 3 px spacing),
+// which only a runaway trace reaches.
+const MAP_LASSO_MAX_POINTS = 3000;
+
+// Drawing is two independent choices, a shape and a mode, so any region kind can
+// be any outline. Picking either switches `mapTool` to 'draw'.
+const MAP_STANDALONE_TOOLS = [
+  { id: 'select', label: 'Select', hint: 'Move creatures · drag the board to pan', gm: false },
+  { id: 'grid',   label: 'Grid',   hint: 'Line the grid up: drag a corner or edge of the map to size the squares, anywhere else to slide them', gm: true },
+];
+const MAP_SHAPES = [
+  { id: 'rect',   label: 'Rectangle', hint: 'Drag a rectangle' },
+  { id: 'circle', label: 'Circle',    hint: 'Drag out a circle' },
+  { id: 'lasso',  label: 'Lasso',     hint: 'Trace a freehand outline' },
+];
+const MAP_MODES = [
+  { id: 'wall',      label: 'Wall',        hint: 'The region blocks sight' },
+  { id: 'fog-hide',  label: 'Obscure',     hint: 'The players cannot see into the region' },
+  { id: 'fog-show',  label: 'Reveal',      hint: 'The players can always see the region' },
+  { id: 'elev',      label: 'Height',      hint: 'A raised or lowered zone — set its height (ft from the base map) in the box, or right-click a zone to change it' },
+];
+const MAP_ERASE_TOOL = { id: 'erase', label: 'Erase', hint: 'Click, or hold and drag, over a wall, a fog edit, or an elevation region to remove it — the most recently drawn one first where they overlap' };
+
+// ─── THE VIEW'S OWN STATE ───
+
+let isMapOpen = false;
 let mapViewId = null;          // which map a GM has open; players follow the party's
 let mapCam = { x: 0, y: 0, scale: 1 };   // the world point at the centre, and the zoom
-// 'select' | 'grid' | 'erase' | 'draw' — a shape and a mode are chosen
-// independently (see THE TOOLBAR) and only take effect once `mapTool` is
-// 'draw'; picking either one puts it there. They stay set switching away and
-// back, so leaving 'draw' to pan or select does not lose your place.
+// 'select' | 'grid' | 'erase' | 'draw'. The shape and mode take effect only under
+// 'draw' and stay set while away, so panning or selecting does not lose them.
 let mapTool = 'select';
 let mapShape = 'rect';   // 'rect' | 'circle' | 'lasso' — the selection outline
 let mapMode = 'wall';    // 'wall' | 'fog-hide' | 'fog-show' | 'elev' — what it does
@@ -34,54 +94,45 @@ let mapCanvas = null, mapCtx = null;
 let mapCanvasW = 0, mapCanvasH = 0;      // CSS pixels
 
 // The picture, kept as one <img> and reloaded only when the map changes.
-let mapImage = null, mapImageSrc = null, mapImageReady = false;
+let mapImage = null, mapImageSrc = null, isMapImageReady = false;
 
-// The fog, at the picture's resolution (capped). `fogDirty` keeps it from being
+// The fog, at the picture's resolution (capped). `isFogDirty` keeps it from being
 // recomputed on every pan.
-let fogCanvas = null, fogCtx = null, fogScale = 1, fogDirty = true;
+let fogCanvas = null, fogCtx = null, fogScale = 1, isFogDirty = true;
 let hiddenTokenIds = new Set();
-const FOG_MAX_DIM = 1600;
-
-// Fog-edge softness as a fraction of the map's longer side, so it reads the same
-// on any map size (and is measured against the picture, not the fog canvas whose
-// resolution is a FOG_MAX_DIM detail).
-const FOG_BLUR_FRACTION = 0.008;
-const FOG_BLUR_MIN_PX = 2;
 
 // A gesture in flight: a pan, a token drag, a shape being drawn, or the grid
 // being stretched or slid.
 let mapPan = null;      // { sx, sy, camX, camY }
-let mapTokenDrag = null;// { id, x, y, dx, dy, moved }
-let mapDrawing = null;  // { tool, x0, y0, x1, y1 }
+let mapTokenDrag = null;// { id, x, y, ox, oy, dx, dy, moved }
+let mapDrawing = null;  // { shape, mode, x0, y0, x1, y1 } or, for a lasso, { shape, mode, points }
 let mapGridDrag = null; // { mode, held, pivot, sx, sy, grid0, grid, moved }
-let mapErasing = false; // the Erase tool's button is held — every point the cursor crosses is wiped
+let isMapErasing = false; // the Erase button is held; every point the cursor crosses is wiped
 
-const MAP_MIN_SCALE = 0.05;
-const MAP_MAX_SCALE = 8;
+let mapReturnView = 'inventory'; // the view the map took the panel from
+// The map the camera was last framed for, so a GM returning from a sheet finds
+// their zoom intact; only a different map gets re-framed.
+let mapFramedId = null;
+// The piece the Maps pane's list is hovering, { kind, id } or null.
+let mapHighlight = null;
 
-// The Grid tool's handles are the picture's own corners and edges (see THE
-// GRID'S HANDLES below). Their reach is in *screen* pixels — a handle is
-// something the hand aims at, the same size however far the board is zoomed.
-const GRID_HANDLE_PX = 13;
+// ─── WHAT IS BEING LOOKED AT ───
 
-// =============================================================================
-// WHAT IS BEING LOOKED AT
-// =============================================================================
 // A player is always shown the map the party is on. A GM is shown the one they
 // opened (normally the one in play, since opening from the library puts the
 // party on it first).
-function viewedMap() {
-  if (!isMapGM()) return mapForViewer();
-  return mapById(mapViewId) || mapForViewer();
+function getViewedMap() {
+  if (!isMapGM()) return getMapForViewer();
+  return getMapById(mapViewId) || getMapForViewer();
 }
 
 // Whether the middle panel is showing the board — NOT the same as
 // `state.view === 'map'`: the map can be pulled out from under the reader (a GM
 // deleting or un-revealing it) and the panel falls back to the grid while the
-// field still says 'map'. `viewedMap()` not `mapForViewer()`: a GM opening a map
+// field still says 'map'. `getViewedMap()` not `getMapForViewer()`: a GM opening a map
 // from their library shows it before the "active map" write comes back.
-function mapViewIsShowing() {
-  return state.view === 'map' && !!viewedMap();
+function isMapViewShowing() {
+  return state.view === 'map' && !!getViewedMap();
 }
 
 // The corner button exists only when there is something behind it — no revealed
@@ -89,96 +140,85 @@ function mapViewIsShowing() {
 function syncMapButton() {
   const btn = document.getElementById('map-btn');
   if (!btn) return;
-  const map = mapForViewer();
-  const show = !!map && state.view !== 'map';
-  btn.classList.toggle('hidden', !show);
+  const map = getMapForViewer();
+  const shouldShow = !!map && state.view !== 'map';
+  btn.classList.toggle('hidden', !shouldShow);
   btn.title = map ? 'Open the battle map — ' + map.name : 'Battle map';
   // The stash header runs along the bottom of the panel; pad it clear of the button.
-  document.getElementById('inventory-panel').classList.toggle('has-map-btn', show);
+  document.getElementById('inventory-panel').classList.toggle('has-map-btn', shouldShow);
 }
 
-// =============================================================================
-// OPENING AND CLOSING
-// =============================================================================
-// Which view the reader was on before the map took the panel. Session only.
-let mapReturnView = 'inventory';
+// ─── OPENING AND CLOSING ───
 
+// Opens a map (the party's, by default) in the middle panel.
 function openBattlemap(mapId) {
-  const map = mapId ? mapById(mapId) : mapForViewer();
+  const map = mapId ? getMapById(mapId) : getMapForViewer();
   if (!map) return;
   mapViewId = map.id;
   mapSelectedTokenId = null;
   mapTool = 'select';
-  fogDirty = true;
+  isFogDirty = true;
   if (state.view !== 'map') mapReturnView = state.view;
   // The GM's grid controls live in the Maps pane, and lining a grid up is done
   // while looking at the picture — so opening a map puts that pane in front.
   if (isMapGM()) {
     state.mapLibraryOpenId = map.id;
-    if (leftTabsAvailable().includes('map')) state.leftTab = 'map';
+    if (getAvailableLeftTabs().includes('map')) state.leftTab = 'map';
   }
-  // The panel's actual work happens in onMapViewShown(), from the single "what
-  // are we looking at" entry point, so every way in agrees.
-  setInventoryView('map');
+  // The real work is in onMapViewShown(), so every way in agrees.
+  setInventoryPanelView('map');
 }
 
-function closeBattlemap() {
+function _closeBattlemap() {
   if (state.view !== 'map') return;
-  setInventoryView(mapReturnView === 'map' ? 'inventory' : mapReturnView);
+  setInventoryPanelView(mapReturnView === 'map' ? 'inventory' : mapReturnView);
 }
 
-// Which map the camera was last framed for — a GM who zoomed into a doorway,
-// glanced at a sheet and came back must find the doorway. Only a *different* map
-// gets framed.
-let mapFramedId = null;
-
-// The panel has just started showing the map. Called on every pass through
-// `syncCharacterViewUI()` (a roster snapshot drives it), so it does nothing
-// unless the map was not already up — setting the canvas size and rebuilding the
-// toolbar must not run on a presence heartbeat.
+// The panel has just started showing the map. Called on every syncCharacterViewUI()
+// pass, so the setup runs only if the map was not already up (not per heartbeat).
 function onMapViewShown() {
-  const wasOpen = mapOpen;
-  mapOpen = true;
+  const wasOpen = isMapOpen;
+  isMapOpen = true;
   if (!wasOpen) {
     // The canvas has no size until the panel is showing it.
-    ensureMapCanvas();
-    resizeMapCanvas();
-    const map = viewedMap();
+    _ensureMapCanvas();
+    _resizeMapCanvas();
+    const map = getViewedMap();
     if (map) {
-      loadMapImage(map);
-      if (mapFramedId !== map.id) { mapFramedId = map.id; fitMapToView(map); }
+      _loadMapImage(map);
+      if (mapFramedId !== map.id) { mapFramedId = map.id; _fitMapToView(map); }
     }
-    fogDirty = true;
+    isFogDirty = true;
     renderMapToolbar();
     drawBattlemap();
     renderInitiativePanel();
     renderMapSpeedIndicator();
   }
-  syncGridHint();
+  _syncGridHint();
 }
 
 // The panel has stopped showing the map. A gesture in flight is abandoned.
 function onMapViewHidden() {
-  if (!mapOpen) return;
-  mapOpen = false;
+  if (!isMapOpen) return;
+  isMapOpen = false;
   mapPan = mapTokenDrag = mapDrawing = mapGridDrag = null;
-  mapErasing = false;
+  isMapErasing = false;
   mapSelectedTokenId = null;
   setInitiativeHover(null);
-  syncGridHint();
+  _syncGridHint();
   renderInitiativePanel();   // which, with the board gone, is what hides it
   renderMapSpeedIndicator();
 }
 
 // Everything arriving from Firebase lands here.
 function onBattlemapDataChanged() {
-  if (!mapOpen) return;
-  const map = viewedMap();
+  if (!isMapOpen) return;
+  const map = getViewedMap();
   // The map was deleted, or a player's map hidden again — hand the reader back
   // their inventory rather than standing empty.
-  if (!map) { closeBattlemap(); return; }
-  loadMapImage(map);
-  fogDirty = true;
+  if (!map) { _closeBattlemap(); return; }
+  _loadMapImage(map);
+  isFogDirty = true;
   renderMapToolbar();
   drawBattlemap();
   renderInitiativePanel();
@@ -187,37 +227,35 @@ function onBattlemapDataChanged() {
   renderMapSpeedIndicator();
 }
 
-// =============================================================================
-// THE PICTURE
-// =============================================================================
-function loadMapImage(map) {
+// ─── THE PICTURE ───
+
+function _loadMapImage(map) {
   if (mapImageSrc === map.image && mapImage) return;
   mapImageSrc = map.image;
-  mapImageReady = false;
+  isMapImageReady = false;
   mapImage = new Image();
   mapImage.crossOrigin = 'anonymous';
-  mapImage.onload = () => { mapImageReady = true; drawBattlemap(); };
-  mapImage.onerror = () => { mapImageReady = false; drawBattlemap(); };
+  mapImage.onload = () => { isMapImageReady = true; drawBattlemap(); };
+  mapImage.onerror = () => { isMapImageReady = false; drawBattlemap(); };
   mapImage.src = map.image || '';
 }
 
 // The stored dimensions are the model's frame of reference — never the <img>'s,
 // which are not known until it loads and are not what coordinates were written in.
-function mapBounds(map) {
+function _getMapBounds(map) {
   return { x: 0, y: 0, w: map.w || 1000, h: map.h || 1000 };
 }
 
-// =============================================================================
-// THE CAMERA
-// =============================================================================
-function worldToScreen(wx, wy) {
+// ─── THE CAMERA ───
+
+function _convertWorldToScreen(wx, wy) {
   return {
     x: (wx - mapCam.x) * mapCam.scale + mapCanvasW / 2,
     y: (wy - mapCam.y) * mapCam.scale + mapCanvasH / 2,
   };
 }
 
-function screenToWorld(clientX, clientY) {
+function _convertScreenToWorld(clientX, clientY) {
   const b = mapCanvas.getBoundingClientRect();
   return {
     x: (clientX - b.left - mapCanvasW / 2) / mapCam.scale + mapCam.x,
@@ -225,51 +263,49 @@ function screenToWorld(clientX, clientY) {
   };
 }
 
-function fitMapToView(map) {
-  const b = mapBounds(map);
+function _fitMapToView(map) {
+  const b = _getMapBounds(map);
   if (!mapCanvasW || !mapCanvasH) return;
   const s = Math.min(mapCanvasW / b.w, mapCanvasH / b.h) * 0.96;
   mapCam = { x: b.w / 2, y: b.h / 2, scale: Math.max(MAP_MIN_SCALE, Math.min(MAP_MAX_SCALE, s)) };
 }
 
 // Zoom about the cursor — the thing under the pointer should stay put.
-function zoomMapAt(clientX, clientY, factor) {
-  const before = screenToWorld(clientX, clientY);
+function _zoomMapAt(clientX, clientY, factor) {
+  const before = _convertScreenToWorld(clientX, clientY);
   mapCam.scale = Math.max(MAP_MIN_SCALE, Math.min(MAP_MAX_SCALE, mapCam.scale * factor));
-  const after = screenToWorld(clientX, clientY);
+  const after = _convertScreenToWorld(clientX, clientY);
   mapCam.x += before.x - after.x;
   mapCam.y += before.y - after.y;
   drawBattlemap();
 }
 
-// =============================================================================
-// THE FOG
-// =============================================================================
-// Black means "the party cannot see here"; vision punches holes in it. Used
-// twice: painted over the board, and sampled under each creature. A map with
-// nobody on it has no fog at all (nothing to see out of; an all-black board
-// reads as broken). The edge of a shadow is blurred — applied to the shapes as
-// they are cut, never the finished canvas, so the fog's own outer boundary (the
-// edge of the map) stays hard.
+// ─── THE FOG ───
+
+// Black means the party cannot see here; vision cuts holes in it. It is painted
+// over the board and sampled under each creature. A map with nobody on it has no
+// fog. Blur goes on the shapes as they are cut, never the finished canvas, so
+// the map's outer edge stays hard.
 
 // Returns null where the browser has no canvas filters; the caller then draws a
 // crisp edge (a worse shadow, not a broken one).
-function fogBlurFilter(fx) {
+function _getFogBlurFilter(fx) {
   const px = Math.max(FOG_BLUR_MIN_PX, Math.round(Math.max(fogCanvas.width, fogCanvas.height) * FOG_BLUR_FRACTION));
   const filter = 'blur(' + px + 'px)';
   fx.filter = filter;
-  const supported = fx.filter === filter;
+  const isSupported = fx.filter === filter;
   fx.filter = 'none';
-  return supported ? filter : null;
+  return isSupported ? filter : null;
 }
 
-function buildFog(map) {
-  const b = mapBounds(map);
-  const sources = visionSources(map);
-  const masks = mapMasks(map);
+// Rebuilds the fog canvas and the set of tokens it hides.
+function _buildFog(map) {
+  const b = _getMapBounds(map);
+  const sources = getVisionSources(map);
+  const masks = getMapMasks(map);
   hiddenTokenIds = new Set();
 
-  if (!sources.length && !masks.length) { fogCanvas = fogCtx = null; fogDirty = false; return; }
+  if (!sources.length && !masks.length) { fogCanvas = fogCtx = null; isFogDirty = false; return; }
 
   fogScale = Math.min(1, FOG_MAX_DIM / Math.max(b.w, b.h));
   if (!fogCanvas) fogCanvas = document.createElement('canvas');
@@ -285,16 +321,16 @@ function buildFog(map) {
   fx.fillRect(0, 0, b.w, b.h);
 
   // The dark is laid down hard; everything cut out of it gets the soft edge.
-  const blur = fogBlurFilter(fx);
+  const blur = _getFogBlurFilter(fx);
 
   // What each party member can see, cut straight out of the dark.
-  const walls = mapWalls(map);
+  const walls = getMapWalls(map);
   fx.globalCompositeOperation = 'destination-out';
   fx.fillStyle = '#000';
   if (blur) fx.filter = blur;
   sources.forEach(t => {
-    const at = tokenDrawPos(t);
-    const elev = elevationViewFor(map, at.x, at.y);
+    const at = _getTokenDrawPos(t);
+    const elev = getElevationViewFor(map, at.x, at.y);
     const poly = computeVisionPolygon(at.x, at.y, walls, b, elev);
     if (poly.length < 3) return;
     fx.beginPath();
@@ -304,32 +340,28 @@ function buildFog(map) {
     fx.fill();
   });
 
-  // The GM's hand, over the arithmetic: Reveal beats the walls, Obscure beats
-  // everything so it goes last. Softened alike. A mask can be any shape now
-  // (rect/circle/lasso), same as a wall — traceMapShape() is what lets Reveal
-  // and Obscure not care which.
-  masks.filter(m => m.mode === 'show').forEach(m => { traceMapShape(fx, m); fx.fill(); });
+  // The GM's masks override the walls: Reveal beats walls, and Obscure beats
+  // everything, so it goes last.
+  masks.filter(m => m.mode === 'show').forEach(m => { _traceMapShape(fx, m); fx.fill(); });
   fx.globalCompositeOperation = 'source-over';
   fx.fillStyle = '#000';
-  masks.filter(m => m.mode === 'hide').forEach(m => { traceMapShape(fx, m); fx.fill(); });
+  masks.filter(m => m.mode === 'hide').forEach(m => { _traceMapShape(fx, m); fx.fill(); });
   fx.filter = 'none';
 
-  // Which creatures that leaves off the board — sampled from the fog, so what is
-  // hidden and what is dark are one answer. On screen if any probe is in the
-  // light. The blur costs this nothing: half-alpha on a soft edge is the middle
-  // of the ramp, where the hard edge used to be.
-  mapTokens(map).forEach(t => {
-    const at = tokenDrawPos(t);
-    const r = tokenRadius(map, t) * 0.7;
+  // Hidden creatures are sampled from the fog, so hidden and dark are one answer.
+  // A creature is seen if any probe is in the light (half alpha is mid-edge).
+  getMapTokens(map).forEach(t => {
+    const at = _getTokenDrawPos(t);
+    const r = getTokenRadius(map, t) * 0.7;
     const probes = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]];
-    const seen = probes.some(p => fogAlphaAt(at.x + p[0], at.y + p[1]) < 128);
-    if (!seen) hiddenTokenIds.add(t.id);
+    const isSeen = probes.some(p => _getFogAlphaAt(at.x + p[0], at.y + p[1]) < 128);
+    if (!isSeen) hiddenTokenIds.add(t.id);
   });
 
-  fogDirty = false;
+  isFogDirty = false;
 }
 
-function fogAlphaAt(wx, wy) {
+function _getFogAlphaAt(wx, wy) {
   if (!fogCtx) return 0;
   const x = Math.round(wx * fogScale), y = Math.round(wy * fogScale);
   if (x < 0 || y < 0 || x >= fogCanvas.width || y >= fogCanvas.height) return 255; // off the map is dark
@@ -338,32 +370,31 @@ function fogAlphaAt(wx, wy) {
 
 // A dragged token is drawn — and casts its vision — from where the cursor has
 // it, not where the database still says it is.
-function tokenDrawPos(token) {
+function _getTokenDrawPos(token) {
   if (mapTokenDrag && mapTokenDrag.id === token.id) return { x: mapTokenDrag.x, y: mapTokenDrag.y };
   return { x: token.x, y: token.y };
 }
 
-// =============================================================================
-// DRAWING
-// =============================================================================
-function ensureMapCanvas() {
+// ─── DRAWING ───
+
+function _ensureMapCanvas() {
   if (mapCanvas) return;
   mapCanvas = document.getElementById('map-canvas');
   mapCtx = mapCanvas.getContext('2d');
-  mapCanvas.addEventListener('pointerdown', onMapPointerDown);
-  mapCanvas.addEventListener('pointermove', onMapPointerMove);
-  mapCanvas.addEventListener('pointerup', onMapPointerUp);
-  mapCanvas.addEventListener('pointercancel', onMapPointerUp);
-  mapCanvas.addEventListener('dblclick', onMapDoubleClick);
+  mapCanvas.addEventListener('pointerdown', _onMapPointerDown);
+  mapCanvas.addEventListener('pointermove', _onMapPointerMove);
+  mapCanvas.addEventListener('pointerup', _onMapPointerUp);
+  mapCanvas.addEventListener('pointercancel', _onMapPointerUp);
+  mapCanvas.addEventListener('dblclick', _onMapDoubleClick);
   // The cursor leaving the board ends a hover — pointermove just stops arriving,
   // so the last creature would stay lit in the panel forever.
   mapCanvas.addEventListener('pointerleave', () => setInitiativeHover(null));
-  mapCanvas.addEventListener('wheel', onMapWheel, { passive: false });
+  mapCanvas.addEventListener('wheel', _onMapWheel, { passive: false });
   mapCanvas.addEventListener('contextmenu', e => e.preventDefault()); // right button pans
-  new ResizeObserver(() => { resizeMapCanvas(); drawBattlemap(); }).observe(mapCanvas.parentElement);
+  new ResizeObserver(() => { _resizeMapCanvas(); drawBattlemap(); }).observe(mapCanvas.parentElement);
 }
 
-function resizeMapCanvas() {
+function _resizeMapCanvas() {
   if (!mapCanvas) return;
   const b = mapCanvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -375,9 +406,10 @@ function resizeMapCanvas() {
   mapCanvas.style.height = mapCanvasH + 'px';
 }
 
+// Redraws the whole board. Every path that changes the screen ends here.
 function drawBattlemap() {
-  if (!mapOpen || !mapCanvas) return;
-  const map = viewedMap();
+  if (!isMapOpen || !mapCanvas) return;
+  const map = getViewedMap();
   const ctx = mapCtx;
   const dpr = window.devicePixelRatio || 1;
 
@@ -386,9 +418,9 @@ function drawBattlemap() {
   document.getElementById('map-empty').classList.toggle('hidden', !!map);
   if (!map) return;
 
-  if (fogDirty) buildFog(map);
+  if (isFogDirty) _buildFog(map);
 
-  const b = mapBounds(map);
+  const b = _getMapBounds(map);
   ctx.save();
   ctx.translate(mapCanvasW / 2 - mapCam.x * mapCam.scale, mapCanvasH / 2 - mapCam.y * mapCam.scale);
   ctx.scale(mapCam.scale, mapCam.scale);
@@ -396,17 +428,17 @@ function drawBattlemap() {
   // The board itself
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fillRect(b.x, b.y, b.w, b.h);
-  if (mapImageReady) ctx.drawImage(mapImage, b.x, b.y, b.w, b.h);
+  if (isMapImageReady) ctx.drawImage(mapImage, b.x, b.y, b.w, b.h);
 
-  drawMapGrid(ctx, map, b);
-  if (canEditMap()) drawMapElevation(ctx, map);
-  if (canEditMap()) drawMapWalls(ctx, map);
-  drawMapFog(ctx, b);
-  if (canEditMap()) drawMapMasks(ctx, map);
-  drawMapTokens(ctx, map);
-  drawMapHighlight(ctx, map);
-  drawMapDrawing(ctx);
-  if (mapTool === 'grid' && canEditMap()) drawGridHandles(ctx, map);
+  _drawMapGrid(ctx, map, b);
+  if (canEditMap()) _drawMapElevation(ctx, map);
+  if (canEditMap()) _drawMapWalls(ctx, map);
+  _drawMapFog(ctx, b);
+  if (canEditMap()) _drawMapMasks(ctx, map);
+  _drawMapTokens(ctx, map);
+  _drawMapHighlight(ctx, map);
+  _drawMapDrawing(ctx);
+  if (mapTool === 'grid' && canEditMap()) _drawGridHandles(ctx, map);
 
   ctx.restore();
 }
@@ -414,29 +446,28 @@ function drawBattlemap() {
 // The grid as it is *being* dragged, not yet as it is stored (written once, on
 // release). Everything that draws the grid asks these, so what is under the
 // cursor is what the release will commit.
-function viewGrid(map) {
-  return mapGridDrag ? mapGridDrag.grid : mapGrid(map);
+function _getViewGrid(map) {
+  return mapGridDrag ? mapGridDrag.grid : getMapGrid(map);
 }
-function viewCellSize(map) {
-  const s = viewGrid(map).size;
-  return Number.isFinite(s) && s >= 4 ? s : mapCellSize(map);
+function _getViewCellSize(map) {
+  const s = _getViewGrid(map).size;
+  return Number.isFinite(s) && s >= 4 ? s : getMapCellSize(map);
 }
 
-function drawMapGrid(ctx, map, b) {
-  const g = viewGrid(map);
-  // While the Grid tool is up the grid is drawn whether or not it is switched on
-  // for play — it is the thing being worked on.
-  const tuning = mapTool === 'grid';
-  if (g.visible === false && !tuning) return;
-  const cell = viewCellSize(map);
+function _drawMapGrid(ctx, map, b) {
+  const g = _getViewGrid(map);
+  // The Grid tool shows the grid even when it is switched off for play.
+  const isTuning = mapTool === 'grid';
+  if (g.visible === false && !isTuning) return;
+  const cell = _getViewCellSize(map);
   if (cell * mapCam.scale < 4) return; // too fine to read; drawing it is just noise
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(b.x, b.y, b.w, b.h);
   ctx.clip();
-  ctx.strokeStyle = tuning ? 'rgba(255, 196, 64, 0.85)' : 'rgba(0,0,0,0.38)';
-  ctx.lineWidth = Math.max(tuning ? 1 : 0.6, (tuning ? 1.5 : 1) / mapCam.scale);
+  ctx.strokeStyle = isTuning ? 'rgba(255, 196, 64, 0.85)' : 'rgba(0,0,0,0.38)';
+  ctx.lineWidth = Math.max(isTuning ? 1 : 0.6, (isTuning ? 1.5 : 1) / mapCam.scale);
   const startX = g.offsetX - Math.ceil((g.offsetX - b.x) / cell) * cell;
   const startY = g.offsetY - Math.ceil((g.offsetY - b.y) / cell) * cell;
   ctx.beginPath();
@@ -446,10 +477,9 @@ function drawMapGrid(ctx, map, b) {
   ctx.restore();
 }
 
-// A wall, a fog mask and an elevation zone are all the same three shapes now
-// (rect/circle/lasso — see THE TOOLBAR), so this is the one place any of them
-// is turned into a canvas path. Traces only — the caller fills/strokes.
-function traceMapShape(ctx, s) {
+// Walls, fog masks and elevation zones share three shapes (rect/circle/poly); this
+// is the one place any of them becomes a canvas path. The caller fills or strokes.
+function _traceMapShape(ctx, s) {
   ctx.beginPath();
   if (s.kind === 'circle') {
     ctx.arc(s.x, s.y, s.r || 1, 0, Math.PI * 2);
@@ -466,7 +496,7 @@ function traceMapShape(ctx, s) {
 
 // Where a label belongs on one of these shapes — the centroid for a lasso,
 // since its bounding-box centre can land outside a crescent-shaped trace.
-function mapShapeCenter(s) {
+function _getMapShapeCenter(s) {
   if (s.kind === 'circle') return { x: s.x, y: s.y };
   if (s.kind === 'poly') {
     const p = s.points || [];
@@ -478,29 +508,20 @@ function mapShapeCenter(s) {
   return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
 }
 
-// The GM's own read of the terrain — a player never sees these, only their
-// effect on the fog. Raised ground reads warm, lowered ground cool, so the two
-// are never confused at a glance the way two reds or two purples would be. A
-// zone at exactly base height (0) does nothing and reads neutral grey.
-const ELEVATION_TONE = {
-  up:      { fill: 'rgba(235, 150, 60, 0.16)', stroke: 'rgba(245, 175, 90, 0.95)' },
-  down:    { fill: 'rgba(90, 150, 230, 0.14)', stroke: 'rgba(120, 175, 240, 0.9)' },
-  neutral: { fill: 'rgba(150, 150, 150, 0.12)', stroke: 'rgba(180, 180, 180, 0.85)' },
-};
-function drawMapElevation(ctx, map) {
+function _drawMapElevation(ctx, map) {
   ctx.save();
   ctx.lineWidth = Math.max(1, 2 / mapCam.scale);
   const fs = Math.max(10, 13 / mapCam.scale);
-  mapElevationZones(map).forEach(z => {
-    const h = elevZoneHeight(z);
+  getMapElevationZones(map).forEach(z => {
+    const h = getElevZoneHeight(z);
     const tone = ELEVATION_TONE[h > 0 ? 'up' : h < 0 ? 'down' : 'neutral'];
-    traceMapShape(ctx, z);
+    _traceMapShape(ctx, z);
     ctx.fillStyle = tone.fill;
     ctx.strokeStyle = tone.stroke;
     ctx.fill();
     ctx.stroke();
 
-    const c = mapShapeCenter(z);
+    const c = _getMapShapeCenter(z);
     ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -512,26 +533,26 @@ function drawMapElevation(ctx, map) {
 
 // Walls are the GM's notes, not part of the picture, so only the GM sees them —
 // a player sees the dark behind them.
-function drawMapWalls(ctx, map) {
+function _drawMapWalls(ctx, map) {
   ctx.save();
   ctx.strokeStyle = 'rgba(255, 92, 92, 0.9)';
   ctx.fillStyle = 'rgba(255, 92, 92, 0.16)';
   ctx.lineWidth = Math.max(1, 2 / mapCam.scale);
-  mapWalls(map).forEach(w => {
-    traceMapShape(ctx, w);
+  getMapWalls(map).forEach(w => {
+    _traceMapShape(ctx, w);
     ctx.fill();
     ctx.stroke();
   });
   ctx.restore();
 }
 
-function drawMapMasks(ctx, map) {
+function _drawMapMasks(ctx, map) {
   ctx.save();
   ctx.lineWidth = Math.max(1, 2 / mapCam.scale);
   ctx.setLineDash([8 / mapCam.scale, 6 / mapCam.scale]);
-  mapMasks(map).forEach(m => {
+  getMapMasks(map).forEach(m => {
     ctx.strokeStyle = m.mode === 'hide' ? 'rgba(150, 110, 220, 0.95)' : 'rgba(90, 210, 130, 0.95)';
-    traceMapShape(ctx, m);
+    _traceMapShape(ctx, m);
     ctx.stroke();
   });
   ctx.restore();
@@ -539,7 +560,7 @@ function drawMapMasks(ctx, map) {
 
 // The GM sees the fog as a wash, not a wall — they need both what the players
 // cannot see and what is standing in it.
-function drawMapFog(ctx, b) {
+function _drawMapFog(ctx, b) {
   if (!fogCanvas) return;
   ctx.save();
   ctx.globalAlpha = canEditMap() ? 0.45 : 1;
@@ -547,19 +568,19 @@ function drawMapFog(ctx, b) {
   ctx.restore();
 }
 
-function drawMapTokens(ctx, map) {
-  const cell = mapCellSize(map);
+function _drawMapTokens(ctx, map) {
+  const cell = getMapCellSize(map);
   // Whose turn it is, and the turn-order hover — worked out once for the frame.
-  const marks = initiativeMarks(map);
-  mapTokens(map).forEach(token => {
+  const marks = getInitiativeMarks(map);
+  getMapTokens(map).forEach(token => {
     if (!canEditMap() && hiddenTokenIds.has(token.id)) return;
-    const at = tokenDrawPos(token);
-    const r = tokenRadius(map, token);
-    const color = hostilityColor(token.hostility);
-    const dim = canEditMap() && hiddenTokenIds.has(token.id);
+    const at = _getTokenDrawPos(token);
+    const r = getTokenRadius(map, token);
+    const color = getHostilityColor(token.hostility);
+    const isDimmed = canEditMap() && hiddenTokenIds.has(token.id);
 
     ctx.save();
-    ctx.globalAlpha = dim ? 0.5 : 1;
+    ctx.globalAlpha = isDimmed ? 0.5 : 1;
 
     const hostilityLW = Math.max(2, r * 0.14);
     ctx.beginPath();
@@ -570,11 +591,10 @@ function drawMapTokens(ctx, map) {
     ctx.strokeStyle = color;
     ctx.stroke();
 
-    // A player's own marker — the visual half of the ownership rule that
-    // gates who may drag it (canControlToken()). A ring, not a fill, so it
-    // never fights the hostility colour for the same pixels.
-    const ownedByPlayer = tokenOwnedByPlayer(token);
-    if (ownedByPlayer) {
+    // A player's own marker (the visual half of canControlToken()). A ring, not a
+    // fill, so it never fights the hostility colour.
+    const isOwnedByPlayer = isTokenOwnedByPlayer(token);
+    if (isOwnedByPlayer) {
       ctx.beginPath();
       ctx.arc(at.x, at.y, r + hostilityLW * 0.9, 0, Math.PI * 2);
       ctx.lineWidth = Math.max(1.5, r * 0.09);
@@ -584,7 +604,7 @@ function drawMapTokens(ctx, map) {
 
     if (token.id === mapSelectedTokenId) {
       ctx.beginPath();
-      ctx.arc(at.x, at.y, r + hostilityLW + (ownedByPlayer ? r * 0.13 : 0), 0, Math.PI * 2);
+      ctx.arc(at.x, at.y, r + hostilityLW + (isOwnedByPlayer ? r * 0.13 : 0), 0, Math.PI * 2);
       ctx.setLineDash([r * 0.3, r * 0.22]);
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = Math.max(1.5, r * 0.08);
@@ -592,9 +612,8 @@ function drawMapTokens(ctx, map) {
       ctx.setLineDash([]);
     }
 
-    // The turn order, drawn on the creature: the active one wears the panel's
-    // accent (gold), the hovered one white — so the turn, the hover and the
-    // dashed selection ring never look alike.
+    // Turn order on the creature: active is gold, hovered white, so neither is
+    // mistaken for the dashed selection ring.
     const mark = marks.get(token.id);
     if (mark) {
       const lw = Math.max(2, r * (mark === 'active' ? 0.16 : 0.1));
@@ -629,23 +648,21 @@ function drawMapTokens(ctx, map) {
     }
     ctx.restore();
 
-    // The cost of the drag in progress, said where the reader is looking —
-    // beside the token, not the bottom-right tally (see drawMoveCostLabel).
-    if (mapTokenDrag && mapTokenDrag.id === token.id) drawMoveCostLabel(ctx, map, token, at, r);
+    // The drag's cost goes beside the token, where the reader is looking.
+    if (mapTokenDrag && mapTokenDrag.id === token.id) _drawMoveCostLabel(ctx, map, token, at, r);
   });
 }
 
-// What this drag would spend, next to the token being dragged. Silent (no
-// entry, no tracked speed) when the token is not on a movement budget at all —
-// see the MOVEMENT section of battlemap-initiative.js.
-function drawMoveCostLabel(ctx, map, token, at, r) {
-  const entry = tokenMoveEntry(map, token);
+// What this drag would spend, next to the dragged token. Silent when the token
+// has no movement budget (see MOVEMENT in battlemap-initiative.js).
+function _drawMoveCostLabel(ctx, map, token, at, r) {
+  const entry = getTokenMoveEntry(map, token);
   if (!entry) return;
-  const speed = tokenSpeed(token);
+  const speed = getTokenSpeed(token);
   const usedBefore = entry.moveUsed || 0;
-  const distFeet = gridManhattanFeet(map, mapTokenDrag.ox, mapTokenDrag.oy, at.x, at.y, token.size);
+  const distFeet = getGridManhattanFeet(map, mapTokenDrag.ox, mapTokenDrag.oy, at.x, at.y, token.size);
   const remaining = Math.max(0, speed - usedBefore - distFeet);
-  const maxedOut = distFeet >= speed - usedBefore;
+  const isMaxedOut = distFeet >= speed - usedBefore;
   const text = Math.round(distFeet) + ' ft' + (distFeet > 0 ? ' · ' + Math.round(remaining) + ' ft left' : '');
 
   const fs = 13 / mapCam.scale;
@@ -657,24 +674,15 @@ function drawMoveCostLabel(ctx, map, token, at, r) {
   const w = ctx.measureText(text).width;
   const x = at.x + r + pad;
   const y = at.y;
-  ctx.fillStyle = maxedOut ? 'rgba(122, 26, 26, 0.88)' : 'rgba(12, 9, 5, 0.82)';
+  ctx.fillStyle = isMaxedOut ? 'rgba(122, 26, 26, 0.88)' : 'rgba(12, 9, 5, 0.82)';
   ctx.fillRect(x - pad * 0.4, y - fs * 0.85, w + pad * 1.6, fs * 1.7);
   ctx.fillStyle = '#ffd479';
   ctx.fillText(text, x, y);
   ctx.restore();
 }
 
-// The shape under the cursor while it is dragged out, from the same numbers the
-// write will use.
-// Coloured by mode, shaped by shape — the two are independent (see THE
-// TOOLBAR), so this is the one place they come back together.
-const MAP_MODE_TONE = {
-  'wall':      'rgba(255, 92, 92, 0.95)',
-  'fog-hide':  'rgba(150, 110, 220, 0.95)',
-  'fog-show':  'rgba(90, 210, 130, 0.95)',
-  'elev':      'rgba(245, 175, 90, 0.95)',
-};
-function drawMapDrawing(ctx) {
+// The shape being dragged out, from the same numbers the write will use.
+function _drawMapDrawing(ctx) {
   if (!mapDrawing) return;
   ctx.save();
   ctx.lineWidth = Math.max(1, 2 / mapCam.scale);
@@ -684,7 +692,7 @@ function drawMapDrawing(ctx) {
   ctx.fillStyle = tone.replace(/[\d.]+\)$/, '0.18)');
   ctx.beginPath();
   if (mapDrawing.shape === 'circle') {
-    ctx.arc(mapDrawing.x0, mapDrawing.y0, drawingRadius(mapDrawing), 0, Math.PI * 2);
+    ctx.arc(mapDrawing.x0, mapDrawing.y0, _getDrawingRadius(mapDrawing), 0, Math.PI * 2);
   } else if (mapDrawing.shape === 'lasso') {
     const pts = mapDrawing.points;
     if (pts.length) {
@@ -693,7 +701,7 @@ function drawMapDrawing(ctx) {
       if (pts.length > 2) ctx.closePath();
     }
   } else {
-    const r = drawingRect(mapDrawing);
+    const r = _getDrawingRect(mapDrawing);
     ctx.rect(r.x, r.y, r.w, r.h);
   }
   ctx.fill();
@@ -701,39 +709,23 @@ function drawMapDrawing(ctx) {
   ctx.restore();
 }
 
-function drawingRect(d) {
+function _getDrawingRect(d) {
   return {
     x: Math.min(d.x0, d.x1), y: Math.min(d.y0, d.y1),
     w: Math.abs(d.x1 - d.x0), h: Math.abs(d.y1 - d.y0),
   };
 }
-function drawingRadius(d) { return Math.hypot(d.x1 - d.x0, d.y1 - d.y0); }
+function _getDrawingRadius(d) { return Math.hypot(d.x1 - d.x0, d.y1 - d.y0); }
 
-// =============================================================================
-// THE GRID'S HANDLES
-// =============================================================================
-// The grid is lined up by dragging the picture it has to line up with. Pull a
-// corner or edge and the grid magnifies about the point opposite (which stays
-// welded); drag anywhere else and the whole grid slides. A scale about a fixed
-// point answers both "how big is a square" and "where does the run start" at
-// once — the pivot IS the start. A corner asks both axes; an edge asks only the
-// axis it faces (movement along the edge is ignored), which makes it the finer
-// of the two. Nothing here is stored. See CLAUDE.md § Lining the grid up.
+// ─── THE GRID'S HANDLES ───
 
-// `ix`/`iy` run 0→1 across the map; the pivot is always `1 - i`.
-const GRID_HANDLE_SPOTS = [
-  { ix: 0,   iy: 0,   axis: null },   // the four corners: both axes speak
-  { ix: 1,   iy: 0,   axis: null },
-  { ix: 0,   iy: 1,   axis: null },
-  { ix: 1,   iy: 1,   axis: null },
-  { ix: 0.5, iy: 0,   axis: 'y' },    // the four edges: only the axis they face
-  { ix: 0.5, iy: 1,   axis: 'y' },
-  { ix: 0,   iy: 0.5, axis: 'x' },
-  { ix: 1,   iy: 0.5, axis: 'x' },
-];
+// Pulling a corner or edge of the picture scales the grid about the opposite
+// point, which stays fixed and so sets where the run starts; dragging anywhere
+// else slides it. A corner reads both axes, an edge only the one it faces.
+// Nothing here is stored.
 
-function mapGridHandles(map) {
-  const b = mapBounds(map);
+function _getMapGridHandles(map) {
+  const b = _getMapBounds(map);
   return GRID_HANDLE_SPOTS.map(h => ({
     ...h,
     x: b.x + h.ix * b.w,
@@ -745,12 +737,12 @@ function mapGridHandles(map) {
 // Which handle the pointer is on, in *screen* pixels (they are drawn at a fixed
 // screen size). A handle scrolled off the edge cannot be grabbed — Fit brings it
 // back. Nearest wins.
-function gridHandleAtPoint(map, clientX, clientY) {
+function _getGridHandleAtPoint(map, clientX, clientY) {
   const r = mapCanvas.getBoundingClientRect();
   const px = clientX - r.left, py = clientY - r.top;
   let best = null, bestD = GRID_HANDLE_PX + 5;
-  mapGridHandles(map).forEach(h => {
-    const at = worldToScreen(h.x, h.y);
+  _getMapGridHandles(map).forEach(h => {
+    const at = _convertWorldToScreen(h.x, h.y);
     const d = Math.hypot(px - at.x, py - at.y);
     if (d <= bestD) { bestD = d; best = h; }
   });
@@ -762,7 +754,7 @@ function gridHandleAtPoint(map, clientX, clientY) {
 // corner averages the two (not a diagonal distance, which would let a wide map's
 // sideways movement dominate); an edge asks only the axis it faces. The size
 // clamp catches a drag straight past the pivot.
-function scaleGridDrag(map, drag, w) {
+function _scaleGridDrag(map, drag, w) {
   const held = drag.held, pivot = drag.pivot;
   const spanX = held.x - pivot.x, spanY = held.y - pivot.y;
   const kx = held.axis === 'y' || !spanX ? null : Math.abs((w.x - pivot.x) / spanX);
@@ -773,23 +765,23 @@ function scaleGridDrag(map, drag, w) {
   drag.grid = { ...drag.grid0, ...scaleGridAbout(drag.grid0, pivot, k) };
 }
 
-function slideGridDrag(map, drag, e) {
+// Slides the dragged grid by the pointer's travel since the press.
+function _slideGridDrag(map, drag, e) {
   const dx = (e.clientX - drag.sx) / mapCam.scale;
   const dy = (e.clientY - drag.sy) / mapCam.scale;
   drag.grid = { ...drag.grid0, ...slideGridBy(drag.grid0, dx, dy) };
 }
 
 // An edge moves one way, a corner both.
-function gridHandleCursor(h) {
+function _getGridHandleCursor(h) {
   if (h.axis === 'x') return 'ew-resize';
   if (h.axis === 'y') return 'ns-resize';
   return h.ix === h.iy ? 'nwse-resize' : 'nesw-resize';
 }
 
-// The handles, and — while one is held — what the drag has made of the squares.
-// A corner is a square block, an edge a bar along its own edge, so which axis a
-// handle moves is legible before it is touched.
-function drawGridHandles(ctx, map) {
+// The handles, plus the square size while one is held. A corner is a block and
+// an edge a bar along its edge, so each handle's axis is legible before use.
+function _drawGridHandles(ctx, map) {
   const accent = 'rgba(255, 196, 64, ';
   const px = 1 / mapCam.scale;           // one screen pixel, in image pixels
   const size = GRID_HANDLE_PX * px;
@@ -800,9 +792,9 @@ function drawGridHandles(ctx, map) {
   ctx.strokeStyle = 'rgba(20, 14, 6, 0.9)';
   ctx.lineWidth = Math.max(1, px);
   const LONG = size * 2.6, THIN = size * 0.55;
-  mapGridHandles(map).forEach(h => {
-    const on = held && held.ix === h.ix && held.iy === h.iy;
-    ctx.fillStyle = accent + (on ? '1)' : '0.9)');
+  _getMapGridHandles(map).forEach(h => {
+    const isHeld = held && held.ix === h.ix && held.iy === h.iy;
+    ctx.fillStyle = accent + (isHeld ? '1)' : '0.9)');
     const w = h.axis === 'y' ? LONG : h.axis === 'x' ? THIN : size;
     const t = h.axis === 'y' ? THIN : h.axis === 'x' ? LONG : size;
     // Tucked inside the picture — half a handle off the map is half a handle to aim at.
@@ -811,14 +803,14 @@ function drawGridHandles(ctx, map) {
     ctx.fillRect(x, y, w, t);
     ctx.strokeRect(x, y, w, t);
   });
-  if (held) drawGridScaleLabel(ctx, map, held);
+  if (held) _drawGridScaleLabel(ctx, map, held);
   ctx.restore();
 }
 
 // The size the squares have reached, said at the handle being pulled (the reader
 // mid-drag is looking there, not at the bar by their knee).
-function drawGridScaleLabel(ctx, map, held) {
-  const text = roundGridValue(viewCellSize(map)) + ' px per square';
+function _drawGridScaleLabel(ctx, map, held) {
+  const text = roundGridValue(_getViewCellSize(map)) + ' px per square';
   const fs = 13 / mapCam.scale;
   const pad = 10 / mapCam.scale;
 
@@ -840,45 +832,45 @@ function drawGridScaleLabel(ctx, map, held) {
   ctx.restore();
 }
 
-// =============================================================================
-// THE POINTER
-// =============================================================================
-function tokenAtPoint(map, x, y) {
+// ─── THE POINTER ───
+
+// The visible token under a world point, or null.
+function _getTokenAtPoint(map, x, y) {
   // Backwards, so the one drawn last (on top) is the one hit.
-  const tokens = mapTokens(map);
+  const tokens = getMapTokens(map);
   for (let i = tokens.length - 1; i >= 0; i--) {
     const t = tokens[i];
     if (!canEditMap() && hiddenTokenIds.has(t.id)) continue;
-    const at = tokenDrawPos(t);
-    const r = tokenRadius(map, t);
+    const at = _getTokenDrawPos(t);
+    const r = getTokenRadius(map, t);
     if (Math.hypot(x - at.x, y - at.y) <= r) return t;
   }
   return null;
 }
 
-function onMapPointerDown(e) {
-  const map = viewedMap();
+function _onMapPointerDown(e) {
+  const map = getViewedMap();
   if (!map) return;
   mapCanvas.setPointerCapture(e.pointerId);
-  const w = screenToWorld(e.clientX, e.clientY);
+  const w = _convertScreenToWorld(e.clientX, e.clientY);
 
   // Right-click on a Height zone (with the Height tool up) edits its height —
   // otherwise middle and right buttons always pan, whatever tool is up.
   if (e.button === 2 && canEditMap() && mapTool === 'draw' && mapMode === 'elev') {
-    const zone = mapElevationZones(map).slice().reverse().find(z => pointInWall(w.x, w.y, z));
-    if (zone) { promptElevationHeight(map.id, zone); return; }
+    const zone = getMapElevationZones(map).slice().reverse().find(z => isPointInWall(w.x, w.y, z));
+    if (zone) { _promptElevationHeight(map.id, zone); return; }
   }
   if (e.button === 1 || e.button === 2) { mapPan = { sx: e.clientX, sy: e.clientY, camX: mapCam.x, camY: mapCam.y }; return; }
   if (e.button !== 0) return;
 
-  if (mapTool === 'erase') { mapErasing = true; eraseMapPieceAt(map, w); return; }
+  if (mapTool === 'erase') { isMapErasing = true; _eraseMapPieceAt(map, w); return; }
 
   // Grid tool: a corner or edge magnifies about the point opposite, anywhere
   // else slides the whole grid (it runs over the whole picture, so the whole
   // picture is its middle).
   if (mapTool === 'grid') {
-    const handle = gridHandleAtPoint(map, e.clientX, e.clientY);
-    const grid0 = mapGrid(map);
+    const handle = _getGridHandleAtPoint(map, e.clientX, e.clientY);
+    const grid0 = getMapGrid(map);
     mapGridDrag = handle
       ? { mode: 'scale', held: handle, pivot: handle.pivot, grid0, grid: grid0, moved: false }
       : { mode: 'slide', sx: e.clientX, sy: e.clientY, grid0, grid: grid0, moved: false };
@@ -887,13 +879,12 @@ function onMapPointerDown(e) {
   }
 
   if (mapTool === 'select') {
-    const token = tokenAtPoint(map, w.x, w.y);
+    const token = _getTokenAtPoint(map, w.x, w.y);
     if (token) {
       mapSelectedTokenId = token.id;
-      // Selecting is free (it is how you reach Edit); dragging is not — only
-      // the GM or whoever owns the token may move it. ox/oy stay put for the
-      // whole gesture: x/y follow the cursor and are not a stable place to
-      // measure this drag's own distance from.
+      // Anyone may select (it reaches Edit); only the GM or the owner may drag.
+      // ox/oy stay fixed for the gesture, since x/y follow the cursor and the
+      // drag's distance is measured from the start.
       if (canControlToken(token)) {
         mapTokenDrag = { id: token.id, x: token.x, y: token.y, ox: token.x, oy: token.y, dx: token.x - w.x, dy: token.y - w.y, moved: false };
       }
@@ -908,47 +899,44 @@ function onMapPointerDown(e) {
     return;
   }
 
-  // mapTool === 'draw' from here — the shape and mode chosen independently in
-  // the toolbar (see THE TOOLBAR).
+  // mapTool === 'draw' from here.
   mapDrawing = mapShape === 'lasso'
     ? { shape: 'lasso', mode: mapMode, points: [[w.x, w.y]] }
     : { shape: mapShape, mode: mapMode, x0: w.x, y0: w.y, x1: w.x, y1: w.y };
 }
 
-function onMapPointerMove(e) {
+function _onMapPointerMove(e) {
   if (mapPan) {
     mapCam.x = mapPan.camX - (e.clientX - mapPan.sx) / mapCam.scale;
     mapCam.y = mapPan.camY - (e.clientY - mapPan.sy) / mapCam.scale;
     drawBattlemap();
     return;
   }
-  const map = viewedMap();
+  const map = getViewedMap();
   if (!map) return;
-  const w = screenToWorld(e.clientX, e.clientY);
+  const w = _convertScreenToWorld(e.clientX, e.clientY);
 
   if (mapGridDrag) {
-    if (mapGridDrag.mode === 'scale') scaleGridDrag(map, mapGridDrag, w);
-    else slideGridDrag(map, mapGridDrag, e);
+    if (mapGridDrag.mode === 'scale') _scaleGridDrag(map, mapGridDrag, w);
+    else _slideGridDrag(map, mapGridDrag, e);
     mapGridDrag.moved = true;
-    syncGridHint();
+    _syncGridHint();
     drawBattlemap();
     return;
   }
 
-  if (mapErasing) { eraseMapPieceAt(map, w); drawBattlemap(); return; }
+  if (isMapErasing) { _eraseMapPieceAt(map, w); drawBattlemap(); return; }
 
   if (mapTokenDrag) {
     let nx = w.x + mapTokenDrag.dx;
     let ny = w.y + mapTokenDrag.dy;
-    // A token with a tracked budget cannot be dragged past what it has left —
-    // the leash is the Manhattan (grid) distance from where this drag started,
-    // pulled back onto that line rather than just refused outright. Unsnapped
-    // for a smooth pull rather than a stepped one; what actually gets spent is
-    // always the snapped figure (drawMoveCostLabel, and the spend on release).
+    // A tracked budget leashes the drag: past the remaining Manhattan distance
+    // from the start, the token is pulled back along that line. Unsnapped for a
+    // smooth pull; what is spent is always the snapped figure.
     const token = (map.tokens || {})[mapTokenDrag.id];
-    const remaining = token ? tokenMoveRemaining(map, token) : null;
+    const remaining = token ? getTokenMoveRemaining(map, token) : null;
     if (remaining !== null) {
-      const distFeet = gridManhattanFeetRaw(map, mapTokenDrag.ox, mapTokenDrag.oy, nx, ny);
+      const distFeet = getGridManhattanFeetRaw(map, mapTokenDrag.ox, mapTokenDrag.oy, nx, ny);
       if (distFeet > remaining) {
         const k = remaining / distFeet;
         nx = mapTokenDrag.ox + (nx - mapTokenDrag.ox) * k;
@@ -958,7 +946,7 @@ function onMapPointerMove(e) {
     mapTokenDrag.x = nx;
     mapTokenDrag.y = ny;
     mapTokenDrag.moved = true;
-    // The fog does not follow the drag — it settles on pointerup (see below).
+    // The fog does not follow the drag; it settles on pointerup.
     drawBattlemap();
     return;
   }
@@ -967,9 +955,8 @@ function onMapPointerMove(e) {
     if (mapDrawing.shape === 'lasso') {
       const pts = mapDrawing.points;
       const last = pts[pts.length - 1];
-      // Only a point every few *screen* pixels — a freehand trace at native
-      // pointer resolution is thousands of points for a modest loop, and the
-      // screen (not world) distance is what keeps that true at any zoom.
+      // One point every few screen pixels (screen, so it holds at any zoom);
+      // native pointer resolution would be thousands of points.
       if (pts.length < MAP_LASSO_MAX_POINTS && Math.hypot(w.x - last[0], w.y - last[1]) * mapCam.scale > 3) {
         pts.push([w.x, w.y]);
       }
@@ -981,32 +968,30 @@ function onMapPointerMove(e) {
     return;
   }
 
-  // Nothing held: whatever creature is under the cursor is lit in the turn
-  // order. Asked on every move, so noteMapTokenHover() returns early when the
-  // answer has not changed — no redraw per pointermove for the same answer.
-  noteMapTokenHover(map, (tokenAtPoint(map, w.x, w.y) || {}).id || null);
+  // Nothing held: light the creature under the cursor in the turn order.
+  // noteMapTokenHover() returns early when the answer has not changed.
+  noteMapTokenHover(map, (_getTokenAtPoint(map, w.x, w.y) || {}).id || null);
 
   if (mapTool === 'grid') {
-    const handle = gridHandleAtPoint(map, e.clientX, e.clientY);
-    mapCanvas.style.cursor = handle ? gridHandleCursor(handle) : 'move';
+    const handle = _getGridHandleAtPoint(map, e.clientX, e.clientY);
+    mapCanvas.style.cursor = handle ? _getGridHandleCursor(handle) : 'move';
   }
 }
 
-function onMapPointerUp(e) {
+function _onMapPointerUp(e) {
   if (mapCanvas.hasPointerCapture(e.pointerId)) mapCanvas.releasePointerCapture(e.pointerId);
-  const map = viewedMap();
+  const map = getViewedMap();
   mapPan = null;
-  mapErasing = false;
+  isMapErasing = false;
 
-  // The grid is written once, on release — a write per pointermove would be a
-  // write per move into a database every other member is reading.
+  // The grid is written once, on release, not per move into a shared database.
   if (mapGridDrag) {
     const drag = mapGridDrag;
     mapGridDrag = null;
     // A click that never moved is not an edit.
     if (map && drag.moved) updateMapGrid(map.id, drag.grid);
 
-    syncGridHint();
+    _syncGridHint();
     drawBattlemap();
     return;
   }
@@ -1018,58 +1003,43 @@ function onMapPointerUp(e) {
       const token = (map.tokens || {})[drag.id];
       const snapped = snapToGrid(map, drag.x, drag.y, token ? token.size : 1);
       updateToken(map.id, drag.id, snapped);
-      // Whole cells, start to end — gridManhattanFeet() snaps both points
-      // itself, so this agrees exactly with the squares the token actually
-      // crossed on the board.
-      if (token) spendTokenMovement(map, token, gridManhattanFeet(map, drag.ox, drag.oy, drag.x, drag.y, token.size));
+      // getGridManhattanFeet() snaps both ends, so this matches the squares crossed.
+      if (token) spendTokenMovement(map, token, getGridManhattanFeet(map, drag.ox, drag.oy, drag.x, drag.y, token.size));
     }
-    // The fog settles here, and only here: a fog that followed the drag would
-    // let anyone sweep their token across the board and read the whole map back
-    // out of the shadows without letting go. Where a creature is put down is a
-    // decision; where it passed through is not.
-    fogDirty = true;
+    // The fog settles here and only here: a fog that followed the drag would let
+    // anyone sweep a token across the board and read the whole map out of it.
+    isFogDirty = true;
     drawBattlemap();
     return;
   }
 
   if (mapDrawing && map) {
-    commitMapDrawing(map, mapDrawing);
+    _commitMapDrawing(map, mapDrawing);
     mapDrawing = null;
     drawBattlemap();
   }
 }
 
-function onMapDoubleClick(e) {
-  const map = viewedMap();
+function _onMapDoubleClick(e) {
+  const map = getViewedMap();
   if (!map) return;
-  const w = screenToWorld(e.clientX, e.clientY);
-  const token = tokenAtPoint(map, w.x, w.y);
+  const w = _convertScreenToWorld(e.clientX, e.clientY);
+  const token = _getTokenAtPoint(map, w.x, w.y);
   // On a creature: edit it. On bare board: put a new one where the pointer is.
   if (token) openCreatureModal(map.id, token.id, null);
   else if (canAddCreature()) openCreatureModal(map.id, null, w);
 }
 
-function onMapWheel(e) {
+function _onMapWheel(e) {
   e.preventDefault();
-  zoomMapAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  _zoomMapAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
 }
 
-// A shape too small to have been meant is a click that slipped, not a wall.
-const MAP_MIN_SHAPE = 6;
-// A freehand trace running out of road — past this it stops taking new
-// points, not the gesture (see onMapPointerMove). At the 3-screen-px spacing
-// between points, this is ~9000 screen px of total path before it stops —
-// generous enough that reaching it means something runaway is happening, not
-// an ordinary trace around a room.
-const MAP_LASSO_MAX_POINTS = 3000;
-
-// The shape a drag actually committed to, in the { kind, ... } form every
-// wall/mask/elevation entry is stored as — or null if it was too small (or,
-// for a lasso, too short) to have been meant. One function for every mode,
-// since what varies is only *what* gets built from the same three shapes.
-function mapDrawingShape(d) {
+// The drag as a stored { kind, ... } shape (the form every wall, mask and zone
+// uses), or null if it was too small or short to have been meant.
+function _getMapDrawingShape(d) {
   if (d.shape === 'circle') {
-    const r = drawingRadius(d);
+    const r = _getDrawingRadius(d);
     return r < MAP_MIN_SHAPE ? null : { kind: 'circle', x: d.x0, y: d.y0, r };
   }
   if (d.shape === 'lasso') {
@@ -1079,72 +1049,68 @@ function mapDrawingShape(d) {
     const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
     return (w < MAP_MIN_SHAPE || h < MAP_MIN_SHAPE) ? null : { kind: 'poly', points: pts };
   }
-  const r = drawingRect(d);
+  const r = _getDrawingRect(d);
   return (r.w < MAP_MIN_SHAPE || r.h < MAP_MIN_SHAPE) ? null : { kind: 'rect', x: r.x, y: r.y, w: r.w, h: r.h };
 }
 
-function commitMapDrawing(map, d) {
+function _commitMapDrawing(map, d) {
   if (!canEditMap()) return;
-  const shape = mapDrawingShape(d);
+  const shape = _getMapDrawingShape(d);
   if (!shape) return;
   if (d.mode === 'wall') addWall(map.id, shape);
   else if (d.mode === 'fog-hide' || d.mode === 'fog-show') addMask(map.id, { ...shape, mode: d.mode === 'fog-hide' ? 'hide' : 'show' });
   else if (d.mode === 'elev') addElevationZone(map.id, { ...shape, height: clampElevHeight(elevNewHeight) });
-  fogDirty = true;
+  isFogDirty = true;
 }
 
-// Newest first, whatever its kind — where a wall, a fog edit and a height zone
-// overlap, the one drawn last comes off first (pieceTime()), so an eraser
-// click undoes the stack in the order it was built.
-function eraseMapPieceAt(map, w) {
+// Removes the newest piece of any kind under the point (getPieceTime()), so erasing
+// an overlap undoes it in the order it was built.
+function _eraseMapPieceAt(map, w) {
   let best = null;
-  [['masks', mapMasks(map)], ['elevation', mapElevationZones(map)], ['walls', mapWalls(map)]].forEach(([kind, list]) => {
+  [['masks', getMapMasks(map)], ['elevation', getMapElevationZones(map)], ['walls', getMapWalls(map)]].forEach(([kind, list]) => {
     list.forEach(p => {
-      if (!pointInWall(w.x, w.y, p)) return;
-      if (!best || pieceTime(p) > pieceTime(best.piece)) best = { kind, piece: p };
+      if (!isPointInWall(w.x, w.y, p)) return;
+      if (!best || getPieceTime(p) > getPieceTime(best.piece)) best = { kind, piece: p };
     });
   });
   if (!best) return;
   removePiece(map.id, best.kind, best.piece.id);
-  fogDirty = true;
+  isFogDirty = true;
 }
 
-// The Maps pane's piece list (battlemap-library.js) points at one piece on the
-// board while it is hovered — { kind, id } or null. Session only.
-let mapHighlight = null;
-
+// Outlines one piece on the board for the Maps pane's hover; a null kind clears it.
 function setMapHighlight(kind, id) {
-  const same = kind && mapHighlight && mapHighlight.kind === kind && mapHighlight.id === id;
-  if (same || (!kind && !mapHighlight)) return;
+  const isSame = kind && mapHighlight && mapHighlight.kind === kind && mapHighlight.id === id;
+  if (isSame || (!kind && !mapHighlight)) return;
   mapHighlight = kind ? { kind, id } : null;
   drawBattlemap();
 }
 
 // The colour each piece is drawn in on the board, so the pane's swatch and the
 // hover halo match what the GM is looking at.
-function mapPieceColor(kind, piece) {
-  if (kind === 'tokens') return hostilityColor(piece.hostility);
+function getMapPieceColor(kind, piece) {
+  if (kind === 'tokens') return getHostilityColor(piece.hostility);
   if (kind === 'walls') return MAP_MODE_TONE.wall;
   if (kind === 'masks') return MAP_MODE_TONE[piece.mode === 'hide' ? 'fog-hide' : 'fog-show'];
-  const h = elevZoneHeight(piece);
+  const h = getElevZoneHeight(piece);
   return ELEVATION_TONE[h > 0 ? 'up' : h < 0 ? 'down' : 'neutral'].stroke;
 }
 
 // A glowing outline round the hovered piece, over everything else. A piece
 // that went away while hovered (removed from the list) simply draws nothing.
-function drawMapHighlight(ctx, map) {
+function _drawMapHighlight(ctx, map) {
   if (!mapHighlight) return;
   const piece = (map[mapHighlight.kind] || {})[mapHighlight.id];
   if (!piece) return;
-  const color = mapPieceColor(mapHighlight.kind, piece);
+  const color = getMapPieceColor(mapHighlight.kind, piece);
   ctx.save();
   ctx.beginPath();
   if (mapHighlight.kind === 'tokens') {
-    const at = tokenDrawPos(piece);
-    const r = tokenRadius(map, piece);
+    const at = _getTokenDrawPos(piece);
+    const r = getTokenRadius(map, piece);
     ctx.arc(at.x, at.y, r + Math.max(4 / mapCam.scale, r * 0.28), 0, Math.PI * 2);
   } else {
-    traceMapShape(ctx, piece);
+    _traceMapShape(ctx, piece);
   }
   ctx.strokeStyle = color;
   ctx.shadowColor = color;
@@ -1158,40 +1124,11 @@ function drawMapHighlight(ctx, map) {
   ctx.restore();
 }
 
-// =============================================================================
-// THE TOOLBAR
-// =============================================================================
-// Rebuilt whenever what it can offer changes: the drawing tools are the GM's,
-// the creature buttons need a selection.
-//
-// Drawing is two independent choices, not one flat list of tools — a shape
-// (what outline a drag makes) and a mode (what it's for), so a Wall, an
-// Obscure region and a Height zone can each be a rectangle, a circle or a
-// freehand lasso. Picking either one switches `mapTool` to 'draw';
-// Select/Grid/Erase are their own standalone tools alongside it. In Height
-// mode a number box also rides the strip — the height new zones start at.
-// See mapShape/mapMode at the top of this file.
-const MAP_STANDALONE_TOOLS = [
-  { id: 'select', label: 'Select', hint: 'Move creatures · drag the board to pan', gm: false },
-  { id: 'grid',   label: 'Grid',   hint: 'Line the grid up: drag a corner or edge of the map to size the squares, anywhere else to slide them', gm: true },
-];
-const MAP_SHAPES = [
-  { id: 'rect',   label: 'Rectangle', hint: 'Drag a rectangle' },
-  { id: 'circle', label: 'Circle',    hint: 'Drag out a circle' },
-  { id: 'lasso',  label: 'Lasso',     hint: 'Trace a freehand outline' },
-];
-const MAP_MODES = [
-  { id: 'wall',      label: 'Wall',        hint: 'The region blocks sight' },
-  { id: 'fog-hide',  label: 'Obscure',     hint: 'The players cannot see into the region' },
-  { id: 'fog-show',  label: 'Reveal',      hint: 'The players can always see the region' },
-  { id: 'elev',      label: 'Height',      hint: 'A raised or lowered zone — set its height (ft from the base map) in the box, or right-click a zone to change it' },
-];
-const MAP_ERASE_TOOL = { id: 'erase', label: 'Erase', hint: 'Click, or hold and drag, over a wall, a fog edit, or an elevation region to remove it — the most recently drawn one first where they overlap' };
+// ─── THE TOOLBAR ───
 
-// The height a freshly drawn Height zone starts at — only on the strip while the
-// Height tool is up. Existing zones are re-set by right-clicking them on the map
-// (see onMapPointerDown).
-function buildElevHeightBox() {
+// The number box for the height new zones start at, shown while the Height tool
+// is up. Existing zones are re-set by right-clicking them.
+function _buildElevHeightBox() {
   const wrap = document.createElement('div');
   wrap.className = 'map-tool-group map-elev-height';
   const inp = document.createElement('input');
@@ -1209,56 +1146,55 @@ function buildElevHeightBox() {
 }
 
 // Right-clicking a Height zone (with the Height tool up) re-sets its height.
-function promptElevationHeight(mapId, zone) {
-  const raw = prompt('Height of this zone in feet, from the base map (−500 to 500):', String(elevZoneHeight(zone)));
+function _promptElevationHeight(mapId, zone) {
+  const raw = prompt('Height of this zone in feet, from the base map (−500 to 500):', String(getElevZoneHeight(zone)));
   if (raw === null) return;
   const n = Number(raw);
   if (!Number.isFinite(n)) return;
   setElevationHeight(mapId, zone.id, n);
-  fogDirty = true;
+  isFogDirty = true;
   drawBattlemap();
 }
 
-// The Grid tool's own bar, under the map: what the two gestures are, and what
-// the grid is at this moment (the same three numbers the Maps pane has in
-// boxes). There is nothing to set here.
-function syncGridHint() {
+// The Grid tool's bar under the map: how the gestures work and the grid's current
+// numbers. Display only.
+function _syncGridHint() {
   const el = document.getElementById('map-grid-hint');
   if (!el) return;
-  const map = viewedMap();
-  const on = mapOpen && mapTool === 'grid' && !!map && canEditMap();
-  el.classList.toggle('hidden', !on);
-  if (!on) return;
-  const g = viewGrid(map);
+  const map = getViewedMap();
+  const isShown = isMapOpen && mapTool === 'grid' && !!map && canEditMap();
+  el.classList.toggle('hidden', !isShown);
+  if (!isShown) return;
+  const g = _getViewGrid(map);
   el.textContent = 'Drag a corner or an edge of the map to grow or shrink the squares — the far side stays put. '
     + 'Drag anywhere else to slide the grid. '
     + 'Now: ' + roundGridValue(g.size) + ' px, offset ' + roundGridValue(g.offsetX)
     + ' / ' + roundGridValue(g.offsetY) + '.';
 }
 
-// The reader's own remaining movement this turn, when they have a marker on
-// the board and it is on a tracked budget — see the MOVEMENT section of
-// battlemap-initiative.js. Hidden for a GM (their creatures have no speed
-// stat) and before there is anything to track it against.
+// The reader's remaining movement this turn, when their marker has a tracked
+// budget (see MOVEMENT in battlemap-initiative.js). Hidden for a GM.
 function renderMapSpeedIndicator() {
   const el = document.getElementById('map-speed');
   if (!el) return;
-  const map = mapOpen ? viewedMap() : null;
-  const token = map ? mapTokens(map).find(t => t.hostility === 'party' && t.ownerUid === ownPlayerId()) : null;
-  const remaining = token ? tokenMoveRemaining(map, token) : null;
+  const map = isMapOpen ? getViewedMap() : null;
+  const token = map ? getMapTokens(map).find(t => t.hostility === 'party' && t.ownerUid === getOwnPlayerId()) : null;
+  const remaining = token ? getTokenMoveRemaining(map, token) : null;
   el.classList.toggle('hidden', remaining === null);
   if (remaining === null) return;
-  const speed = tokenSpeed(token);
+  const speed = getTokenSpeed(token);
   document.getElementById('map-speed-remaining').textContent = Math.round(remaining);
   document.getElementById('map-speed-total').textContent = '/' + speed + ' ft';
 }
 
+// Rebuilds the map's tool strip and action buttons. GM tools need edit rights,
+// creature buttons a selection.
 function renderMapToolbar() {
-  const map = viewedMap();
+  const map = getViewedMap();
   document.getElementById('map-title').textContent = map ? map.name : 'Battle Map';
 
-  const gm = canEditMap();
-  if (!gm && mapTool !== 'select') mapTool = 'select'; // a player has nothing else
+  const isGM = canEditMap();
+  if (!isGM && mapTool !== 'select') mapTool = 'select'; // a player has nothing else
 
   const tools = document.getElementById('map-tools');
   tools.innerHTML = '';
@@ -1284,19 +1220,17 @@ function renderMapToolbar() {
     tools.appendChild(group);
   };
 
-  buildToolGroup(MAP_STANDALONE_TOOLS.filter(t => !t.gm || gm), mapTool, id => { mapTool = id; });
-  if (gm) {
-    // Picking a shape or a mode is also picking "I want to draw" — see
-    // mapShape/mapMode at the top of this file. Their buttons only read as
-    // "selected" while draw is actually the live tool — switching to
-    // Select/Grid/Erase must not leave every group looking chosen at once.
-    const drawActive = mapTool === 'draw';
-    buildToolGroup(MAP_SHAPES, drawActive ? mapShape : null, id => { mapShape = id; mapTool = 'draw'; });
-    buildToolGroup(MAP_MODES, drawActive ? mapMode : null, id => { mapMode = id; mapTool = 'draw'; });
-    if (mapMode === 'elev' && mapTool === 'draw') tools.appendChild(buildElevHeightBox());
+  buildToolGroup(MAP_STANDALONE_TOOLS.filter(t => !t.gm || isGM), mapTool, id => { mapTool = id; });
+  if (isGM) {
+    // Picking a shape or mode also picks 'draw'. They read as selected only
+    // while 'draw' is live, so other tools don't leave every group lit.
+    const isDrawActive = mapTool === 'draw';
+    buildToolGroup(MAP_SHAPES, isDrawActive ? mapShape : null, id => { mapShape = id; mapTool = 'draw'; });
+    buildToolGroup(MAP_MODES, isDrawActive ? mapMode : null, id => { mapMode = id; mapTool = 'draw'; });
+    if (mapMode === 'elev' && mapTool === 'draw') tools.appendChild(_buildElevHeightBox());
     buildToolGroup([MAP_ERASE_TOOL], mapTool, id => { mapTool = id; });
   }
-  syncGridHint();
+  _syncGridHint();
 
   const acts = document.getElementById('map-actions');
   acts.innerHTML = '';
@@ -1330,8 +1264,8 @@ function renderMapToolbar() {
     }
   }
 
-  if (gm && map) {
-    const g = mapGrid(map);
+  if (isGM && map) {
+    const g = getMapGrid(map);
     const gridBtn = document.createElement('button');
     gridBtn.className = 'btn-sm' + (g.visible === false ? '' : ' on');
     gridBtn.textContent = g.visible === false ? 'Grid Off' : 'Grid On';
@@ -1344,21 +1278,19 @@ function renderMapToolbar() {
   fit.className = 'btn-sm';
   fit.textContent = 'Fit';
   fit.title = 'Frame the whole map';
-  fit.addEventListener('click', () => { if (map) { fitMapToView(map); drawBattlemap(); } });
+  fit.addEventListener('click', () => { if (map) { _fitMapToView(map); drawBattlemap(); } });
   acts.appendChild(fit);
 }
 
-// =============================================================================
-// WIRING
-// =============================================================================
+// ─── WIRING ───
+
 document.getElementById('map-btn').addEventListener('click', () => openBattlemap());
-document.getElementById('map-close-btn').addEventListener('click', closeBattlemap);
+document.getElementById('map-close-btn').addEventListener('click', _closeBattlemap);
 
 document.addEventListener('keydown', e => {
-  if (!mapOpen) return;
+  if (!isMapOpen) return;
   if (document.querySelector('.modal:not(.hidden)')) return;
-  // The map is in a panel beside a chat box and a sheet full of fields — a key
-  // pressed into one of those is not a key pressed at the board.
+  // A key typed into a field beside the board is not meant for the board.
   const t = e.target;
   if (t && t.matches && t.matches('input, textarea, select')) return;
   if (t && t.isContentEditable) return;
@@ -1366,9 +1298,9 @@ document.addEventListener('keydown', e => {
     // A shape half drawn — or a grid half dragged — is what Escape refuses, not the map.
     if (mapDrawing) { mapDrawing = null; drawBattlemap(); return; }
     if (mapGridDrag) { mapGridDrag = null; drawBattlemap(); return; }
-    closeBattlemap();
+    _closeBattlemap();
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && mapSelectedTokenId) {
-    const map = viewedMap();
+    const map = getViewedMap();
     const token = map ? (map.tokens || {})[mapSelectedTokenId] : null;
     if (token && canControlToken(token)) {
       removeToken(map.id, token.id);

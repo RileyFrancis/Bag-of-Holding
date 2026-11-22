@@ -149,7 +149,7 @@ def main():
                 errors.append(f'{where}: {len(matched)} bases but nameFormat has no {{base}}')
             if variants and '{variant}' not in fmt:
                 errors.append(f'{where}: variants but nameFormat has no {{variant}}')
-            # A level with one option collapses (see materializeMagicItems in
+            # A level with one option collapses (see _materializeMagicItems in
             # items.js): one base and no variants is a single item under the
             # magic item's own id; one base with variants drops the "@base".
             claim(m['id'], None if (variants or len(matched) > 1) else fill(fmt, bases[matched[0]]['name']), where)

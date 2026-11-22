@@ -1,16 +1,11 @@
 // =============================================================================
-// MODALS — Tabs, filters, character / item-editor / stack modals
+// MODALS — Sidebar tabs, filters, grid rebuild, item-editor and stack modals
 // =============================================================================
 'use strict';
 
-// The sidebar shows the tabs that belong to what the inventory panel is showing:
-//   inventory view    Browse · Details · Party
-//   sheet / map view  Chat · Party
-//   spells view       Spells · Party   (Spells takes Chat's place)
-// Party belongs to every view, hence a value that is `null` (every view) — or,
-// for a tab shared by only some, an array — rather than three flat lists.
-// Dice are not a tab: they are the dock in the middle panel (dice.js).
-// See CLAUDE.md § The sidebar's tabs.
+// The view(s) each sidebar tab belongs to: a view name, an array of names, or
+// null for every view (Party). Spells takes Chat's place in the spells view.
+// Dice are not a tab; they are the dock in the middle panel (dice.js).
 const SIDEBAR_TAB_VIEW = {
   browse:    'inventory',
   details:   'inventory',
@@ -19,33 +14,29 @@ const SIDEBAR_TAB_VIEW = {
   party:     null, // all three
 };
 
-// Which view(s) a tab belongs to: a view name, an array of them, or null for
-// every view.
-function sidebarTabView(name) {
+// Returns a view name, an array of them, or null for every view.
+function _getSidebarTabView(name) {
   return SIDEBAR_TAB_VIEW[name] ?? null;
 }
 
-// What the inventory panel is actually showing, which is not always
-// `state.view`: a GM who deselects a player keeps `state.view === 'sheet'`
-// while the panel falls back to the placeholder. The battle map answers
-// 'sheet' — the panes beside a board are Chat and Party, not a fourth
-// row. The spell sheet gets its own row (Spells replacing Chat) since,
-// unlike the map, it has its own side panel worth putting there.
-function sidebarView() {
-  if (mapViewIsShowing()) return 'sheet';
+// What the inventory panel is actually showing, which is not always `state.view`:
+// a GM who deselects a player keeps `state.view === 'sheet'` over a placeholder.
+// The battle map answers 'sheet', since the panes beside a board are Chat and Party.
+function getSidebarView() {
+  if (isMapViewShowing()) return 'sheet';
   if (state.view === 'spells') return hasViewedCharacter() ? 'spells' : 'inventory';
   return (state.view === 'sheet' && hasViewedCharacter()) ? 'sheet' : 'inventory';
 }
 
-function sidebarTabAvailable(name) {
-  const view = sidebarTabView(name);
+function _isSidebarTabAvailable(name) {
+  const view = _getSidebarTabView(name);
   if (view === null) return true;
-  return Array.isArray(view) ? view.includes(sidebarView()) : view === sidebarView();
+  return Array.isArray(view) ? view.includes(getSidebarView()) : view === getSidebarView();
 }
 
-// The plain DOM half: light one button, show one pane. Called from the sync
-// below rather than `switchTab()`, so the two cannot recurse.
-function activateSidebarTab(name) {
+// Light one button and show one pane. The sync calls this rather than
+// `switchTab()`, so the two cannot recurse.
+function _activateSidebarTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
   if (name === 'chat') onChatTabShown();
@@ -59,56 +50,52 @@ function syncSidebarTabs() {
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     const name = btn.dataset.tab;
-    const shown = sidebarTabAvailable(name);
+    const shown = _isSidebarTabAvailable(name);
     btn.classList.toggle('hidden', !shown);
     if (!shown) return;
     visible.push(name);
     if (btn.classList.contains('active')) activeStillThere = true;
   });
 
-  if (!activeStillThere && visible.length) activateSidebarTab(visible[0]);
+  if (!activeStillThere && visible.length) _activateSidebarTab(visible[0]);
   else if (activeStillThere) {
-    // The pane may still need waking even when the button did not move — coming
-    // back to the sheet with Chat already active is exactly that case.
+    // The pane may still need waking when the button did not move (back to the
+    // sheet with Chat already active).
     const active = document.querySelector('.tab-btn.active');
     if (active && active.dataset.tab === 'chat') onChatTabShown();
   }
 }
 
-// Asking for a tab is asking for the view it lives in — a shop entry clicked
-// from the character sheet calls `switchTab('details')`, and the honest answer
-// is to show the item. A tab belonging to more than one view (Party)
-// never forces a switch — same as Party's old `null` case — since the only
-// way to click one is from a view it's already visible in.
+// Show a tab, switching to the view it lives in (a shop entry clicked from the
+// sheet asks for 'details'). A tab in several views never forces a switch, since
+// it can only be clicked from a view it is already visible in.
 function switchTab(name) {
-  const view = sidebarTabView(name);
-  if (typeof view !== 'string') { activateSidebarTab(name); return; }
+  const view = _getSidebarTabView(name);
+  if (typeof view !== 'string') { _activateSidebarTab(name); return; }
   // Only a character view can be refused (`hasViewedCharacter()`): a GM with
   // nobody picked has no character. An inventory pane is always reachable.
   const reachable = view === 'inventory' || hasViewedCharacter();
-  if (view !== sidebarView() && reachable) setInventoryView(view);
-  activateSidebarTab(name);
+  if (view !== getSidebarView() && reachable) setInventoryPanelView(view);
+  _activateSidebarTab(name);
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-// =============================================================================
-// FILTER CONTROLS
-// =============================================================================
+// ─── FILTER CONTROLS ─────────────────────────────────────────────────────────
 document.getElementById('item-search').addEventListener('input', renderItemList);
 document.getElementById('rarity-filter').addEventListener('change', renderItemList);
 document.getElementById('tag-filter').addEventListener('change', renderItemList);
 
-// =============================================================================
-// GRID REBUILD  (the character modal itself is in character-setup.js)
-// =============================================================================
+// ─── GRID REBUILD ────────────────────────────────────────────────────────────
+// Rebuild the main grid and every container grid from the instances, unplacing
+// whatever no longer fits.
 function rebuildGrid() {
   state.activeContainer = null;
   initGrid();
   buildGrid();
-  rebuildContainerGrids();
+  _rebuildContainerGrids();
   // Re-place main inventory instances
   Object.values(state.instances).forEach(inst => {
     if (inst.containerId) return; // skip items inside containers
@@ -124,6 +111,7 @@ function rebuildGrid() {
   updateWeightDisplay();
 }
 
+// Create an empty grid for a container instance, sized from its template.
 function initContainerGrid(instanceId) {
   const t = state.db[state.instances[instanceId]?.templateId];
   const rows = t?.containerRows ?? 5;
@@ -131,7 +119,7 @@ function initContainerGrid(instanceId) {
   state.containerGrids[instanceId] = Array.from({ length: rows }, () => Array(cols).fill(null));
 }
 
-function rebuildContainerGrids() {
+function _rebuildContainerGrids() {
   state.containerGrids = {};
   // Initialize a grid for every container instance
   Object.values(state.instances).forEach(inst => {
@@ -160,6 +148,7 @@ function rebuildContainerGrids() {
   });
 }
 
+// Draw the Inventory / container tab strip, hidden when no container is placed.
 function renderContainerTabs() {
   const tabsEl = document.getElementById('container-tabs');
   const containers = Object.values(state.instances).filter(inst => {
@@ -178,7 +167,7 @@ function renderContainerTabs() {
   const mainTab = document.createElement('button');
   mainTab.className = 'container-tab' + (state.activeContainer === null ? ' active' : '');
   mainTab.textContent = 'Inventory';
-  mainTab.addEventListener('click', () => { if (state.activeContainer !== null) switchActiveContainer(null); });
+  mainTab.addEventListener('click', () => { if (state.activeContainer !== null) _switchActiveContainer(null); });
   tabsEl.appendChild(mainTab);
 
   containers.forEach(inst => {
@@ -186,12 +175,12 @@ function renderContainerTabs() {
     const tab = document.createElement('button');
     tab.className = 'container-tab' + (state.activeContainer === inst.id ? ' active' : '');
     tab.textContent = t.name;
-    tab.addEventListener('click', () => { if (state.activeContainer !== inst.id) switchActiveContainer(inst.id); });
+    tab.addEventListener('click', () => { if (state.activeContainer !== inst.id) _switchActiveContainer(inst.id); });
     tabsEl.appendChild(tab);
   });
 }
 
-function switchActiveContainer(id) {
+function _switchActiveContainer(id) {
   if (state.activeContainer === id) return;
   cancelPlacing();
   state.activeContainer = id;
@@ -201,11 +190,10 @@ function switchActiveContainer(id) {
   renderAllItems();
 }
 
-// =============================================================================
-// ITEM EDITOR MODAL
-// =============================================================================
+// ─── ITEM EDITOR MODAL ───────────────────────────────────────────────────────
 document.getElementById('new-item-btn').addEventListener('click', () => openItemModal(null));
 
+// Open the item editor for a template, or blank for a new item when null.
 function openItemModal(templateId) {
   state.editingItemId = templateId;
   const t = templateId ? state.db[templateId] : null;
@@ -223,7 +211,7 @@ function openItemModal(templateId) {
   document.getElementById('f-tags').value    = t?.tags.join(', ') ?? '';
   // The *explicit* folder, not the resolved one: an item that files itself by
   // type should read as Automatic rather than look hand-placed.
-  populateFolderSelect(document.getElementById('f-folder'), templateId ? explicitFolderOf(templateId) : null);
+  populateFolderSelect(document.getElementById('f-folder'), templateId ? getExplicitFolderId(templateId) : null);
   document.getElementById('f-image').value        = t?.image ?? '';
   // Player-authored items default to homebrew; an edit keeps whatever it had.
   document.getElementById('f-source').value        = t?.source ?? 'HB';
@@ -237,62 +225,63 @@ function openItemModal(templateId) {
   document.getElementById('f-container-cols').value = t?.containerCols ?? 5;
   document.getElementById('f-container-rows').value = t?.containerRows ?? 5;
 
-  const stackable = isStackable(t);
-  document.getElementById('f-stackable').checked = stackable;
-  document.getElementById('f-stack-size').value = stackable ? stackSizeOf(t) : 10;
-  document.getElementById('stackable-fields').classList.toggle('hidden', !stackable);
-  updateUnitWeightDisplay();
+  const isStack = isStackable(t);
+  document.getElementById('f-stackable').checked = isStack;
+  document.getElementById('f-stack-size').value = isStack ? getItemStackSize(t) : 10;
+  document.getElementById('stackable-fields').classList.toggle('hidden', !isStack);
+  _updateUnitWeightDisplay();
 
   state.editorShape = t ? t.shape.map(r => [...r]) : [[1]];
-  document.getElementById('shape-editor-section').classList.toggle('hidden', stackable);
-  renderShapeEditor();
+  document.getElementById('shape-editor-section').classList.toggle('hidden', isStack);
+  _renderShapeEditor();
   showModal('item-modal');
 }
 
 document.getElementById('f-stackable').addEventListener('change', e => {
-  const on = e.target.checked;
-  document.getElementById('stackable-fields').classList.toggle('hidden', !on);
-  document.getElementById('shape-editor-section').classList.toggle('hidden', on);
+  const isOn = e.target.checked;
+  document.getElementById('stackable-fields').classList.toggle('hidden', !isOn);
+  document.getElementById('shape-editor-section').classList.toggle('hidden', isOn);
 });
 
 document.getElementById('f-container').addEventListener('change', e => {
   document.getElementById('container-fields').classList.toggle('hidden', !e.target.checked);
 });
 
-document.getElementById('f-stack-size').addEventListener('input', updateUnitWeightDisplay);
-function updateUnitWeightDisplay() {
-  const n = parseInt(document.getElementById('f-stack-size').value, 10);
+document.getElementById('f-stack-size').addEventListener('input', _updateUnitWeightDisplay);
+function _updateUnitWeightDisplay() {
+  const stackSize = parseInt(document.getElementById('f-stack-size').value, 10);
   document.getElementById('f-unit-weight-display').textContent =
-    n >= 1 ? formatWeight(1 / n) : '—';
+    stackSize >= 1 ? formatWeight(1 / stackSize) : '—';
 }
 
 // The shape is drawn in the painter (shape-painter.js); the form only shows it.
-function renderShapeEditor() {
+function _renderShapeEditor() {
   renderShapePreview(document.getElementById('shape-editor-preview'), state.editorShape);
-  document.getElementById('shape-weight-val').textContent = shapeWeight(state.editorShape);
+  document.getElementById('shape-weight-val').textContent = getShapeWeight(state.editorShape);
 }
-function openItemShapePainter() {
+
+function _openItemShapePainter() {
   openShapePainter(state.editorShape, shape => {
     state.editorShape = shape;
-    renderShapeEditor();
+    _renderShapeEditor();
   });
 }
-document.getElementById('shape-editor-open').addEventListener('click', openItemShapePainter);
-document.getElementById('shape-editor-preview').addEventListener('click', openItemShapePainter);
+document.getElementById('shape-editor-open').addEventListener('click', _openItemShapePainter);
+document.getElementById('shape-editor-preview').addEventListener('click', _openItemShapePainter);
 
 document.getElementById('save-item-btn').addEventListener('click', () => {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Item name is required.'); return; }
 
-  const stackable = document.getElementById('f-stackable').checked;
+  const isStack = document.getElementById('f-stackable').checked;
   const stackSize = parseInt(document.getElementById('f-stack-size').value, 10);
 
-  if (stackable && !(stackSize >= 2)) {
+  if (isStack && !(stackSize >= 2)) {
     alert('Stack size must be a whole number of 2 or more.');
     return;
   }
 
-  const id = state.editingItemId ?? newTemplateId();
+  const id = state.editingItemId ?? createTemplateId();
   const tagsRaw = document.getElementById('f-tags').value;
   const tags = tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
   const isContainer = document.getElementById('f-container').checked;
@@ -315,8 +304,8 @@ document.getElementById('save-item-btn').addEventListener('click', () => {
     damage:      document.getElementById('f-damage').value.trim() || undefined,
     damageType:  document.getElementById('f-damage-type').value || undefined,
     attunement:  document.getElementById('f-attunement').checked || undefined,
-    stackSize:   stackable ? stackSize : undefined,
-    shape:       stackable ? [[1]] : state.editorShape.map(r => [...r]),
+    stackSize:   isStack ? stackSize : undefined,
+    shape:       isStack ? [[1]] : state.editorShape.map(r => [...r]),
     container:      isContainer || undefined,
     containerRows:  isContainer ? (parseInt(document.getElementById('f-container-rows').value) || 5) : undefined,
     containerCols:  isContainer ? (parseInt(document.getElementById('f-container-cols').value) || 5) : undefined,
@@ -327,14 +316,13 @@ document.getElementById('save-item-btn').addEventListener('click', () => {
   hideModal('item-modal');
   renderItemList();
   showTemplateDetails(id);
-  debouncedSync();
+  scheduleSaveAndSync();
 });
 
-// =============================================================================
-// STACK MODAL
-// =============================================================================
+// ─── STACK MODAL ─────────────────────────────────────────────────────────────
 let stackModalCallback = null;
 
+// Ask how many of a stack to place (1..max), then call `callback(count)`.
 function openStackModal(max, callback) {
   stackModalCallback = callback;
   document.getElementById('stack-modal-desc').textContent = `How many to place? (max ${max})`;
@@ -352,13 +340,14 @@ document.getElementById('stack-confirm-btn').addEventListener('click', () => {
   if (stackModalCallback) { stackModalCallback(n); stackModalCallback = null; }
 });
 
-// =============================================================================
-// MODAL HELPERS
-// =============================================================================
+// ─── MODAL HELPERS ───────────────────────────────────────────────────────────
+// Show a modal and the shared backdrop.
 function showModal(id) {
   document.getElementById('modal-backdrop').classList.remove('hidden');
   document.getElementById(id).classList.remove('hidden');
 }
+
+// Hide a modal; the backdrop goes too once no modal is left open.
 function hideModal(id) {
   document.getElementById(id).classList.add('hidden');
   if (!document.querySelector('.modal:not(.hidden)')) {

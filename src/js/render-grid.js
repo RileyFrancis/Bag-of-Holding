@@ -3,12 +3,17 @@
 // =============================================================================
 'use strict';
 
+const GRID_FADE_ROWS = 4; // rows of fade-out below the lowest placed item
+
 const gridEl = document.getElementById('inventory-grid');
 
+// ─── GRID CELLS ──────────────────────────────────────────────────────────────
+// Rebuild the cell divs of the active grid; the main grid also gets its
+// encumbrance zones.
 function buildGrid() {
   gridEl.innerHTML = '';
-  const cols = activeGridCols();
-  const totalRows = activeGridRows();
+  const cols = getActiveGridCols();
+  const totalRows = getActiveGridRows();
   gridEl.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
   gridEl.style.gridTemplateRows    = `repeat(${totalRows}, ${CELL}px)`;
 
@@ -26,42 +31,39 @@ function buildGrid() {
     return;
   }
 
-  const str = state.character.strength;
+  const strength = state.character.strength;
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < cols; c++) {
       const cell = document.createElement('div');
       cell.className = 'grid-cell';
       cell.dataset.row = r;
       cell.dataset.col = c;
-      if (r >= str && r < str * 2) {
+      if (r >= strength && r < strength * 2) {
         cell.classList.add('zone-enc');
-        if (r === str) cell.classList.add('zone-boundary-enc');
-      } else if (r >= str * 2) {
+        if (r === strength) cell.classList.add('zone-boundary-enc');
+      } else if (r >= strength * 2) {
         cell.classList.add('zone-heavy');
-        if (r === str * 2) cell.classList.add('zone-boundary-heavy');
+        if (r === strength * 2) cell.classList.add('zone-boundary-heavy');
       }
       gridEl.appendChild(cell);
     }
   }
-  gridEl.style.height = normalRows() * CELL + 'px';
+  gridEl.style.height = getNormalRows() * CELL + 'px';
 }
 
-// =============================================================================
-// RENDERING — PLACED ITEMS
-// =============================================================================
-const GRID_FADE_ROWS = 4;
-
+// ─── PLACED ITEMS ────────────────────────────────────────────────────────────
+// Size the main grid to just past the lowest item and fade out the rows below.
 function updateGridFade() {
   if (state.activeContainer) {
-    const rows = activeGridRows();
+    const rows = getActiveGridRows();
     gridEl.style.height = rows * CELL + 'px';
     gridEl.style.maskImage = '';
     gridEl.style.webkitMaskImage = '';
     return;
   }
-  const totalRows = gridRows();
+  const totalRows = getGridRows();
   const totalHeight = totalRows * CELL;
-  let lowestPx = normalRows() * CELL;
+  let lowestPx = getNormalRows() * CELL;
 
   Object.values(state.instances).forEach(inst => {
     if (inst.row === null || inst.row === undefined) return;
@@ -84,12 +86,13 @@ function updateGridFade() {
   }
 
   // Percentages relative to the element's rendered height (fadeEndPx), not totalHeight
-  const sp = (fadeStartPx / fadeEndPx * 100).toFixed(2);
-  const mask = `linear-gradient(to bottom, black ${sp}%, transparent 100%)`;
+  const fadeStartPct = (fadeStartPx / fadeEndPx * 100).toFixed(2);
+  const mask = `linear-gradient(to bottom, black ${fadeStartPct}%, transparent 100%)`;
   gridEl.style.maskImage = mask;
   gridEl.style.webkitMaskImage = mask;
 }
 
+// Redraw every placed item of the active grid, plus the panels that mirror them.
 function renderAllItems() {
   gridEl.querySelectorAll('.placed-item').forEach(el => el.remove());
   const activeContainerId = state.activeContainer;
@@ -103,15 +106,14 @@ function renderAllItems() {
   renderStash();
 }
 
-function buildItemEl(template, shape, rarity) {
-  const dims = shapeDims(shape);
+function _buildItemEl(template, shape, rarity) {
+  const dims = getShapeDims(shape);
   const el = document.createElement('div');
   el.className = `placed-item rarity-${rarity}`;
   el.style.width  = dims.cols * CELL + 'px';
   el.style.height = dims.rows * CELL + 'px';
   el.style.gridTemplateColumns = `repeat(${dims.cols}, ${CELL}px)`;
   el.style.display = 'grid';
-
 
   const rc = 'var(--rc)'; // resolved from the .rarity-* class on the item element
   const innerBorder = 'var(--item-inner-border)';
@@ -162,13 +164,14 @@ function buildItemEl(template, shape, rarity) {
   return el;
 }
 
+// Draw one placed instance onto the grid and return its element (none if unplaced).
 function renderPlacedItem(inst) {
   if (inst.row === null || inst.row === undefined) return; // unplaced — shown in stash
   const template = state.db[inst.templateId];
   if (!template) return;
   const shape = getRotatedShape(template.shape, inst.rotation);
 
-  const el = buildItemEl(template, shape, template.rarity);
+  const el = _buildItemEl(template, shape, template.rarity);
   el.dataset.instanceId = inst.id;
   el.style.left = inst.col * CELL + 'px';
   el.style.top  = inst.row * CELL + 'px';
@@ -176,8 +179,8 @@ function renderPlacedItem(inst) {
   // Badges sit in the bottom-right *filled* cell, not the bounding box corner, so
   // they never float in the hollow of a non-rectangular shape. The CSS rules add
   // their own small inset on top of these.
-  const dims = shapeDims(shape);
-  const anchor = bottomRightFilledCell(shape);
+  const dims = getShapeDims(shape);
+  const anchor = getBottomRightFilledCell(shape);
   el.style.setProperty('--badge-bottom', (dims.rows - anchor.row - 1) * CELL + 'px');
   el.style.setProperty('--badge-right',  (dims.cols - anchor.col - 1) * CELL + 'px');
 

@@ -3,7 +3,8 @@
 // =============================================================================
 'use strict';
 
-function getZoneEncumbrance() {
+// Encumbrance from placement alone: 0 none, 1 below row Str, 2 below row 2×Str.
+function _getZoneEncumbranceLevel() {
   const str = state.character.strength;
   let status = 0; // 0 = none, 1 = enc, 2 = heavy
   Object.values(state.instances).forEach(inst => {
@@ -25,10 +26,10 @@ function getZoneEncumbrance() {
 // 0 = none, 1 = Encumbered, 2 = Heavily Encumbered. Zone placement overrides
 // weight-based encumbrance upward. The inventory's readout and the sheet's
 // Statuses section (statuses.js) both ask here, so they can never disagree.
-function encumbranceLevel() {
+function getEncumbranceLevel() {
   const str = state.character.strength;
-  const carried = Math.round(totalCarriedWeight() * 100) / 100;
-  const zoneStatus = getZoneEncumbrance();
+  const carried = Math.round(getTotalCarriedWeight() * 100) / 100;
+  const zoneStatus = _getZoneEncumbranceLevel();
   if (carried > str * 30 || zoneStatus >= 2) return 2;
   if (carried > str * 15 || zoneStatus >= 1) return 1;
   return 0;
@@ -40,8 +41,8 @@ function encumbranceLevel() {
 function updateWeightDisplay() {
   const str = state.character.strength;
   const normal = str * 15;
-  const carried = Math.round(totalCarriedWeight() * 100) / 100;
-  const level = encumbranceLevel();
+  const carried = Math.round(getTotalCarriedWeight() * 100) / 100;
+  const level = getEncumbranceLevel();
 
   document.getElementById('weight-carried').textContent  = carried;
   document.getElementById('weight-capacity').textContent = normal;
@@ -54,18 +55,16 @@ function updateWeightDisplay() {
     row.classList.toggle('current', Number(row.dataset.level) === level);
   });
 
-  // Header — the name only. Strength is read off the sheet and shown by the
-  // capacity above rather than printed again as a number.
+  // Header: the name only; Strength shows through the capacity above.
   document.getElementById('char-name-display').textContent = state.character.name;
 }
 
-// The effects are the Statuses' own descriptions (data/statuses.json), so the
-// card and the sheet's chips say the same thing. Static data, so filled once,
-// on first hover — statuses.js loads after this file.
+// The card's effects are the Statuses' own descriptions, so card and chips agree.
+// Filled once on first hover, because statuses.js loads after this file.
 document.getElementById('weight-indicator').addEventListener('pointerenter', () => {
   document.querySelectorAll('#weight-card .weight-level[data-status]').forEach(row => {
     const desc = row.querySelector('.weight-level-desc');
-    const status = statusById(row.dataset.status);
+    const status = getStatusById(row.dataset.status);
     if (desc.childElementCount || !status) return;
     renderMarkdownInto(desc, status.description);
   });

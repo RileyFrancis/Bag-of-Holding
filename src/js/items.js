@@ -1,5 +1,5 @@
 // =============================================================================
-// DEFAULT ITEM DATABASE — data/items.csv
+// DEFAULT ITEM DATABASE — data/items.csv and data/magic-items.json
 // =============================================================================
 // Edit data/items.csv to add, remove, or modify the built-in item list.
 //
@@ -10,11 +10,9 @@
 //
 // source      — the source material the item comes from, e.g. PHB, DMG, TCoE.
 //              "HB" (homebrew) is used for items the player adds in-app.
-// description — rendered as Markdown (markdown.js), same rules as a sheet's
-//              written sections. A row can't hold a real newline (the file is
-//              split on \n before any row is parsed), so a paragraph break,
-//              list, or heading is written with a literal "\n", unescaped by
-//              unescapeDescription() above.
+// description — Markdown (markdown.js). A row can't hold a real newline (the
+//              file is split on \n first), so paragraph breaks, lists and
+//              headings are written as a literal "\n".
 // tags       — pipe-separated list, e.g.  weapon|melee|finesse
 // properties — semicolon-separated list, e.g.  finesse;light;thrown
 // shape      — rows pipe-separated, each row is 0/1 digits,  e.g.  11|01|10
@@ -23,386 +21,32 @@
 //              blank or 1 = does not stack
 // variants   — semicolon-separated list of "<label> (<rarity>, <cost>)", e.g.
 //              +1 (uncommon, 500gp); +2 (rare); +3
-//              Either half of the parens (or the whole thing) may be omitted —
+//              Either half of the parens (or the whole thing) may be omitted;
 //              whatever's missing is inherited from the base row. Each variant
-//              is materialized as its own full item template ("<base name>
-//              <label>"), appended to DEFAULT_ITEMS right after loading, so it
-//              is placeable/stashable/sellable exactly like any other item —
-//              see materializeVariants() below. For magic items, use
-//              data/magic-items.json instead (see MAGIC ITEMS below).
-// id is the slug of the name (itemSlug) — renaming a row changes its id, so
-// add the old one to LEGACY_ITEM_IDS when you do. Saves written before slug
-// ids hold row numbers; currentTemplateId() translates them.
+//              becomes its own full template ("<base name> <label>"), so it is
+//              placeable and sellable like any other item. Magic items belong
+//              in data/magic-items.json instead (see MAGIC ITEMS below).
+// An id is the slug of the name, so renaming a row changes its id: add the old
+// one to LEGACY_ITEM_IDS when you do.
+'use strict';
 
 let DEFAULT_ITEMS = [];
-
-function parseCSVRow(line) {
-  const fields = [];
-  let i = 0;
-  while (i <= line.length) {
-    if (i === line.length) { fields.push(''); break; }
-    if (line[i] === '"') {
-      let val = '';
-      i++;
-      while (i < line.length) {
-        if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
-        else if (line[i] === '"') { i++; break; }
-        else { val += line[i++]; }
-      }
-      fields.push(val);
-      if (line[i] === ',') i++;
-    } else {
-      const end = line.indexOf(',', i);
-      if (end === -1) { fields.push(line.slice(i)); break; }
-      fields.push(line.slice(i, end));
-      i = end + 1;
-    }
-  }
-  return fields;
-}
-
-function parseCost(str) {
-  const zero = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
-  if (!str || !str.trim()) return zero;
-  const trimmed = str.trim();
-  // Plain number → treat as gp (backwards compat)
-  if (/^[\d.]+$/.test(trimmed)) return { ...zero, gp: parseFloat(trimmed) };
-  const result = { ...zero };
-  const re = /(\d+(?:\.\d+)?)\s*(cp|sp|ep|gp|pp)/gi;
-  let m;
-  while ((m = re.exec(trimmed)) !== null) {
-    const denom = m[2].toLowerCase();
-    if (denom in result) result[denom] += parseFloat(m[1]);
-  }
-  return result;
-}
-
-function parseShape(str) {
-  if (!str || !str.trim()) return [[1]];
-  return str.trim().split('|').map(row => row.split('').map(c => parseInt(c, 10)));
-}
-
-// The loader splits the whole file on real newlines before parsing rows (see
-// loadDefaultItems), so a field can never hold one — a description that wants
-// paragraphs, a list, or a heading writes a literal "\n" instead, unescaped
-// here. description is Markdown (see markdown.js); nothing else in the row
-// needs multiple lines.
-function unescapeDescription(str) {
-  return str.replace(/\\n/g, '\n');
-}
-
-function parseStackSize(str, legacyStackable, legacyWeightEach) {
-  if (str && str.trim()) return parseInt(str, 10);
-  // CSVs written before the stackSize column carried stackable + weightEach.
-  if (legacyStackable === 'true' && legacyWeightEach) return Math.round(1 / parseFloat(legacyWeightEach));
-  return undefined;
-}
-
-// "+1 (uncommon, 500gp)" → { label: '+1', rarity: 'uncommon', cost: '500gp' }.
-// Either half of the parens, or the parens entirely, may be absent — a caller
-// falls back to the base item's own rarity/cost for whichever is missing.
-function parseVariantSpec(spec) {
-  const m = spec.trim().match(/^(.+?)(?:\s*\(([^)]*)\))?$/);
-  if (!m || !m[1].trim()) return null;
-  const out = { label: m[1].trim() };
-  if (m[2]) {
-    m[2].split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
-      const norm = tok.toLowerCase().replace(/\s+/g, '_');
-      if (RARITY_ORDER.includes(norm)) out.rarity = norm;
-      else out.cost = tok;
-    });
-  }
-  return out;
-}
-
-function parseVariantSpecs(str) {
-  if (!str || !str.trim()) return [];
-  return str.split(';').map(parseVariantSpec).filter(Boolean);
-}
-
-// Turns each base item's `variantSpecs` into full item templates of their own
-// (inheriting everything but name/rarity/cost from the base) and appends them
-// to `list` — so a magic +1/+2/+3 version of a tool or a suit of armor is just
-// another entry in state.db, placeable and sellable like any other item, with
-// no special-casing anywhere else in the app. Mutates `base.variantIds` to
-// point at what it made.
-function materializeVariants(list) {
-  const bases = [...list]; // a variant is never itself variant-bearing
-  bases.forEach(base => {
-    base.variantIds = base.variantSpecs.map((spec, i) => {
-      const variant = {
-        ...base,
-        id: `${base.id}v${i}`,
-        name: `${base.name} ${spec.label}`,
-        rarity: spec.rarity || base.rarity,
-        cost: spec.cost ? parseCost(spec.cost) : base.cost,
-        variantSpecs: [],
-        variantIds: [],
-        variantOf: base.id,
-        variantLabel: spec.label,
-      };
-      list.push(variant);
-      return variant.id;
-    });
-  });
-}
-
-function loadDefaultItems() {
-  try {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', 'data/items.csv', false); // synchronous
-    xhr.send();
-    if (xhr.status !== 200) throw new Error(`HTTP ${xhr.status}`);
-    const lines = xhr.responseText.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length < 2) return;
-    const headers = parseCSVRow(lines[0]);
-    DEFAULT_ITEMS = lines.slice(1).map(line => {
-      const vals = parseCSVRow(line);
-      const v = col => vals[headers.indexOf(col)] ?? '';
-      return {
-        id:          itemSlug(v('name')),
-        name:        v('name'),
-        rarity:      v('rarity') || 'common',
-        description: unescapeDescription(v('description')),
-        cost:        parseCost(v('cost')),
-        tags:        v('tags') ? v('tags').split('|') : [],
-        damage:      v('damage')     || undefined,
-        damageType:  v('damageType') || undefined,
-        attunement:  v('attunement') === 'true',
-        stackSize:   parseStackSize(v('stackSize'), v('stackable'), v('weightEach')),
-        image:       v('image') || '',
-        shape:       parseShape(v('shape')),
-        container:      v('container') === 'true',
-        containerRows:  v('containerRows') ? parseInt(v('containerRows'), 10) : undefined,
-        containerCols:  v('containerCols') ? parseInt(v('containerCols'), 10) : undefined,
-        properties:  v('properties') ? v('properties').split(';').map(s => s.trim()).filter(Boolean) : [],
-        mastery:     v('mastery') || undefined,
-        source:      v('source') || undefined,
-        variantSpecs: parseVariantSpecs(v('variants')),
-      };
-    }).filter(t => t.name);
-    materializeVariants(DEFAULT_ITEMS);
-  } catch (err) {
-    console.error('Failed to load data/items.csv:', err);
-  }
-  loadMagicItems();
-  DEFAULT_ITEM_IDS = new Set(DEFAULT_ITEMS.map(t => t.id));
-}
-
-// "Nolzur's Marvelous Pigments" → "nolzurs-marvelous-pigments". The one rule
-// for every built-in id — tools/validate-items.py applies the same one.
-function itemSlug(name) {
-  return String(name).toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
 
 // Membership test for "is this a built-in item" — DEFAULT_ITEMS holds well over
 // a thousand templates once magic items are materialized, too many to .find().
 let DEFAULT_ITEM_IDS = new Set();
 
-// =============================================================================
-// MAGIC ITEMS — data/magic-items.json
-// =============================================================================
-// A magic item is a record, not a row per item. One that is "any X weapon/armor"
-// carries `appliesTo` and is an OVERLAY: crossed with every base item from
-// items.csv it matches, each result inheriting the base's shape, damage,
-// properties and stacking, and taking the magic item's name (`nameFormat`,
-// `{base}`/`{variant}`), rarity, description, attunement and tags. `variants`
-// are tiers/types (+1/+2/+3, dragon colours, giant kinds) — one item each.
-//
-// What lands in DEFAULT_ITEMS is a tree, drawn by the Browse list's fold:
-//
-//   overlay, many bases       head ─ one item per base           (Flame Tongue)
-//   overlay, many bases, tiers head ─ one sub-head per tier ─ bases (Weapon +1/+2/+3)
-//   overlay, one base, tiers   head ─ one item per tier           (Shield +1/+2/+3)
-//   standalone, tiers          head ─ one item per tier           (Potion of Giant Strength)
-//   overlay, one base / plain  just the item                      (Blackrazor, Bag of Holding)
-//
-// Heads and sub-heads are `abstract` — real templates (so the list, tooltip and
-// folders need no special path) that can never be placed, sold or saved. Ids:
-// `<id>`, `<id>~<variant>`, `<id>@<base>`, `<id>~<variant>@<base>` — all derived
-// from slugs, so adding a row or an item never moves an existing one.
-//
-// Matching: a base matches when it is in `bases`, or every word of one `any`
-// clause is a whole word of its tags (the same test as folders.js's
-// hasTagWord) — and it is not in `except`.
-
 // The DMG's price by rarity, in gp; a consumable is half. Used when a record has
 // no `cost` of its own. Artifacts are priceless — no price at all.
 const MAGIC_ITEM_PRICE_GP = { common: 100, uncommon: 400, rare: 4000, very_rare: 40000, legendary: 200000 };
 
-function magicItemPriceGp(rarity, consumable) {
-  const gp = MAGIC_ITEM_PRICE_GP[rarity] ?? 0;
-  return consumable ? gp / 2 : gp;
-}
-
-function addGp(cost, gp) {
-  const out = { ...cost };
-  out.gp = (out.gp ?? 0) + gp;
-  return out;
-}
-
-function tagWordSet(tags) {
-  const words = new Set();
-  (tags ?? []).forEach(tag => String(tag).toLowerCase().split(/\s+/).forEach(w => words.add(w)));
-  return words;
-}
-
-function magicItemApplies(base, applies) {
-  if ((applies.except ?? []).includes(base.id)) return false;
-  if ((applies.bases ?? []).includes(base.id)) return true;
-  const words = tagWordSet(base.tags);
-  return (applies.any ?? []).some(clause => clause.every(w => words.has(w)));
-}
-
-function fillMagicName(fmt, baseName, variantLabel) {
-  let out = fmt;
-  if (baseName != null) out = out.replace(/\{base\}/g, baseName);
-  if (variantLabel != null) out = out.replace(/\{variant\}/g, variantLabel);
-  return out;
-}
-
-function loadMagicItems() {
-  try {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', 'data/magic-items.json', false); // synchronous, like items.csv
-    xhr.send();
-    if (xhr.status !== 200) throw new Error(`HTTP ${xhr.status}`);
-    materializeMagicItems(DEFAULT_ITEMS, JSON.parse(xhr.responseText).items ?? []);
-  } catch (err) {
-    console.error('Failed to load data/magic-items.json:', err);
-  }
-}
-
-// Appends every magic item's templates to `list`. The bases are what `list`
-// held on entry, minus variants — a magic item never applies to another one.
-function materializeMagicItems(list, records) {
-  const bases = list.filter(t => !t.variantOf);
-  const taken = new Set(list.map(t => t.id));
-  const leavesOf = new Map(); // head id → the placeable items under it
-  const add = t => {
-    if (taken.has(t.id)) { console.warn(`magic-items.json: duplicate id ${t.id}`); return null; }
-    taken.add(t.id);
-    list.push(t);
-    return t;
-  };
-
-  records.forEach(m => {
-    const applies = m.appliesTo;
-    const matched = applies ? bases.filter(b => magicItemApplies(b, applies)) : [];
-    if (applies && !matched.length) { console.warn(`magic-items.json: ${m.id} matches no base item`); return; }
-    const variants = m.variants ?? [];
-    const fmt = m.nameFormat ?? m.name;
-
-    // One finished, placeable item: the record (+ variant) on a base, or alone.
-    const leaf = (id, v, base, parentId) => {
-      const rarity = v?.rarity ?? m.rarity;
-      const consumable = !!m.consumable || !!base && isStackableTemplate(base);
-      // Magic ammunition: ten pieces are worth one consumable of the rarity.
-      const priceGp = base && isStackableTemplate(base)
-        ? magicItemPriceGp(rarity, true) / 10
-        : magicItemPriceGp(rarity, consumable);
-      const own = m.cost || v?.cost ? parseCost(v?.cost ?? m.cost) : null;
-      const description = v?.note ? `${m.description}\n\n${v.note}` : m.description;
-      const t = {
-        ...(base ?? {}),
-        id,
-        name:        fillMagicName(fmt, base?.name, v?.label),
-        rarity,
-        description,
-        cost:        own ?? addGp(base?.cost ?? parseCost(''), priceGp),
-        tags:        [...new Set([...(base?.tags ?? []), ...(m.tags ?? [])])],
-        attunement:  v?.attunement ?? !!m.attunement,
-        attunementNote: m.attunementNote,
-        source:      m.source,
-        consumable,
-        magicOf:     m.id,
-        variantSpecs: [],
-        variantIds:  [],
-        variantOf:   parentId,
-      };
-      if (!base) {
-        t.shape      = parseShape(m.shape);
-        t.stackSize  = m.stackSize;
-        t.damage     = m.damage;
-        t.damageType = m.damageType;
-        t.properties = m.properties ?? [];
-        t.container  = !!m.container;
-        t.containerRows = m.containerRows;
-        t.containerCols = m.containerCols;
-        t.image      = '';
-      }
-      return add(t);
-    };
-
-    // A fold header. Its shape is its first item's, so the card has a picture.
-    const head = (id, name, parentId, rarity = m.rarity) => add({
-      id, name,
-      rarity,
-      description: m.description,
-      cost:        parseCost(''),
-      tags:        [...new Set([...(m.tags ?? []), ...(applies ? [m.type.toLowerCase()] : [])])],
-      attunement:  !!m.attunement,
-      attunementNote: m.attunementNote,
-      source:      m.source,
-      shape:       [[1]],
-      properties:  [],
-      image:       '',
-      consumable:  !!m.consumable,
-      abstract:    true,
-      magicOf:     m.id,
-      variantSpecs: [],
-      variantIds:  [],
-      variantOf:   parentId,
-    });
-    const fillHead = (h, children) => {
-      if (!h) return;
-      const rows = children.filter(Boolean);
-      h.variantIds = rows.map(c => c.id);
-      if (rows.length) h.shape = rows[0].shape;
-      const leaves = rows.flatMap(c => leavesOf.get(c.id) ?? [c]);
-      leavesOf.set(h.id, leaves);
-      h.familySize = leaves.length;
-      h.rarityVaries = new Set(leaves.map(l => l.rarity)).size > 1;
-    };
-
-    if (!variants.length) {
-      if (matched.length > 1) {
-        const h = head(m.id, m.name);
-        fillHead(h, matched.map(b => leaf(`${m.id}@${b.id}`, null, b, m.id)));
-      } else {
-        leaf(m.id, null, matched[0] ?? null);
-      }
-      return;
-    }
-
-    const h = head(m.id, m.name);
-    fillHead(h, variants.map(v => {
-      const vid = `${m.id}~${v.id}`;
-      if (matched.length <= 1) return leaf(vid, v, matched[0] ?? null, m.id);
-      const sub = head(vid, `${m.name} (${v.label})`, m.id, v.rarity ?? m.rarity);
-      fillHead(sub, matched.map(b => leaf(`${vid}@${b.id}`, v, b, vid)));
-      return sub;
-    }));
-  });
-}
-
-// isStackable() lives in helpers.js, which loads after this file and reads
-// the older stackable/weightEach pair too; a template built from items.csv
-// only ever has stackSize.
-function isStackableTemplate(t) {
-  return (t.stackSize ?? 1) > 1;
-}
-
-// =============================================================================
-// LEGACY ITEM IDS
-// =============================================================================
-// Before slug ids, a built-in item's id was its items.csv row number, and a
-// CSV variant was `<row>v<n>`. Saves (local, cloud, a party member's published
-// state) still hold those, so every place instances arrive runs them through
-// currentTemplateId(). Frozen — never regenerate it from the current CSV. The
-// +1/+2/+3 variant column became the DMG's Weapon/Armor/Shield records, and the
-// eight Adamantine armor rows became the adamantine-armor overlay. No new id is
-// all digits, so a lookup can never catch one.
+// Built-in ids from saves that predate slug ids: an items.csv row number, or
+// `<row>v<n>` for a CSV variant. Saves (local, cloud, a party member's published
+// state) still hold them, so every intake of instances maps them through
+// getCurrentTemplateId(). Frozen: never regenerate it from the current CSV. Old
+// +1/+2/+3 variants map to the DMG Weapon/Armor/Shield records, the old
+// Adamantine rows to the adamantine-armor overlay. No slug id is all digits, so
+// a lookup can never catch a current one.
 const LEGACY_ITEM_IDS = {
   '1': 'copper-piece', '2': 'silver-piece', '3': 'electrum-piece', '4': 'gold-piece',
   '5': 'platinum-piece', '6': 'club', '6v0': 'weapon-1-2-or-3~1@club',
@@ -505,7 +149,355 @@ const LEGACY_ITEM_IDS = {
   '100': 'adamantine-armor@splint-armor', '101': 'adamantine-armor@plate-armor'
 };
 
-function currentTemplateId(id) {
+// ─── CSV ROWS ───
+
+// Splits one CSV line into its fields, honouring quotes and doubled "".
+function parseCSVRow(line) {
+  const fields = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (i === line.length) { fields.push(''); break; }
+    if (line[i] === '"') {
+      let val = '';
+      i++;
+      while (i < line.length) {
+        if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
+        else if (line[i] === '"') { i++; break; }
+        else { val += line[i++]; }
+      }
+      fields.push(val);
+      if (line[i] === ',') i++;
+    } else {
+      const end = line.indexOf(',', i);
+      if (end === -1) { fields.push(line.slice(i)); break; }
+      fields.push(line.slice(i, end));
+      i = end + 1;
+    }
+  }
+  return fields;
+}
+
+function _parseCost(str) {
+  const zero = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+  if (!str || !str.trim()) return zero;
+  const trimmed = str.trim();
+  // A plain number is gp.
+  if (/^[\d.]+$/.test(trimmed)) return { ...zero, gp: parseFloat(trimmed) };
+  const result = { ...zero };
+  const re = /(\d+(?:\.\d+)?)\s*(cp|sp|ep|gp|pp)/gi;
+  let m;
+  while ((m = re.exec(trimmed)) !== null) {
+    const denom = m[2].toLowerCase();
+    if (denom in result) result[denom] += parseFloat(m[1]);
+  }
+  return result;
+}
+
+function _parseShape(str) {
+  if (!str || !str.trim()) return [[1]];
+  return str.trim().split('|').map(row => row.split('').map(c => parseInt(c, 10)));
+}
+
+// The loader splits the file on real newlines before parsing rows, so a
+// description writes a literal "\n" for each line break; unescaped here.
+function _unescapeDescription(str) {
+  return str.replace(/\\n/g, '\n');
+}
+
+function _parseStackSize(str, legacyStackable, legacyWeightEach) {
+  if (str && str.trim()) return parseInt(str, 10);
+  // Older CSVs carry stackable + weightEach instead of a stackSize column.
+  if (legacyStackable === 'true' && legacyWeightEach) return Math.round(1 / parseFloat(legacyWeightEach));
+  return undefined;
+}
+
+// "+1 (uncommon, 500gp)" → { label: '+1', rarity: 'uncommon', cost: '500gp' }.
+// Either half of the parens, or the parens entirely, may be absent — a caller
+// falls back to the base item's own rarity/cost for whichever is missing.
+function _parseVariantSpec(spec) {
+  const m = spec.trim().match(/^(.+?)(?:\s*\(([^)]*)\))?$/);
+  if (!m || !m[1].trim()) return null;
+  const out = { label: m[1].trim() };
+  if (m[2]) {
+    m[2].split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+      const norm = tok.toLowerCase().replace(/\s+/g, '_');
+      if (RARITY_ORDER.includes(norm)) out.rarity = norm;
+      else out.cost = tok;
+    });
+  }
+  return out;
+}
+
+function _parseVariantSpecs(str) {
+  if (!str || !str.trim()) return [];
+  return str.split(';').map(_parseVariantSpec).filter(Boolean);
+}
+
+// Appends a full template for each base item's `variantSpecs` (inheriting all
+// but name/rarity/cost), so a variant needs no special-casing anywhere else.
+// Sets each `base.variantIds` to what it made.
+function _materializeVariants(list) {
+  const bases = [...list]; // a variant is never itself variant-bearing
+  bases.forEach(base => {
+    base.variantIds = base.variantSpecs.map((spec, i) => {
+      const variant = {
+        ...base,
+        id: `${base.id}v${i}`,
+        name: `${base.name} ${spec.label}`,
+        rarity: spec.rarity || base.rarity,
+        cost: spec.cost ? _parseCost(spec.cost) : base.cost,
+        variantSpecs: [],
+        variantIds: [],
+        variantOf: base.id,
+        variantLabel: spec.label,
+      };
+      list.push(variant);
+      return variant.id;
+    });
+  });
+}
+
+// Loads data/items.csv and data/magic-items.json into DEFAULT_ITEMS. Synchronous;
+// call once at boot before state.db is filled.
+function loadDefaultItems() {
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'data/items.csv', false); // synchronous
+    xhr.send();
+    if (xhr.status !== 200) throw new Error(`HTTP ${xhr.status}`);
+    const lines = xhr.responseText.split('\n').map(l => l.trim()).filter(l => l);
+    if (lines.length < 2) return;
+    const headers = parseCSVRow(lines[0]);
+    DEFAULT_ITEMS = lines.slice(1).map(line => {
+      const vals = parseCSVRow(line);
+      const v = col => vals[headers.indexOf(col)] ?? '';
+      return {
+        id:          _getItemSlug(v('name')),
+        name:        v('name'),
+        rarity:      v('rarity') || 'common',
+        description: _unescapeDescription(v('description')),
+        cost:        _parseCost(v('cost')),
+        tags:        v('tags') ? v('tags').split('|') : [],
+        damage:      v('damage')     || undefined,
+        damageType:  v('damageType') || undefined,
+        attunement:  v('attunement') === 'true',
+        stackSize:   _parseStackSize(v('stackSize'), v('stackable'), v('weightEach')),
+        image:       v('image') || '',
+        shape:       _parseShape(v('shape')),
+        container:      v('container') === 'true',
+        containerRows:  v('containerRows') ? parseInt(v('containerRows'), 10) : undefined,
+        containerCols:  v('containerCols') ? parseInt(v('containerCols'), 10) : undefined,
+        properties:  v('properties') ? v('properties').split(';').map(s => s.trim()).filter(Boolean) : [],
+        mastery:     v('mastery') || undefined,
+        source:      v('source') || undefined,
+        variantSpecs: _parseVariantSpecs(v('variants')),
+      };
+    }).filter(t => t.name);
+    _materializeVariants(DEFAULT_ITEMS);
+  } catch (err) {
+    console.error('Failed to load data/items.csv:', err);
+  }
+  _loadMagicItems();
+  DEFAULT_ITEM_IDS = new Set(DEFAULT_ITEMS.map(t => t.id));
+}
+
+// "Nolzur's Marvelous Pigments" → "nolzurs-marvelous-pigments". The one rule
+// for every built-in id — tools/validate-items.py applies the same one.
+function _getItemSlug(name) {
+  return String(name).toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ─── MAGIC ITEMS ───
+// A magic item is a record, not a row per item. One that is "any X weapon/armor"
+// carries `appliesTo` and is an OVERLAY: crossed with every base item from
+// items.csv it matches, each result inheriting the base's shape, damage,
+// properties and stacking, and taking the magic item's name (`nameFormat`,
+// `{base}`/`{variant}`), rarity, description, attunement and tags. `variants`
+// are tiers/types (+1/+2/+3, dragon colours, giant kinds) — one item each.
+//
+// What lands in DEFAULT_ITEMS is a tree, drawn by the Browse list's fold:
+//
+//   overlay, many bases       head ─ one item per base           (Flame Tongue)
+//   overlay, many bases, tiers head ─ one sub-head per tier ─ bases (Weapon +1/+2/+3)
+//   overlay, one base, tiers   head ─ one item per tier           (Shield +1/+2/+3)
+//   standalone, tiers          head ─ one item per tier           (Potion of Giant Strength)
+//   overlay, one base / plain  just the item                      (Blackrazor, Bag of Holding)
+//
+// Heads and sub-heads are `abstract` — real templates (so the list, tooltip and
+// folders need no special path) that can never be placed, sold or saved. Ids:
+// `<id>`, `<id>~<variant>`, `<id>@<base>`, `<id>~<variant>@<base>` — all derived
+// from slugs, so adding a row or an item never moves an existing one.
+//
+// Matching: a base matches when it is in `bases`, or every word of one `any`
+// clause is a whole word of its tags (the same test as folders.js's
+// hasTagWord) — and it is not in `except`.
+
+function _getMagicItemPriceGp(rarity, consumable) {
+  const gp = MAGIC_ITEM_PRICE_GP[rarity] ?? 0;
+  return consumable ? gp / 2 : gp;
+}
+
+function _addGpToCost(cost, gp) {
+  const out = { ...cost };
+  out.gp = (out.gp ?? 0) + gp;
+  return out;
+}
+
+function _getTagWordSet(tags) {
+  const words = new Set();
+  (tags ?? []).forEach(tag => String(tag).toLowerCase().split(/\s+/).forEach(w => words.add(w)));
+  return words;
+}
+
+function _doesMagicItemApplyTo(base, applies) {
+  if ((applies.except ?? []).includes(base.id)) return false;
+  if ((applies.bases ?? []).includes(base.id)) return true;
+  const words = _getTagWordSet(base.tags);
+  return (applies.any ?? []).some(clause => clause.every(w => words.has(w)));
+}
+
+function _fillMagicItemName(fmt, baseName, variantLabel) {
+  let out = fmt;
+  if (baseName != null) out = out.replace(/\{base\}/g, baseName);
+  if (variantLabel != null) out = out.replace(/\{variant\}/g, variantLabel);
+  return out;
+}
+
+function _loadMagicItems() {
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'data/magic-items.json', false); // synchronous, like items.csv
+    xhr.send();
+    if (xhr.status !== 200) throw new Error(`HTTP ${xhr.status}`);
+    _materializeMagicItems(DEFAULT_ITEMS, JSON.parse(xhr.responseText).items ?? []);
+  } catch (err) {
+    console.error('Failed to load data/magic-items.json:', err);
+  }
+}
+
+// Appends every magic item's templates to `list`. The bases are what `list`
+// held on entry, minus variants — a magic item never applies to another one.
+function _materializeMagicItems(list, records) {
+  const bases = list.filter(t => !t.variantOf);
+  const taken = new Set(list.map(t => t.id));
+  const leavesOf = new Map(); // head id → the placeable items under it
+  const add = t => {
+    if (taken.has(t.id)) { console.warn(`magic-items.json: duplicate id ${t.id}`); return null; }
+    taken.add(t.id);
+    list.push(t);
+    return t;
+  };
+
+  records.forEach(m => {
+    const applies = m.appliesTo;
+    const matched = applies ? bases.filter(b => _doesMagicItemApplyTo(b, applies)) : [];
+    if (applies && !matched.length) { console.warn(`magic-items.json: ${m.id} matches no base item`); return; }
+    const variants = m.variants ?? [];
+    const fmt = m.nameFormat ?? m.name;
+
+    // One finished, placeable item: the record (+ variant) on a base, or alone.
+    const leaf = (id, v, base, parentId) => {
+      const rarity = v?.rarity ?? m.rarity;
+      const consumable = !!m.consumable || !!base && _isStackableTemplate(base);
+      // Magic ammunition: ten pieces are worth one consumable of the rarity.
+      const priceGp = base && _isStackableTemplate(base)
+        ? _getMagicItemPriceGp(rarity, true) / 10
+        : _getMagicItemPriceGp(rarity, consumable);
+      const own = m.cost || v?.cost ? _parseCost(v?.cost ?? m.cost) : null;
+      const description = v?.note ? `${m.description}\n\n${v.note}` : m.description;
+      const t = {
+        ...(base ?? {}),
+        id,
+        name:        _fillMagicItemName(fmt, base?.name, v?.label),
+        rarity,
+        description,
+        cost:        own ?? _addGpToCost(base?.cost ?? _parseCost(''), priceGp),
+        tags:        [...new Set([...(base?.tags ?? []), ...(m.tags ?? [])])],
+        attunement:  v?.attunement ?? !!m.attunement,
+        attunementNote: m.attunementNote,
+        source:      m.source,
+        consumable,
+        magicOf:     m.id,
+        variantSpecs: [],
+        variantIds:  [],
+        variantOf:   parentId,
+      };
+      if (!base) {
+        t.shape      = _parseShape(m.shape);
+        t.stackSize  = m.stackSize;
+        t.damage     = m.damage;
+        t.damageType = m.damageType;
+        t.properties = m.properties ?? [];
+        t.container  = !!m.container;
+        t.containerRows = m.containerRows;
+        t.containerCols = m.containerCols;
+        t.image      = '';
+      }
+      return add(t);
+    };
+
+    // A fold header. Its shape is its first item's, so the card has a picture.
+    const head = (id, name, parentId, rarity = m.rarity) => add({
+      id, name,
+      rarity,
+      description: m.description,
+      cost:        _parseCost(''),
+      tags:        [...new Set([...(m.tags ?? []), ...(applies ? [m.type.toLowerCase()] : [])])],
+      attunement:  !!m.attunement,
+      attunementNote: m.attunementNote,
+      source:      m.source,
+      shape:       [[1]],
+      properties:  [],
+      image:       '',
+      consumable:  !!m.consumable,
+      abstract:    true,
+      magicOf:     m.id,
+      variantSpecs: [],
+      variantIds:  [],
+      variantOf:   parentId,
+    });
+    const fillHead = (h, children) => {
+      if (!h) return;
+      const rows = children.filter(Boolean);
+      h.variantIds = rows.map(c => c.id);
+      if (rows.length) h.shape = rows[0].shape;
+      const leaves = rows.flatMap(c => leavesOf.get(c.id) ?? [c]);
+      leavesOf.set(h.id, leaves);
+      h.familySize = leaves.length;
+      h.rarityVaries = new Set(leaves.map(l => l.rarity)).size > 1;
+    };
+
+    if (!variants.length) {
+      if (matched.length > 1) {
+        const h = head(m.id, m.name);
+        fillHead(h, matched.map(b => leaf(`${m.id}@${b.id}`, null, b, m.id)));
+      } else {
+        leaf(m.id, null, matched[0] ?? null);
+      }
+      return;
+    }
+
+    const h = head(m.id, m.name);
+    fillHead(h, variants.map(v => {
+      const vid = `${m.id}~${v.id}`;
+      if (matched.length <= 1) return leaf(vid, v, matched[0] ?? null, m.id);
+      const sub = head(vid, `${m.name} (${v.label})`, m.id, v.rarity ?? m.rarity);
+      fillHead(sub, matched.map(b => leaf(`${vid}@${b.id}`, v, b, vid)));
+      return sub;
+    }));
+  });
+}
+
+// Not isStackable(): helpers.js loads after this file, and a template built
+// here only ever has stackSize.
+function _isStackableTemplate(t) {
+  return (t.stackSize ?? 1) > 1;
+}
+
+// ─── LEGACY ITEM IDS ───
+
+// The current id for a saved template id, translating pre-slug ids.
+function getCurrentTemplateId(id) {
   return LEGACY_ITEM_IDS[id] ?? id;
 }
 

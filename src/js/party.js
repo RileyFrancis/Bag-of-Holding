@@ -3,12 +3,19 @@
 // =============================================================================
 'use strict';
 
+const PRESENCE_HEARTBEAT_MS = 40000;  // how often a live client re-states itself
+const PRESENCE_STALE_MS     = 105000; // ~2.5 missed beats before a claim lapses
+const PRESENCE_SWEEP_MS     = 15000;  // how often the panel re-checks the clock
+
+// Party play is other people's data, so it is the one part that asks for an account.
+const PARTY_AUTH_REASON = 'Campaigns need an account, so your group can tell who is who.';
+
 let firebaseDb = null;
 let partyPlayersRef = null;
 let partyMetaRef = null;
 let firebaseInitError = null; // kept so the party buttons can say what went wrong
 
-// Our own node in the party. Owned by the presence block below — the only thing
+// Our own node in the party. Owned by the presence block — the only thing
 // that may write to it. It carries an onDisconnect handler that must be re-armed
 // on every reconnect and *cancelled* when we leave on purpose; uncancelled it
 // would write `connected: false` back into a roster we are no longer in.
@@ -17,8 +24,23 @@ let partySelfRef = null;
 // Whether we have ever seen ourselves in the roster. A player's entry vanishing
 // afterwards means the GM removed it (the roster is the only signal, and one a
 // slow first snapshot cannot spoof).
-let sawSelfInRoster = false;
+let hasSeenSelfInRoster = false;
 
+let presenceConnRef    = null; // .info/connected
+let presenceOffsetRef  = null; // .info/serverTimeOffset
+let presenceTimer      = null;
+let presenceSweepTimer = null;
+
+// `lastSeen` is server-stamped, so it must be read against the server's clock —
+// a client an hour out would call everyone offline, or nobody.
+let serverTimeOffset = 0;
+
+// The roster's online/offline answer at the last redraw, so the sweep redraws only on a change.
+let lastPresenceSignature = '';
+
+let syncTimer = null;
+
+// Sets up the Firebase app and database handle; a no-op without config or SDK.
 function initFirebase() {
   if (!FIREBASE_CONFIG) return; // firebase-config.js already explained why
   if (typeof firebase === 'undefined') {
@@ -39,7 +61,7 @@ function initFirebase() {
 // Why party sync is off, phrased as the thing that fixes it. The three causes
 // look identical from the button; by far the most common is opening index.html
 // off disk, where the browser refuses to read .env.
-function partyUnavailableMessage() {
+function getPartyUnavailableMessage() {
   if (!FIREBASE_CONFIG) {
     if (location.protocol === 'file:') {
       return 'Party play needs the app served over HTTP.\n\n' +
@@ -49,8 +71,8 @@ function partyUnavailableMessage() {
              '    python3 -m http.server 8787\n' +
              'then open http://localhost:8787';
     }
-    const local = ['localhost', '127.0.0.1', ''].includes(location.hostname);
-    if (!local) {
+    const isLocalHost = ['localhost', '127.0.0.1', ''].includes(location.hostname);
+    if (!isLocalHost) {
       return 'Party play is off because this deploy has no Firebase settings.\n\n' +
              '.env is gitignored, so it never reaches the host — and Cloudflare Pages ' +
              'will not serve a file whose name starts with a dot in any case.\n\n' +
@@ -72,61 +94,55 @@ function partyUnavailableMessage() {
          '\n\nCheck the values in .env against Firebase Console → Project settings → Your apps.';
 }
 
-function generatePartyCode() {
+function _generatePartyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
 
-// =============================================================================
-// IDENTITY
-// =============================================================================
-// A player's node under `parties/<code>/players` is keyed by their account uid —
-// the whole of the duplicate-player fix: rejoining lands on the node you already
-// had, and the roster can be read as membership. The GM's node is
-// `parties/<code>/gm` (one node, not a keyed collection), so it never had this
-// problem. See CLAUDE.md § Campaigns.
-function ownPlayerId() {
+// ─── IDENTITY ───
+// A player's node under `parties/<code>/players` is keyed by their account uid,
+// so rejoining lands on the node you already had and the roster can be read as
+// membership. The GM's node is the single `parties/<code>/gm`.
+
+// This account's uid, which is also its roster key; null when signed out.
+function getOwnPlayerId() {
   return state.auth.user?.uid ?? null;
 }
 
-// The character behind a party member's account — the same synced copy the
-// roster panel already reads as `p.character`, named for reuse by anything
-// asking after one *specific* player (battlemap-initiative.js's movement
-// tracking) rather than walking the whole roster.
-function characterForUid(uid) {
+// The synced character behind one party member's account (the roster's
+// `p.character`), or null.
+function getCharacterForUid(uid) {
   return uid ? (state.party.players?.[uid]?.character ?? null) : null;
 }
 
-// Entries written before roster keys were accounts — `p_`-prefixed, identified
-// only by the typed name (which is why the scheme had to change). Best-effort;
-// a leftover the sweep misses is one Kick away.
-function isLegacyPlayerKey(id) {
+// Legacy roster entries are `p_`-prefixed and identified only by the typed name.
+// The sweep is best-effort; a leftover it misses is one Kick away.
+function _isLegacyPlayerKey(id) {
   return typeof id === 'string' && id.startsWith('p_');
 }
 
-async function sweepLegacySelfEntries(code, name) {
+async function _sweepLegacySelfEntries(code, name) {
   try {
     const snap = await firebaseDb.ref(`parties/${code}/players`).get();
     const players = snap.val() ?? {};
-    const stale = Object.entries(players).filter(([id, p]) => isLegacyPlayerKey(id) && p && p.name === name);
+    const stale = Object.entries(players).filter(([id, p]) => _isLegacyPlayerKey(id) && p && p.name === name);
     await Promise.all(stale.map(([id]) =>
       firebaseDb.ref(`parties/${code}/players/${id}`).remove().catch(() => {})));
   } catch { /* a courtesy; a failure must not block the join */ }
 }
 
-// Someone's homebrew item (`_homebrew`, homebrew-share.js) is only this
-// character's to keep while they carry one — otherwise it comes and goes with
-// what is enabled, and must not be saved into their catalogue for good.
+// The non-default item templates to save. Someone's homebrew item (`_homebrew`,
+// homebrew-share.js) is kept only while an instance still uses it.
 function getCustomDb() {
   return Object.fromEntries(
     Object.entries(state.db).filter(([id, t]) =>
-      !DEFAULT_ITEM_IDS.has(id) && (!t?._homebrew || homebrewItemInUse(id)))
+      !DEFAULT_ITEM_IDS.has(id) && (!t?._homebrew || isHomebrewItemInUse(id)))
   );
 }
 
-function getSerializableInstances() {
+function _getSerializableInstances() {
   return Object.fromEntries(
     Object.entries(state.instances).map(([id, inst]) => [id, {
       id: inst.id,
@@ -140,14 +156,11 @@ function getSerializableInstances() {
   );
 }
 
-// =============================================================================
-// ENTERING A CAMPAIGN
-// =============================================================================
-// Three doors into the same room; only the write differs. Everything after it is
-// shared in `beginPartySession()`. Each returns the campaign code on success and
-// null on failure, having said why. campaigns.js is the caller.
+// ─── ENTERING A CAMPAIGN ───
+// Three ways in; only the write differs, and `_beginPartySession()` does the rest.
+// Each returns the campaign code on success, or null after alerting why.
 
-function beginPartySession({ code, role, playerId, playerName, campaignName }) {
+function _beginPartySession({ code, role, playerId, playerName, campaignName }) {
   state.party.active = true;
   state.party.code = code;
   state.party.role = role;
@@ -157,66 +170,66 @@ function beginPartySession({ code, role, playerId, playerName, campaignName }) {
   state.party.viewingPlayerId = null;
   state.party.players = {};
 
-  subscribeToParty(code);
-  startPresenceSweep(); // a lapsed claim has no snapshot to announce it
+  _subscribeToParty(code);
+  _startPresenceSweep(); // a lapsed claim has no snapshot to announce it
   hideModal('campaign-modal');
-  updatePartyUI();
+  _updatePartyUI();
   switchTab('party');
 }
 
 // The campaign's own name, who runs it, and when it was made — written once,
 // read by anyone holding the code.
-function campaignMeta(name, uid, gmName) {
+function _buildCampaignMeta(name, uid, gmName) {
   return { name, gmUid: uid ?? null, gmName: gmName || 'Game Master', createdAt: Date.now() };
 }
 
+// Writes a new campaign with us as GM and starts the session.
 async function createCampaign(name) {
-  if (!firebaseDb) { alert(partyUnavailableMessage()); return null; }
-  const uid = ownPlayerId();
+  if (!firebaseDb) { alert(getPartyUnavailableMessage()); return null; }
+  const uid = getOwnPlayerId();
   if (!uid) { alert('Creating a campaign needs an account, so your table knows who is running it.'); return null; }
 
-  const code = generatePartyCode();
-  const gmName = accountDisplayName() || 'Game Master';
+  const code = _generatePartyCode();
+  const gmName = getAccountDisplayName() || 'Game Master';
   try {
     await firebaseDb.ref(`parties/${code}`).update({
-      meta: campaignMeta(name, uid, gmName),
-      gm: { name: gmName, uid, connected: true, lastSeen: presenceStamp() },
+      meta: _buildCampaignMeta(name, uid, gmName),
+      gm: { name: gmName, uid, connected: true, lastSeen: _getPresenceStamp() },
     });
-    startPresence(firebaseDb.ref(`parties/${code}/gm`));
+    _startPresence(firebaseDb.ref(`parties/${code}/gm`));
   } catch (e) {
     alert('Failed to create the campaign: ' + e.message);
     return null;
   }
 
-  beginPartySession({ code, role: 'gm', playerId: 'gm', playerName: gmName, campaignName: name });
+  _beginPartySession({ code, role: 'gm', playerId: 'gm', playerName: gmName, campaignName: name });
   return code;
 }
 
-// The GM coming back to a campaign they run. An `update`, not a `set` — the node
-// is the same one they left, and anything a later version parks beside
-// `connected` survives.
+// The GM returning to a campaign they run. An `update`, not a `set`, so anything
+// else stored on the GM node survives.
 async function enterCampaignAsGM(code, meta) {
-  if (!firebaseDb) { alert(partyUnavailableMessage()); return null; }
-  const uid = ownPlayerId();
-  const gmName = accountDisplayName() || 'Game Master';
+  if (!firebaseDb) { alert(getPartyUnavailableMessage()); return null; }
+  const uid = getOwnPlayerId();
+  const gmName = getAccountDisplayName() || 'Game Master';
   try {
     const gmRef = firebaseDb.ref(`parties/${code}/gm`);
-    await gmRef.update({ name: gmName, uid, connected: true, lastSeen: presenceStamp() });
-    startPresence(gmRef);
+    await gmRef.update({ name: gmName, uid, connected: true, lastSeen: _getPresenceStamp() });
+    _startPresence(gmRef);
   } catch (e) {
     alert('Could not rejoin as Game Master: ' + e.message);
     return null;
   }
 
-  beginPartySession({ code, role: 'gm', playerId: 'gm', playerName: gmName, campaignName: meta?.name ?? null });
+  _beginPartySession({ code, role: 'gm', playerId: 'gm', playerName: gmName, campaignName: meta?.name ?? null });
   return code;
 }
 
-// A player taking their seat. `update` for the same reason — on a rejoin this
-// lands on the node they already had rather than making a second beside it.
+// A player taking their seat. `update` for the same reason: a rejoin lands on the
+// node they already had rather than making a second beside it.
 async function enterCampaignAsPlayer(code, playerName, meta) {
-  if (!firebaseDb) { alert(partyUnavailableMessage()); return null; }
-  const uid = ownPlayerId();
+  if (!firebaseDb) { alert(getPartyUnavailableMessage()); return null; }
+  const uid = getOwnPlayerId();
   if (!uid) { alert('Joining a campaign needs an account, so your group can tell who is who.'); return null; }
 
   try {
@@ -225,57 +238,44 @@ async function enterCampaignAsPlayer(code, playerName, meta) {
       uid,
       name: playerName,
       connected: true,
-      lastSeen: presenceStamp(),
+      lastSeen: _getPresenceStamp(),
       characterId: state.character.id ?? null,
       character: state.character,
-      instances: getSerializableInstances(),
+      instances: _getSerializableInstances(),
       customDb: getCustomDb(),
       equipped: state.equipped,
       _writtenBy: uid,
     });
-    startPresence(playerRef);
-    sawSelfInRoster = true; // we just wrote it — a later absence is a removal
+    _startPresence(playerRef);
+    hasSeenSelfInRoster = true; // we just wrote it — a later absence is a removal
   } catch (e) {
     alert('Failed to join the campaign: ' + e.message);
     return null;
   }
 
-  sweepLegacySelfEntries(code, playerName); // fire and forget
+  _sweepLegacySelfEntries(code, playerName); // fire and forget
 
-  beginPartySession({ code, role: 'player', playerId: uid, playerName, campaignName: meta?.name ?? null });
+  _beginPartySession({ code, role: 'player', playerId: uid, playerName, campaignName: meta?.name ?? null });
   return code;
 }
 
-// =============================================================================
-// PRESENCE — the green dot
-// =============================================================================
+// ─── PRESENCE — the green dot ───
 // Green iff that person has the app open on this campaign right now — a claim
 // about the present, so it cannot be written once and left. Two facts:
 // `connected` is what the client last claimed, `lastSeen` is when, so a claim
 // with no heartbeat behind it lapses on its own. `onDisconnect` is armed from
-// `.info/connected` (re-armed on every reconnect); `endPresence()` writes the
-// `false` itself before cancelling. See CLAUDE.md § Presence.
-const PRESENCE_HEARTBEAT_MS = 40000;  // how often a live client re-states itself
-const PRESENCE_STALE_MS     = 105000; // ~2.5 missed beats before a claim lapses
-const PRESENCE_SWEEP_MS     = 15000;  // how often the panel re-checks the clock
+// `.info/connected` (re-armed on every reconnect); `_endPresence()` writes the
+// `false` itself before cancelling.
 
-let presenceConnRef   = null; // .info/connected
-let presenceOffsetRef = null; // .info/serverTimeOffset
-let presenceTimer     = null;
-let presenceSweepTimer = null;
+function _getServerNow() { return Date.now() + serverTimeOffset; }
 
-// `lastSeen` is server-stamped, so it must be read against the server's clock —
-// a client an hour out would call everyone offline, or nobody.
-let serverTimeOffset = 0;
-function serverNow() { return Date.now() + serverTimeOffset; }
-
-function presenceStamp() {
+function _getPresenceStamp() {
   return firebase.database.ServerValue.TIMESTAMP;
 }
 
 // Take up our own node and start claiming it.
-function startPresence(ref) {
-  endPresence(); // anything still held here is a previous seat
+function _startPresence(ref) {
+  _endPresence(); // anything still held here is a previous seat
   partySelfRef = ref;
 
   if (!presenceOffsetRef) {
@@ -290,27 +290,27 @@ function startPresence(ref) {
     if (!self) return;
     // `connected: true` is written INSIDE the .then(), after the handler is
     // registered — a drop between the two would leave a live seat unwatched.
-    self.onDisconnect().update({ connected: false, lastSeen: presenceStamp() })
-      .then(() => { if (partySelfRef === self) beatPresence(); })
+    self.onDisconnect().update({ connected: false, lastSeen: _getPresenceStamp() })
+      .then(() => { if (partySelfRef === self) _sendPresenceHeartbeat(); })
       .catch(() => { /* offline again already — the next connect re-arms */ });
   });
 
   clearInterval(presenceTimer);
-  presenceTimer = setInterval(beatPresence, PRESENCE_HEARTBEAT_MS);
+  presenceTimer = setInterval(_sendPresenceHeartbeat, PRESENCE_HEARTBEAT_MS);
 }
 
-// The claim itself. NOT folded into `syncPartyState()` — that writes to whichever
+// The claim itself. NOT folded into `_syncPartyState()` — that writes to whichever
 // node is being edited, which for a GM is one of the players.
-function beatPresence() {
+function _sendPresenceHeartbeat() {
   if (!partySelfRef) return;
-  partySelfRef.update({ connected: true, lastSeen: presenceStamp() })
+  partySelfRef.update({ connected: true, lastSeen: _getPresenceStamp() })
     .catch(() => { /* a removed seat; the roster listener has it */ });
 }
 
 // Stand down. The `false` is written before the handler is cancelled. It can
 // land on a node the GM just deleted (where `update()` recreates it) — which is
-// why `handleRemovedFromParty()` and `leaveCampaign()` both sweep the node after.
-function endPresence({ markOffline = true } = {}) {
+// why `_handleRemovedFromParty()` and Leave Campaign (campaigns.js) both sweep the node after.
+function _endPresence({ markOffline = true } = {}) {
   clearInterval(presenceTimer);
   presenceTimer = null;
 
@@ -319,48 +319,48 @@ function endPresence({ markOffline = true } = {}) {
   if (partySelfRef) {
     const self = partySelfRef;
     partySelfRef = null;
-    if (markOffline) self.update({ connected: false, lastSeen: presenceStamp() }).catch(() => {});
+    if (markOffline) self.update({ connected: false, lastSeen: _getPresenceStamp() }).catch(() => {});
     try { self.onDisconnect().cancel(); } catch { /* already gone */ }
   }
 }
 
-// Both halves required. An entry with NO `lastSeen` at all reads as offline — a
-// record left behind by a session that ended before presence worked.
+// Whether a roster entry is live. Both halves are required; an entry with no
+// `lastSeen` at all reads as offline.
 function isPlayerOnline(p) {
   if (!p || !p.connected) return false;
   const seen = Number(p.lastSeen);
   if (!Number.isFinite(seen)) return false;
-  return serverNow() - seen < PRESENCE_STALE_MS;
+  return _getServerNow() - seen < PRESENCE_STALE_MS;
 }
 
 // A claim lapses by the passage of time, which Firebase will not wake us for. So
 // the panel re-checks itself — and redraws only when the answer changed, because
 // this runs every 15s and must not rebuild the roster under the cursor.
-let lastPresenceSignature = '';
-
-function presenceSignature() {
+function _getPresenceSignature() {
   return Object.entries(state.party.players ?? {})
     .map(([id, p]) => id + ':' + (isPlayerOnline(p) ? '1' : '0'))
     .sort()
     .join(',');
 }
 
-function startPresenceSweep() {
+function _startPresenceSweep() {
   clearInterval(presenceSweepTimer);
-  lastPresenceSignature = presenceSignature();
+  lastPresenceSignature = _getPresenceSignature();
   presenceSweepTimer = setInterval(() => {
-    const sig = presenceSignature();
+    const sig = _getPresenceSignature();
     if (sig === lastPresenceSignature) return;
     lastPresenceSignature = sig;
-    updatePartyPanel();
+    _updatePartyPanel();
   }, PRESENCE_SWEEP_MS);
 }
 
-function stopPresenceSweep() {
+function _stopPresenceSweep() {
   clearInterval(presenceSweepTimer);
   presenceSweepTimer = null;
   lastPresenceSignature = '';
 }
+
+// ─── SESSION AND SYNC ───
 
 // What a code points at, or null. The campaign's own record tells a joiner
 // whether they walk in as GM or player — a question a local bookmark must never
@@ -371,8 +371,7 @@ async function fetchCampaignMeta(code) {
     const snap = await firebaseDb.ref(`parties/${code}`).get();
     if (!snap.exists()) return null;
     const val = snap.val() ?? {};
-    // A party made before campaigns had names has no `meta` — describe it from
-    // what it does have.
+    // A party with no `meta` node is described from what it does have.
     return val.meta ?? { name: '', gmUid: val.gm?.uid ?? null, gmName: val.gm?.name ?? 'Game Master', createdAt: 0 };
   } catch (e) {
     alert('Failed to connect: ' + e.message);
@@ -380,7 +379,8 @@ async function fetchCampaignMeta(code) {
   }
 }
 
-function subscribeToParty(code) {
+// Subscribes to everything the campaign shares: shops, chat, map, homebrew, meta and roster.
+function _subscribeToParty(code) {
   subscribeToShops(code);     // the party's shops ride along with its roster
   subscribeToChat(code);      // and so does its conversation
   subscribeToBattlemap(code); // and the board they are standing on
@@ -396,7 +396,7 @@ function subscribeToParty(code) {
     state.party.campaignName = meta.name ?? null;
     state.party.gmUid = meta.gmUid ?? null;
     noteCampaignMeta(code, meta);
-    updatePartyUI();
+    _updatePartyUI();
   });
 
   if (partyPlayersRef) partyPlayersRef.off();
@@ -409,33 +409,35 @@ function subscribeToParty(code) {
     // Being removed from the roster IS the message — no separate "you were
     // kicked" flag to write, read and clean up.
     if (state.party.role === 'player') {
-      if (players[state.party.playerId]) sawSelfInRoster = true;
-      else if (sawSelfInRoster) { handleRemovedFromParty(); return; }
+      if (players[state.party.playerId]) hasSeenSelfInRoster = true;
+      else if (hasSeenSelfInRoster) { _handleRemovedFromParty(); return; }
     }
 
     const viewId = state.party.viewingPlayerId;
     if (viewId && players[viewId]) {
-      const pData = players[viewId];
-      // Only reload if the change came from the player themselves (not our own GM write)
-      if (pData._writtenBy !== state.party.playerId) {
-        loadPlayerStateIntoView(pData);
+      const viewedData = players[viewId];
+      // Reload only for the player's own change, not an echo of our GM write.
+      if (viewedData._writtenBy !== state.party.playerId) {
+        _loadPlayerStateIntoView(viewedData);
       }
     }
 
-    // If player is viewing own inventory and GM edited it, apply the changes
+    // A player looking at their own inventory takes in a GM's edit.
     if (state.party.role === 'player' && state.party.viewingPlayerId === null) {
       const ownData = players[state.party.playerId];
       if (ownData && ownData._writtenBy && ownData._writtenBy !== state.party.playerId) {
-        applyRemoteEditToOwnState(ownData);
+        _applyRemoteEditToOwnState(ownData);
       }
     }
 
     noteCampaignRoster(state.party.code, players);
-    lastPresenceSignature = presenceSignature(); // the sweep only chases changes
-    updatePartyPanel();
+    lastPresenceSignature = _getPresenceSignature(); // the sweep only chases changes
+    _updatePartyPanel();
   });
 }
 
+// Ends the session (not the membership): unsubscribes, marks us offline and
+// restores the solo view. Giving up the seat for good is Leave Campaign in campaigns.js.
 function leaveParty() {
   if (!state.party.active) return;
   if (partyPlayersRef) { partyPlayersRef.off(); partyPlayersRef = null; }
@@ -445,14 +447,13 @@ function leaveParty() {
   unsubscribeFromBattlemap();
   unsubscribeFromHomebrew();
 
-  // Marks us offline, then cancels the onDisconnect. Cancelling alone used to be
-  // the whole of this, which is how a deliberate leave left a lit dot.
-  endPresence();
-  stopPresenceSweep();
-  sawSelfInRoster = false;
+  // Marks us offline, then cancels the onDisconnect; cancelling alone would leave a lit dot.
+  _endPresence();
+  _stopPresenceSweep();
+  hasSeenSelfInRoster = false;
 
   const wasGM = state.party.role === 'gm';
-  if (state.party.viewingPlayerId !== null) restoreOwnState();
+  if (state.party.viewingPlayerId !== null) _restoreOwnState();
 
   state.party = {
     active: false, code: null, role: null, playerId: null, playerName: null,
@@ -469,26 +470,22 @@ function leaveParty() {
     renderLiveCharacter();
   }
 
-  updatePartyUI();
+  _updatePartyUI();
   switchTab('browse');
   renderHomeScreen(); // the campaign card is a Resume again
   syncRoute();        // off the table: campaign#<code> becomes character#<id>
 }
 
-// Leaving the session is not leaving the campaign. Resigning for good is
-// `leaveCampaign()` in campaigns.js — it throws away the seat rather than
-// stepping out of it.
-
 // Kicked by the GM — nothing local is lost (the roster entry was a copy), so
 // this is a leave with an explanation. It drops the campaign bookmark too: a
 // card left behind would be an invitation back into a campaign you were removed
 // from, and clicking it would write the seat back.
-function handleRemovedFromParty() {
+function _handleRemovedFromParty() {
   const code = state.party.code;
   const selfId = state.party.playerId;
   const ref = firebaseDb && code && selfId
     ? firebaseDb.ref(`parties/${code}/players/${selfId}`) : null;
-  const name = campaignDisplayName(code);
+  const name = getCampaignDisplayName(code);
 
   leaveParty();
   forgetCampaign(code);
@@ -504,7 +501,7 @@ function handleRemovedFromParty() {
 
 // GM only. Removing the entry is the whole operation — their client sees itself
 // gone from the roster and leaves.
-async function kickPlayer(playerId, displayName) {
+async function _kickPlayer(playerId, displayName) {
   if (!firebaseDb || !state.party.active || state.party.role !== 'gm') return;
   if (!confirm(`Remove ${displayName} from the campaign?\n\n` +
                'They lose their seat, not their character: their own inventory is ' +
@@ -523,17 +520,18 @@ async function kickPlayer(playerId, displayName) {
   }
 }
 
-let syncTimer = null;
-function debouncedSync() {
-  // Don't overwrite own save while a GM is editing a player's inventory
-  const gmEditing = state.party.active && state.party.role === 'gm' && state.party.viewingPlayerId !== null;
-  if (!gmEditing) { autoSave(); scheduleCloudSave(); }
+// Call after any change to the live character: saves locally and to the cloud,
+// then pushes the change to the party after a 400 ms debounce.
+function scheduleSaveAndSync() {
+  // A GM editing a player's inventory must not overwrite their own save with it.
+  const isGmEditing = state.party.active && state.party.role === 'gm' && state.party.viewingPlayerId !== null;
+  if (!isGmEditing) { autoSave(); scheduleCloudSave(); }
   if (!state.party.active) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(syncPartyState, 400);
+  syncTimer = setTimeout(_syncPartyState, 400);
 }
 
-function syncPartyState() {
+function _syncPartyState() {
   if (!state.party.active || !firebaseDb) return;
   publishHomebrewToParty(); // a no-op unless what we share changed
 
@@ -548,14 +546,14 @@ function syncPartyState() {
 
   firebaseDb.ref(`parties/${state.party.code}/players/${targetId}`).update({
     character: state.character,
-    instances: getSerializableInstances(),
+    instances: _getSerializableInstances(),
     customDb: getCustomDb(),
     equipped: state.equipped,
     _writtenBy: state.party.playerId,
   });
 }
 
-function loadPlayerStateIntoView(playerData) {
+function _loadPlayerStateIntoView(playerData) {
   if (!playerData) return;
   cancelPlacing();
 
@@ -575,7 +573,7 @@ function loadPlayerStateIntoView(playerData) {
   updateWeightDisplay();
 }
 
-function applyRemoteEditToOwnState(playerData) {
+function _applyRemoteEditToOwnState(playerData) {
   if (playerData.instances !== undefined) state.instances = migrateInstanceTemplateIds(playerData.instances) ?? {};
   if (playerData.equipped  !== undefined) state.equipped  = { ...playerData.equipped  };
   if (playerData.customDb) Object.assign(state.db, playerData.customDb);
@@ -585,7 +583,7 @@ function applyRemoteEditToOwnState(playerData) {
   updateWeightDisplay();
 }
 
-function saveOwnState() {
+function _saveOwnState() {
   state.party.ownState = {
     character: { ...state.character },
     instances: JSON.parse(JSON.stringify(state.instances)),
@@ -594,7 +592,7 @@ function saveOwnState() {
   };
 }
 
-function restoreOwnState() {
+function _restoreOwnState() {
   const own = state.party.ownState;
   if (!own) return;
   state.character = { ...own.character };
@@ -611,28 +609,30 @@ function restoreOwnState() {
   updateWeightDisplay();
 }
 
+// Shows another member's character in place of our own (read-only for a player).
 function switchViewToPlayer(playerId) {
   if (state.party.viewingPlayerId === playerId) return;
   cancelPlacing();
 
-  if (state.party.role === 'player' && state.party.viewingPlayerId === null) saveOwnState();
+  if (state.party.role === 'player' && state.party.viewingPlayerId === null) _saveOwnState();
 
   state.party.viewingPlayerId = playerId;
   const playerData = state.party.players[playerId];
-  if (playerData) loadPlayerStateIntoView(playerData);
+  if (playerData) _loadPlayerStateIntoView(playerData);
 
-  updatePartyPanel();
+  _updatePartyPanel();
   updateViewingBanner();
   document.body.classList.toggle('party-readonly', isReadOnly());
 }
 
+// Returns from viewing a member: a player gets their own state back, a GM gets no selection.
 function switchViewToOwn() {
   if (state.party.viewingPlayerId === null) return;
   cancelPlacing();
   state.party.viewingPlayerId = null;
 
   if (state.party.role === 'player') {
-    restoreOwnState();
+    _restoreOwnState();
   } else {
     // GM — back to no-selection. Deliberately not one of their own characters:
     // commitActiveCharacter() refuses to write this working copy anywhere.
@@ -647,44 +647,42 @@ function switchViewToOwn() {
     updateWeightDisplay();
   }
 
-  updatePartyPanel();
+  _updatePartyPanel();
   updateViewingBanner();
   document.body.classList.toggle('party-readonly', isReadOnly());
 }
 
+// Whether the live view must not be edited: a player looking at someone else's character.
 function isReadOnly() {
   if (!state.party.active) return false;
   if (state.party.role === 'gm') return false;
   return state.party.viewingPlayerId !== null;
 }
 
-function computeCarriedWeightFor(instances, customDb) {
+function _getCarriedWeightFor(instances, customDb) {
   const db = {};
   DEFAULT_ITEMS.forEach(t => { db[t.id] = t; });
   Object.assign(db, customDb ?? {});
   return Object.values(instances ?? {}).reduce((sum, inst) => {
-    const t = db[currentTemplateId(inst.templateId)];
+    const t = db[getCurrentTemplateId(inst.templateId)];
     if (!t) return sum;
-    return sum + (isStackable(t) ? unitWeight(t) * inst.stackCount : shapeWeight(getRotatedShape(t.shape, inst.rotation)));
+    return sum + (isStackable(t) ? getItemUnitWeight(t) * inst.stackCount : getShapeWeight(getRotatedShape(t.shape, inst.rotation)));
   }, 0);
 }
 
-// =============================================================================
-// PARTY — UI
-// =============================================================================
-function updatePartyUI() {
-  const inParty = state.party.active;
+// ─── PARTY UI ───
+function _updatePartyUI() {
+  const isInParty = state.party.active;
 
-  document.getElementById('party-code-badge').classList.toggle('hidden', !inParty);
-  if (inParty) document.getElementById('party-code-badge').textContent = state.party.code;
+  document.getElementById('party-code-badge').classList.toggle('hidden', !isInParty);
+  if (isInParty) document.getElementById('party-code-badge').textContent = state.party.code;
 
-  document.getElementById('party-no-session').classList.toggle('hidden', inParty);
-  document.getElementById('party-session').classList.toggle('hidden', !inParty);
+  document.getElementById('party-no-session').classList.toggle('hidden', isInParty);
+  document.getElementById('party-session').classList.toggle('hidden', !isInParty);
 
-  if (inParty) {
+  if (isInParty) {
     document.getElementById('party-code-text').textContent = state.party.code;
-    // The campaign's name, when it has one — a party made before campaigns has
-    // only its code, and the row is left off rather than standing empty.
+    // The campaign's name; a party with only a code leaves the row off rather than empty.
     const nameEl = document.getElementById('party-campaign-name');
     nameEl.textContent = state.party.campaignName ?? '';
     nameEl.classList.toggle('hidden', !state.party.campaignName);
@@ -706,11 +704,11 @@ function updatePartyUI() {
   }
 
   document.body.classList.toggle('party-readonly', isReadOnly());
-  updatePartyPanel();
+  _updatePartyPanel();
   updateViewingBanner();
 }
 
-function updatePartyPanel() {
+function _updatePartyPanel() {
   // The character tabs are this same roster and selection in another shape.
   syncCharacterViewUI();
 
@@ -760,7 +758,7 @@ function updatePartyPanel() {
       kickBtn.title = `Remove ${p.name} from the party`;
       kickBtn.addEventListener('click', e => {
         e.stopPropagation(); // the entry itself selects the player
-        kickPlayer(id, p.name);
+        _kickPlayer(id, p.name);
       });
       top.appendChild(kickBtn);
     }
@@ -768,7 +766,7 @@ function updatePartyPanel() {
     entry.appendChild(top);
 
     if (p.character) {
-      const carried = computeCarriedWeightFor(p.instances, p.customDb);
+      const carried = _getCarriedWeightFor(p.instances, p.customDb);
       const encThreshold = p.character.strength * 15;
       const statusText = carried > encThreshold * 2 ? ' · Heavily Enc.' : carried > encThreshold ? ' · Enc.' : '';
       const infoEl = document.createElement('span');
@@ -776,14 +774,13 @@ function updatePartyPanel() {
       infoEl.textContent = `${p.character.name} · ${Math.round(carried * 10) / 10} lb${statusText}`;
       entry.appendChild(infoEl);
 
-      // Level / race / class, when the player's client is new enough to publish
-      // them. An older client sends name + strength only, and this line is
-      // left off rather than showing a row of blanks.
-      const descr = describePartyCharacter(p.character);
-      if (descr) {
+      // Level / race / class. An older client sends name + strength only, and
+      // this line is left off rather than showing a row of blanks.
+      const characterSummary = _describePartyCharacter(p.character);
+      if (characterSummary) {
         const subEl = document.createElement('span');
         subEl.className = 'party-player-info';
-        subEl.textContent = descr;
+        subEl.textContent = characterSummary;
         entry.appendChild(subEl);
       }
     }
@@ -801,7 +798,7 @@ function updatePartyPanel() {
 
 // "Level 7 · Tiefling · Warlock 5 / Bard 2", skipping whatever is missing. The
 // level is the character's total; each class says its own only when multiclassed.
-function describePartyCharacter(c) {
+function _describePartyCharacter(c) {
   if (!c) return '';
   const classes = describeCharacterClasses(c);
   const parts = [];
@@ -811,6 +808,7 @@ function describePartyCharacter(c) {
   return parts.join(' · ');
 }
 
+// Shows or hides the "Editing/Viewing <name>'s ..." banner for the current selection.
 function updateViewingBanner() {
   const banner = document.getElementById('viewing-banner');
   const viewId = state.party.viewingPlayerId;
@@ -829,23 +827,20 @@ function updateViewingBanner() {
 
   // The map is the party's, not this player's — the banner names the view the
   // reader is handed back rather than claiming they are editing a board.
-  const what = { sheet: 'character sheet', spells: 'spell sheet', map: 'inventory' }[state.view] || 'inventory';
+  const viewLabel = { sheet: 'character sheet', spells: 'spell sheet', map: 'inventory' }[state.view] || 'inventory';
   if (state.party.role === 'gm') {
-    textEl.textContent = `Editing ${name}'s ${what}`;
+    textEl.textContent = `Editing ${name}'s ${viewLabel}`;
     returnBtn.textContent = 'Deselect Player';
   } else {
-    textEl.textContent = `Viewing ${name}'s ${what} (read-only)`;
+    textEl.textContent = `Viewing ${name}'s ${viewLabel} (read-only)`;
     returnBtn.textContent = 'Return to Your Inventory';
   }
 
   document.getElementById('gm-placeholder').classList.add('hidden');
 }
 
-// Party play is the one part of the app that is other people's data, so it is
-// the one part that asks for an account. One door: the campaign modal in
-// campaigns.js, opened by the Party tab's button and the header's party button.
-const PARTY_AUTH_REASON = 'Campaigns need an account, so your group can tell who is who.';
-
+// ─── WIRING ───
+// Both party buttons open the campaign modal (campaigns.js) behind a sign-in.
 document.getElementById('party-btn').addEventListener('click', () => {
   if (state.party.active) switchTab('party');
   else requireAuth(PARTY_AUTH_REASON, () => openCampaignModal('join'));

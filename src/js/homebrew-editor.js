@@ -3,19 +3,14 @@
 // =============================================================================
 'use strict';
 
-// One panel, two faces: "What are we brewing?" (six kinds) and the editor for
-// whichever was picked. Each kind is a list of field specs (`HB_FORMS`) drawn by
-// one small form builder, so the six forms share their widgets and their read-
-// back rather than being six hand-built modals. What a form saves is shaped
-// like the data files it will one day sit beside — a class's `features` are
-// `data/classes.json` features (`{ id, level, name, description, unlocks }`), a
-// species' `traits` are `data/species.json` traits, a spell carries the keys
-// `data/spells.json` does, an item is an item template — so wiring homebrew
-// into `allClasses()` / `allSpecies()` / the spell list is a read, not a
-// translation. Saves go through homebrew.js (`addHomebrewEntry()` /
-// `updateHomebrewEntry()`); nothing here touches `state.homebrew` itself.
+// One panel, two faces: the kind picker and the editor for the picked kind. Each
+// kind is a list of field specs (`HB_FORMS`) drawn by one form builder. A saved
+// entry is shaped like its data file (class `features` as in data/classes.json,
+// species `traits` as in data/species.json, spells as data/spells.json, items as
+// item templates), so the registries read it without translation. Saves go
+// through homebrew.js; nothing here touches `state.homebrew` itself.
 
-const HB_LEVELS = 20;
+const HB_LEVELS = 20; // character levels a class progression spans
 
 const HB_PICKER_BLURBS = {
   class:      'Hit die, proficiencies, and what unlocks at each level',
@@ -36,22 +31,12 @@ const HB_SCHOOLS = ['Abjuration', 'Conjuration', 'Divination', 'Enchantment', 'E
   'Illusion', 'Necromancy', 'Transmutation'];
 const HB_SPELL_LEVELS = [['0', 'Cantrip'], ...Array.from({ length: 9 }, (_, i) => [String(i + 1), 'Level ' + (i + 1)])];
 
-// Read at open time, not load time — the ability/skill tables live in
+// Read at open time, not load time: the ability/skill tables live in
 // character-sheet.js and the class list in class-features.js, both later files.
-const hbAbilityOptions = () => ABILITIES.map(a => [a.id, a.label]);
-const hbSkillOptions   = () => SKILLS.map(s => [s.id, s.label]);
+const _getHomebrewAbilityOptions = () => ABILITIES.map(a => [a.id, a.label]);
+const _getHomebrewSkillOptions   = () => SKILLS.map(s => [s.id, s.label]);
 
-// Every class a subclass could belong to, or a spell be on the list of: the
-// app's own and this account's homebrew ones, by name.
-function hbClassNames() {
-  const names = allClasses().map(c => c.name)
-    .concat(homebrewEntriesOf('class').map(e => e.name));
-  return [...new Set(names.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-}
-
-// =============================================================================
-// THE FORMS
-// =============================================================================
+// ─── THE FORMS ─────────────────────────────────────────────────────────────
 // Field spec: { key, type, label, … }. `half: true` pairs a field with the next
 // half-width one in a two-column row. `showIf(values)` hides a field while false.
 const HB_FORMS = {
@@ -63,9 +48,9 @@ const HB_FORMS = {
     { key: 'spellcasting', type: 'select', label: 'Spellcasting', half: true, value: 'none',
       options: [['none', 'None'], ['full', 'Full caster'], ['half', 'Half caster'], ['third', 'Third caster'], ['pact', 'Pact Magic']] },
     { key: 'spellcastingAbility', type: 'select', label: 'Spellcasting Ability', half: true,
-      options: () => hbAbilityOptions(), value: 'int', showIf: v => v.spellcasting !== 'none' },
-    { key: 'primaryAbility', type: 'checks', label: 'Primary Ability', options: () => hbAbilityOptions() },
-    { key: 'savingThrows', type: 'checks', label: 'Saving Throw Proficiencies', options: () => hbAbilityOptions(), max: 2 },
+      options: () => _getHomebrewAbilityOptions(), value: 'int', showIf: v => v.spellcasting !== 'none' },
+    { key: 'primaryAbility', type: 'checks', label: 'Primary Ability', options: () => _getHomebrewAbilityOptions() },
+    { key: 'savingThrows', type: 'checks', label: 'Saving Throw Proficiencies', options: () => _getHomebrewAbilityOptions(), max: 2 },
     { key: 'armor', type: 'text', label: 'Armor Training', half: true, placeholder: 'Light and Medium armor, Shields' },
     { key: 'weapons', type: 'text', label: 'Weapon Proficiencies', half: true, placeholder: 'Simple weapons' },
     { key: 'tools', type: 'text', label: 'Tool Proficiencies', half: true, placeholder: 'None' },
@@ -76,7 +61,7 @@ const HB_FORMS = {
 
   subclass: () => [
     { key: 'name', type: 'text', label: 'Name', required: true, half: true, placeholder: 'e.g. Path of the Storm' },
-    { key: 'className', type: 'select', label: 'Class', half: true, options: () => hbClassNames(), required: true },
+    { key: 'className', type: 'select', label: 'Class', half: true, options: () => _getHomebrewClassNames(), required: true },
     { key: 'source', type: 'text', label: 'Source', half: true, placeholder: 'HB' },
     { key: 'description', type: 'textarea', label: 'Description', rows: 3 },
     { key: 'features', type: 'levels', label: 'Features by Level' },
@@ -97,8 +82,8 @@ const HB_FORMS = {
     { key: 'name', type: 'text', label: 'Name', required: true, half: true, placeholder: 'e.g. Lighthouse Keeper' },
     { key: 'source', type: 'text', label: 'Source', half: true, placeholder: 'HB' },
     { key: 'description', type: 'textarea', label: 'Description', rows: 3 },
-    { key: 'abilityScores', type: 'checks', label: 'Ability Scores', options: () => hbAbilityOptions(), max: 3 },
-    { key: 'skills', type: 'checks', label: 'Skill Proficiencies', options: () => hbSkillOptions(), max: 2 },
+    { key: 'abilityScores', type: 'checks', label: 'Ability Scores', options: () => _getHomebrewAbilityOptions(), max: 3 },
+    { key: 'skills', type: 'checks', label: 'Skill Proficiencies', options: () => _getHomebrewSkillOptions(), max: 2 },
     { key: 'feat', type: 'text', label: 'Feat', half: true, placeholder: 'e.g. Alert' },
     { key: 'tools', type: 'text', label: 'Tool Proficiency', half: true, placeholder: "e.g. Navigator's Tools" },
     { key: 'equipment', type: 'textarea', label: 'Equipment', rows: 2, placeholder: 'Choose A or B: (A) … ; or (B) 50 GP' },
@@ -136,7 +121,7 @@ const HB_FORMS = {
     { key: 'duration', type: 'text', label: 'Duration', half: true, value: 'Instantaneous' },
     { key: 'description', type: 'textarea', label: 'Description', rows: 5,
       placeholder: 'What the spell does. Markdown works — put upcasting under **_Using a Higher-Level Spell Slot._**' },
-    { key: 'classes', type: 'checks', label: 'Spell Lists', options: () => hbClassNames() },
+    { key: 'classes', type: 'checks', label: 'Spell Lists', options: () => _getHomebrewClassNames() },
   ],
 };
 
@@ -175,7 +160,7 @@ const HB_FROM_ENTRY = {
       tags: (e.tags ?? []).join(', '),
       cost: parseCostObj(e.cost),
       stackable: isStackable(e),
-      stackSize: isStackable(e) ? stackSizeOf(e) : 10,
+      stackSize: isStackable(e) ? getItemStackSize(e) : 10,
       attunement: !!e.attunement,
       container: !!e.container,
     };
@@ -185,9 +170,15 @@ const HB_FROM_ENTRY = {
   },
 };
 
-// =============================================================================
-// THE PANEL
-// =============================================================================
+// Every class a subclass could belong to, or a spell be on the list of: the
+// app's own and this account's homebrew ones, by name.
+function _getHomebrewClassNames() {
+  const names = getAllClasses().map(c => c.name)
+    .concat(getHomebrewEntriesOfKind('class').map(e => e.name));
+  return [...new Set(names.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+// ─── THE PANEL ─────────────────────────────────────────────────────────────
 const hbModalEl   = document.getElementById('homebrew-modal');
 const hbPickerEl  = document.getElementById('homebrew-picker');
 const hbEditorEl  = document.getElementById('homebrew-editor');
@@ -198,21 +189,22 @@ const hbTitleEl   = document.getElementById('homebrew-editor-title');
 // editor face is showing; null on the picker.
 let hbEdit = null;
 
+// Opens the New Homebrew panel on its kind picker.
 function openHomebrewPanel() {
-  showHomebrewPicker();
+  _showHomebrewPicker();
   showModal('homebrew-modal');
 }
 
-// Straight into the editor for an existing entry — a click on its file in the
-// tree. There is no picker to go back to, so Back is hidden.
+// Opens the editor straight onto an existing entry (a click on its tree file).
+// There is no picker to go back to, so Back is hidden.
 function openHomebrewEntry(id) {
   const entry = state.homebrew.entries[id];
   if (!entry) return;
-  showHomebrewEditor(entry.kind, entry);
+  _showHomebrewEditor(entry.kind, entry);
   showModal('homebrew-modal');
 }
 
-function showHomebrewPicker() {
+function _showHomebrewPicker() {
   hbEdit = null;
   hbModalEl.querySelector('.modal-box').classList.remove('editing');
   hbPickerEl.classList.remove('hidden');
@@ -220,18 +212,18 @@ function showHomebrewPicker() {
   hbPickerEl.querySelector('.hb-pick')?.focus();
 }
 
-function showHomebrewEditor(kind, entry = null) {
+function _showHomebrewEditor(kind, entry = null) {
   const fields = HB_FORMS[kind]();
   const fromEntry = HB_FROM_ENTRY[kind] ?? (e => e);
   hbEdit = { kind, entryId: entry?.id ?? null, fields, values: {}, dirty: false };
 
-  fields.forEach(f => { hbEdit.values[f.key] = hbDefaultValue(f); });
+  fields.forEach(f => { hbEdit.values[f.key] = _getHomebrewFieldDefault(f); });
   if (entry) {
     const saved = fromEntry(entry);
-    fields.forEach(f => { if (saved[f.key] !== undefined) hbEdit.values[f.key] = hbClone(saved[f.key]); });
+    fields.forEach(f => { if (saved[f.key] !== undefined) hbEdit.values[f.key] = _cloneHomebrewValue(saved[f.key]); });
   }
 
-  const label = homebrewKindLabel(kind);
+  const label = getHomebrewKindLabel(kind);
   hbTitleEl.textContent = entry ? `Edit ${label}` : `New ${label}`;
   document.getElementById('homebrew-back-btn').classList.toggle('hidden', !!entry);
   document.getElementById('homebrew-delete-btn').classList.toggle('hidden', !entry);
@@ -246,10 +238,10 @@ function showHomebrewEditor(kind, entry = null) {
   hbFormEl.querySelector('input, select, textarea')?.focus();
 }
 
-function hbClone(v) { return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; }
+function _cloneHomebrewValue(v) { return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; }
 
-function hbDefaultValue(f) {
-  if (f.value !== undefined) return hbClone(f.value);
+function _getHomebrewFieldDefault(f) {
+  if (f.value !== undefined) return _cloneHomebrewValue(f.value);
   switch (f.type) {
     case 'checks':           return [];
     case 'toggle':           return false;
@@ -258,7 +250,7 @@ function hbDefaultValue(f) {
     case 'levels':
     case 'traits':           return [];
     case 'select': {
-      const first = hbOptions(f)[0];
+      const first = _getHomebrewFieldOptions(f)[0];
       return first ? first[0] : '';
     }
     default:                 return '';
@@ -266,14 +258,14 @@ function hbDefaultValue(f) {
 }
 
 // Options as [value, label] pairs, whatever shape the spec gave them in.
-function hbOptions(f) {
+function _getHomebrewFieldOptions(f) {
   const raw = typeof f.options === 'function' ? f.options() : (f.options ?? []);
   return raw.map(o => (Array.isArray(o) ? o : [o, o]));
 }
 
 // Any edit: remember there is something to lose, and re-check which fields
 // are shown (a toggle can reveal or hide others).
-function hbTouched() {
+function _markHomebrewFormTouched() {
   if (!hbEdit) return;
   hbEdit.dirty = true;
   hbFormEl.querySelectorAll('[data-hb-field]').forEach(el => {
@@ -282,9 +274,8 @@ function hbTouched() {
   });
 }
 
-// =============================================================================
-// THE FORM BUILDER
-// =============================================================================
+// ─── THE FORM BUILDER ──────────────────────────────────────────────────────
+// Rebuilds the editor's fields from the current form state.
 function renderHomebrewForm() {
   hbFormEl.innerHTML = '';
   const { fields } = hbEdit;
@@ -293,18 +284,18 @@ function renderHomebrewForm() {
     if (f.half && fields[i + 1]?.half) {
       const row = document.createElement('div');
       row.className = 'form-two-col';
-      row.append(hbFieldEl(f), hbFieldEl(fields[i + 1]));
+      row.append(_buildHomebrewFieldEl(f), _buildHomebrewFieldEl(fields[i + 1]));
       hbFormEl.appendChild(row);
       i++;
     } else {
-      hbFormEl.appendChild(hbFieldEl(f));
+      hbFormEl.appendChild(_buildHomebrewFieldEl(f));
     }
   }
-  hbTouched();
+  _markHomebrewFormTouched();
   hbEdit.dirty = false;
 }
 
-function hbFieldEl(f) {
+function _buildHomebrewFieldEl(f) {
   const wrap = document.createElement(['text', 'number', 'textarea', 'select'].includes(f.type) ? 'label' : 'div');
   wrap.className = 'field hb-field hb-field-' + f.type;
   wrap.dataset.hbField = f.key;
@@ -316,7 +307,7 @@ function hbFieldEl(f) {
   }
 
   const v = hbEdit.values;
-  const set = val => { v[f.key] = val; hbTouched(); };
+  const setValue = val => { v[f.key] = val; _markHomebrewFormTouched(); };
 
   switch (f.type) {
     case 'text':
@@ -329,7 +320,7 @@ function hbFieldEl(f) {
       input.placeholder = f.placeholder ?? '';
       input.value = v[f.key] ?? '';
       input.addEventListener('input', () =>
-        set(f.type === 'number' ? (input.value === '' ? '' : Number(input.value)) : input.value));
+        setValue(f.type === 'number' ? (input.value === '' ? '' : Number(input.value)) : input.value));
       wrap.appendChild(input);
       break;
     }
@@ -338,13 +329,13 @@ function hbFieldEl(f) {
       ta.rows = f.rows ?? 3;
       ta.placeholder = f.placeholder ?? '';
       ta.value = v[f.key] ?? '';
-      ta.addEventListener('input', () => set(ta.value));
+      ta.addEventListener('input', () => setValue(ta.value));
       wrap.appendChild(ta);
       break;
     }
     case 'select': {
       const sel = document.createElement('select');
-      const opts = hbOptions(f);
+      const opts = _getHomebrewFieldOptions(f);
       // A saved value the list no longer offers (a homebrew class since
       // deleted) is kept as an option rather than silently swapped.
       if (v[f.key] && !opts.some(([val]) => val === v[f.key])) opts.unshift([v[f.key], v[f.key]]);
@@ -355,7 +346,7 @@ function hbFieldEl(f) {
         sel.appendChild(o);
       });
       sel.value = v[f.key] ?? '';
-      sel.addEventListener('change', () => set(sel.value));
+      sel.addEventListener('change', () => setValue(sel.value));
       wrap.appendChild(sel);
       break;
     }
@@ -365,33 +356,33 @@ function hbFieldEl(f) {
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.checked = !!v[f.key];
-      box.addEventListener('change', () => set(box.checked));
+      box.addEventListener('change', () => setValue(box.checked));
       label.append(box, document.createTextNode(f.label));
       wrap.appendChild(label);
       break;
     }
-    case 'checks':  wrap.appendChild(hbChecksEl(f)); break;
-    case 'cost':    wrap.appendChild(hbCostEl(f)); break;
-    case 'shape':   wrap.appendChild(hbShapeEl(f)); break;
-    case 'levels':  wrap.appendChild(hbLevelsEl(f)); break;
-    case 'traits':  wrap.appendChild(hbTraitsEl(f)); break;
+    case 'checks':  wrap.appendChild(_buildHomebrewChecksEl(f)); break;
+    case 'cost':    wrap.appendChild(_buildHomebrewCostEl(f)); break;
+    case 'shape':   wrap.appendChild(_buildHomebrewShapeEl(f)); break;
+    case 'levels':  wrap.appendChild(_buildHomebrewLevelsEl(f)); break;
+    case 'traits':  wrap.appendChild(_buildHomebrewTraitsEl(f)); break;
   }
   return wrap;
 }
 
 // A row of pill checkboxes. `max` stops further picks once reached, rather than
 // quietly unticking an earlier one.
-function hbChecksEl(f) {
+function _buildHomebrewChecksEl(f) {
   const box = document.createElement('div');
   box.className = 'hb-checks';
   const picked = () => hbEdit.values[f.key];
-  const opts = hbOptions(f);
+  const opts = _getHomebrewFieldOptions(f);
   // Picks the list no longer offers stay visible, so saving never drops them.
   picked().forEach(val => { if (!opts.some(([o]) => o === val)) opts.push([val, val]); });
 
-  const sync = () => {
-    const full = f.max && picked().length >= f.max;
-    box.querySelectorAll('input').forEach(input => { input.disabled = !input.checked && !!full; });
+  const syncDisabledBoxes = () => {
+    const isFull = f.max && picked().length >= f.max;
+    box.querySelectorAll('input').forEach(input => { input.disabled = !input.checked && !!isFull; });
   };
   opts.forEach(([val, text]) => {
     const label = document.createElement('label');
@@ -403,8 +394,8 @@ function hbChecksEl(f) {
       hbEdit.values[f.key] = input.checked
         ? picked().concat(val)
         : picked().filter(x => x !== val);
-      sync();
-      hbTouched();
+      syncDisabledBoxes();
+      _markHomebrewFormTouched();
     });
     label.append(input, document.createTextNode(text));
     box.appendChild(label);
@@ -415,11 +406,11 @@ function hbChecksEl(f) {
     none.textContent = 'Nothing to choose from yet.';
     box.appendChild(none);
   }
-  sync();
+  syncDisabledBoxes();
   return box;
 }
 
-function hbCostEl(f) {
+function _buildHomebrewCostEl(f) {
   const row = document.createElement('div');
   row.className = 'cost-inputs';
   ['pp', 'gp', 'ep', 'sp', 'cp'].forEach(d => {
@@ -434,7 +425,7 @@ function hbCostEl(f) {
     input.value = hbEdit.values[f.key][d] ?? 0;
     input.addEventListener('input', () => {
       hbEdit.values[f.key][d] = Math.max(0, parseInt(input.value, 10) || 0);
-      hbTouched();
+      _markHomebrewFormTouched();
     });
     label.append(tag, input);
     row.appendChild(label);
@@ -442,9 +433,9 @@ function hbCostEl(f) {
   return row;
 }
 
-// The item's shape, as a preview and a button into the same painter the New
-// Item dialog uses (shape-painter.js). Weight is the filled count, 1 lb a cell.
-function hbShapeEl(f) {
+// The item's shape, as a preview and a button into the shared shape painter.
+// Weight is the filled count, 1 lb a cell.
+function _buildHomebrewShapeEl(f) {
   const box = document.createElement('div');
   box.className = 'shape-preview-row';
   const preview = document.createElement('button');
@@ -461,27 +452,27 @@ function hbShapeEl(f) {
 
   const draw = () => {
     renderShapePreview(preview, hbEdit.values[f.key]);
-    weight.textContent = `${shapeWeight(hbEdit.values[f.key])} lb`;
+    weight.textContent = `${getShapeWeight(hbEdit.values[f.key])} lb`;
   };
-  const open = () => openShapePainter(hbEdit.values[f.key], shape => {
+  const openPainter = () => openShapePainter(hbEdit.values[f.key], shape => {
     hbEdit.values[f.key] = shape;
     draw();
-    hbTouched();
+    _markHomebrewFormTouched();
   });
-  preview.addEventListener('click', open);
-  edit.addEventListener('click', open);
+  preview.addEventListener('click', openPainter);
+  edit.addEventListener('click', openPainter);
   box.append(preview, edit, weight);
   draw();
   return box;
 }
 
-function hbNewPartId(prefix) {
+function _createHomebrewPartId(prefix) {
   return prefix + Math.random().toString(36).slice(2, 9);
 }
 
-// One feature or trait: a name, a Markdown description, and — per caller — a
-// level box or the "this is where the subclass is chosen" toggle.
-function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
+// One feature or trait card: a name, a Markdown description, and per caller a
+// level box or the "the subclass is chosen here" toggle.
+function _buildHomebrewPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
   const card = document.createElement('div');
   card.className = 'hb-part';
 
@@ -492,7 +483,7 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
   name.maxLength = 80;
   name.placeholder = 'Name';
   name.value = part.name ?? '';
-  name.addEventListener('input', () => { part.name = name.value; hbTouched(); });
+  name.addEventListener('input', () => { part.name = name.value; _markHomebrewFormTouched(); });
   head.appendChild(name);
 
   if (levelBox) {
@@ -508,7 +499,7 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
     input.value = part.level ?? 1;
     input.addEventListener('input', () => {
       part.level = Math.max(1, Math.min(HB_LEVELS, parseInt(input.value, 10) || 1));
-      hbTouched();
+      _markHomebrewFormTouched();
     });
     lvl.append(tag, input);
     head.appendChild(lvl);
@@ -522,7 +513,7 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
   remove.setAttribute('aria-label', 'Remove');
   remove.addEventListener('click', () => {
     list.splice(list.indexOf(part), 1);
-    hbTouched();
+    _markHomebrewFormTouched();
     onRemove();
   });
   head.appendChild(remove);
@@ -531,7 +522,7 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
   desc.rows = 2;
   desc.placeholder = 'What it does. Markdown works.';
   desc.value = part.description ?? '';
-  desc.addEventListener('input', () => { part.description = desc.value; hbTouched(); });
+  desc.addEventListener('input', () => { part.description = desc.value; _markHomebrewFormTouched(); });
 
   card.append(head, desc);
 
@@ -543,7 +534,7 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
     box.checked = (part.unlocks ?? []).includes('subclass');
     box.addEventListener('change', () => {
       part.unlocks = box.checked ? ['subclass'] : [];
-      hbTouched();
+      _markHomebrewFormTouched();
     });
     label.append(box, document.createTextNode('The subclass is chosen here'));
     card.appendChild(label);
@@ -551,11 +542,10 @@ function hbPartEl(part, list, { onRemove, levelBox, subclassToggle }) {
   return card;
 }
 
-// A class's (or subclass's) progression: one band per level, 1 to 20, each
-// listing what arrives there, with the proficiency bonus alongside the way the
-// book's class table prints it. The features are one flat array, each carrying
-// its own `level` — `data/classes.json`'s shape — grouped only for display.
-function hbLevelsEl(f) {
+// A class's (or subclass's) progression: one band per level with its proficiency
+// bonus. Features stay one flat array, each with its own `level` (the
+// data/classes.json shape), grouped only for display.
+function _buildHomebrewLevelsEl(f) {
   const box = document.createElement('div');
   box.className = 'hb-levels';
   const features = hbEdit.values[f.key];
@@ -584,8 +574,8 @@ function hbLevelsEl(f) {
       add.className = 'btn-sm hb-level-add';
       setIconLabel(add, 'plus', 'Feature');
       add.addEventListener('click', () => {
-        features.push({ id: hbNewPartId('hbfeat_'), level, name: '', description: '', unlocks: [] });
-        hbTouched();
+        features.push({ id: _createHomebrewPartId('hbfeat_'), level, name: '', description: '', unlocks: [] });
+        _markHomebrewFormTouched();
         draw();
         // The new feature's name, ready to type into.
         const inputs = box.querySelectorAll(`.hb-level[data-level="${level}"] .hb-part-head input[type=text]`);
@@ -595,7 +585,7 @@ function hbLevelsEl(f) {
       band.dataset.level = level;
       band.appendChild(head);
 
-      here.forEach(part => band.appendChild(hbPartEl(part, features, {
+      here.forEach(part => band.appendChild(_buildHomebrewPartEl(part, features, {
         onRemove: draw, subclassToggle: f.subclassToggle,
       })));
       box.appendChild(band);
@@ -605,9 +595,9 @@ function hbLevelsEl(f) {
   return box;
 }
 
-// A species' traits: most arrive at level 1, a few later — `level` is optional
-// in `data/species.json`, so a level-1 trait is saved without one.
-function hbTraitsEl(f) {
+// A species' traits. `level` is optional in data/species.json, so a level-1
+// trait is saved without one.
+function _buildHomebrewTraitsEl(f) {
   const box = document.createElement('div');
   box.className = 'hb-traits';
   const traits = hbEdit.values[f.key];
@@ -615,15 +605,15 @@ function hbTraitsEl(f) {
   list.className = 'hb-trait-list';
   const draw = () => {
     list.innerHTML = '';
-    traits.forEach(t => list.appendChild(hbPartEl(t, traits, { onRemove: draw, levelBox: true })));
+    traits.forEach(t => list.appendChild(_buildHomebrewPartEl(t, traits, { onRemove: draw, levelBox: true })));
   };
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'btn-sm';
   setIconLabel(add, 'plus', 'Add Trait');
   add.addEventListener('click', () => {
-    traits.push({ id: hbNewPartId('hbtrait_'), name: '', level: 1, description: '' });
-    hbTouched();
+    traits.push({ id: _createHomebrewPartId('hbtrait_'), name: '', level: 1, description: '' });
+    _markHomebrewFormTouched();
     draw();
     list.querySelector('.hb-part:last-child input[type=text]')?.focus();
   });
@@ -632,10 +622,8 @@ function hbTraitsEl(f) {
   return box;
 }
 
-// =============================================================================
-// SAVING
-// =============================================================================
-function saveHomebrewForm() {
+// ─── SAVING ────────────────────────────────────────────────────────────────
+function _saveHomebrewForm() {
   if (!hbEdit) return;
   const { kind, fields, values, entryId } = hbEdit;
 
@@ -649,7 +637,7 @@ function saveHomebrewForm() {
   }
 
   // Unnamed features/traits are the "+ Feature" pressed and never filled in.
-  const clean = { ...hbClone(values), name };
+  const clean = { ..._cloneHomebrewValue(values), name };
   ['features', 'traits'].forEach(key => {
     if (!Array.isArray(clean[key])) return;
     clean[key] = clean[key]
@@ -669,21 +657,19 @@ function saveHomebrewForm() {
   hideModal('homebrew-modal');
 }
 
-// Leaving with edits unsaved asks first — a class's twenty levels are a lot to
-// lose to a stray click on the backdrop.
-function confirmHomebrewDiscard() {
+// Leaving with unsaved edits asks first; a class's twenty levels are a lot to
+// lose to a stray backdrop click.
+function _confirmHomebrewDiscard() {
   return !hbEdit?.dirty || confirm('Discard this homebrew? What you have filled in will be lost.');
 }
 
-function closeHomebrewPanel() {
-  if (!confirmHomebrewDiscard()) return;
+function _closeHomebrewPanel() {
+  if (!_confirmHomebrewDiscard()) return;
   hbEdit = null;
   hideModal('homebrew-modal');
 }
 
-// =============================================================================
-// WIRING
-// =============================================================================
+// ─── WIRING ────────────────────────────────────────────────────────────────
 HOMEBREW_KINDS.forEach(k => {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -696,13 +682,13 @@ HOMEBREW_KINDS.forEach(k => {
   blurb.className = 'hb-pick-blurb';
   blurb.textContent = HB_PICKER_BLURBS[k.id];
   btn.append(title, blurb);
-  btn.addEventListener('click', () => showHomebrewEditor(k.id));
+  btn.addEventListener('click', () => _showHomebrewEditor(k.id));
   document.getElementById('homebrew-pick-grid').appendChild(btn);
 });
 
-document.getElementById('homebrew-save-btn').addEventListener('click', saveHomebrewForm);
+document.getElementById('homebrew-save-btn').addEventListener('click', _saveHomebrewForm);
 document.getElementById('homebrew-back-btn').addEventListener('click', () => {
-  if (confirmHomebrewDiscard()) showHomebrewPicker();
+  if (_confirmHomebrewDiscard()) _showHomebrewPicker();
 });
 document.getElementById('homebrew-delete-btn').addEventListener('click', () => {
   const entry = hbEdit?.entryId && state.homebrew.entries[hbEdit.entryId];
@@ -713,19 +699,19 @@ document.getElementById('homebrew-delete-btn').addEventListener('click', () => {
   hideModal('homebrew-modal');
 });
 hbModalEl.querySelectorAll('.homebrew-close-btn').forEach(btn =>
-  btn.addEventListener('click', closeHomebrewPanel));
+  btn.addEventListener('click', _closeHomebrewPanel));
 
 // The shared backdrop closes every modal but this one (`data-backdrop-close`,
 // modals.js); here it goes through the discard check instead.
 document.getElementById('modal-backdrop').addEventListener('click', () => {
-  if (!hbModalEl.classList.contains('hidden')) closeHomebrewPanel();
+  if (!hbModalEl.classList.contains('hidden')) _closeHomebrewPanel();
 });
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || hbModalEl.classList.contains('hidden')) return;
   // A modal opened over this one closes first.
-  const open = [...document.querySelectorAll('.modal:not(.hidden)')];
-  if (open.some(m => m !== hbModalEl)) return;
+  const openModals = [...document.querySelectorAll('.modal:not(.hidden)')];
+  if (openModals.some(m => m !== hbModalEl)) return;
   e.preventDefault();
-  closeHomebrewPanel();
+  _closeHomebrewPanel();
 });

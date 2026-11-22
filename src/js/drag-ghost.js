@@ -3,23 +3,23 @@
 // =============================================================================
 'use strict';
 
+const FOLDER_HINT_OFFSET = 16; // px between cursor and folder hint, so it never sits under it
+
 const ghostEl = document.getElementById('drag-ghost');
-let ghostShape = null;
-let ghostRarity = 'common';
 let lastPointerX = 0, lastPointerY = 0;
+let ghostShapeKey = ''; // rarity + shape of the built ghost; '' forces a rebuild
+let highlightedCells = [];
 
 // Track pointer position globally so keyboard handlers can reference it
 document.addEventListener('pointermove', e => { lastPointerX = e.clientX; lastPointerY = e.clientY; }, { passive: true });
 
-// Rebuild the ghost element's shape DOM (cheap to skip when shape unchanged)
-let ghostShapeKey = '';
+// ─── GHOST ───────────────────────────────────────────────────────────────────
+// Build the ghost's cells for a shape and rarity; a no-op when already built.
 function initGhostEl(shape, rarity) {
   const key = rarity + '|' + shape.map(r => r.join('')).join('|');
-  if (key === ghostShapeKey) return; // Already built
+  if (key === ghostShapeKey) return;
   ghostShapeKey = key;
-  ghostShape = shape;
-  ghostRarity = rarity;
-  const dims = shapeDims(shape);
+  const dims = getShapeDims(shape);
   ghostEl.style.gridTemplateColumns = `repeat(${dims.cols}, ${CELL}px)`;
   ghostEl.style.width  = dims.cols * CELL + 'px';
   ghostEl.style.height = dims.rows * CELL + 'px';
@@ -48,6 +48,7 @@ function initGhostEl(shape, rarity) {
   }));
 }
 
+// Show the ghost for a shape at screen position (x, y).
 function showGhost(shape, rarity, x, y) {
   initGhostEl(shape, rarity);
   ghostEl.style.display = ''; // ensure visible (clears any setGhostVisibility(false))
@@ -55,21 +56,23 @@ function showGhost(shape, rarity, x, y) {
   ghostEl.style.top  = y + 'px';
 }
 
-function moveGhost(x, y, valid) {
+// Move the ghost; `isValid` true/false tints it, anything else leaves it plain.
+function moveGhost(x, y, isValid) {
   ghostEl.style.left = x + 'px';
   ghostEl.style.top  = y + 'px';
   ghostEl.classList.remove('valid', 'invalid');
-  if (valid === true)  ghostEl.classList.add('valid');
-  if (valid === false) ghostEl.classList.add('invalid');
+  if (isValid === true)  ghostEl.classList.add('valid');
+  if (isValid === false) ghostEl.classList.add('invalid');
 }
 
+// Hide the ghost and forget its shape, so the next show rebuilds it.
 function hideGhost() {
   ghostEl.className = 'hidden';
   ghostEl.style.display = ''; // reset any inline visibility set by setGhostVisibility
-  ghostShape = null;
   ghostShapeKey = '';
 }
 
+// Screen position of a grid cell's top-left corner. The anchor arguments are unused.
 function getGhostScreenPos(anchorRow, anchorCol, gridRow, gridCol) {
   const rect = gridEl.getBoundingClientRect();
   return {
@@ -78,13 +81,14 @@ function getGhostScreenPos(anchorRow, anchorCol, gridRow, gridCol) {
   };
 }
 
-// Show/hide ghost without clearing its shape state (use before/after grid area)
-function setGhostVisibility(visible) {
-  ghostEl.style.display = visible ? '' : 'none';
+// Show or hide the ghost without clearing its shape (cursor entering/leaving the grid).
+function setGhostVisibility(isVisible) {
+  ghostEl.style.display = isVisible ? '' : 'none';
 }
 
+// ─── DROP TARGETS ────────────────────────────────────────────────────────────
 // Find the equip slot card at a screen point using bounding-rect checks.
-// Avoids elementFromPoint which can return the ghost div even with pointer-events:none.
+// Avoids elementFromPoint, which can return the ghost even with pointer-events:none.
 function getEquipCardAtPoint(x, y) {
   for (const card of document.querySelectorAll('.eq-card')) {
     const r = card.getBoundingClientRect();
@@ -94,10 +98,9 @@ function getEquipCardAtPoint(x, y) {
 }
 
 // The whole folder is a drop target, not just its header. The list is a flat run
-// of headers and cards, so a folder is the BAND from its header to the next —
-// hence walking the children in order rather than hit-testing each. Where in the
-// band the item lands is not read (order is the sort's business).
-function getFolderDropAtPoint(x, y) {
+// of headers and cards, so a folder is the BAND from its header to the next,
+// found by walking the children in order. Position within the band is ignored.
+function _getFolderDropAtPoint(x, y) {
   const listEl = document.getElementById('item-list');
   if (!listEl.classList.contains('foldered')) return null;
   const lr = listEl.getBoundingClientRect();
@@ -113,16 +116,16 @@ function getFolderDropAtPoint(x, y) {
 }
 
 // The folder a drag would file into, or null. A drop back into the item's own
-// folder is NOT a target — it reads as a cancelled drag.
-function folderDropTargetFor(templateId, x, y) {
-  const id = getFolderDropAtPoint(x, y);
+// folder is NOT a target; it reads as a cancelled drag.
+function getFolderDropTarget(templateId, x, y) {
+  const id = _getFolderDropAtPoint(x, y);
   if (!id) return null;
-  return id === (folderOf(templateId) ?? UNFILED_ID) ? null : id;
+  return id === (getItemFolderId(templateId) ?? UNFILED_ID) ? null : id;
 }
 
 // The whole band lights, header and cards together. `cls` is `drop-target` (a
 // folder the item would move into) or `drop-current` (the one it is in).
-function setFolderBandClass(folderId, cls) {
+function _addFolderBandClass(folderId, cls) {
   if (!folderId) return;
   document.querySelectorAll(
     `#item-list .folder-header[data-folder-id="${folderId}"], ` +
@@ -130,22 +133,22 @@ function setFolderBandClass(folderId, cls) {
   ).forEach(el => el.classList.add(cls));
 }
 
+// Clear every folder band highlight and the drop hint.
 function clearFolderDropTargets() {
   document.querySelectorAll('#item-list .drop-target, #item-list .drop-current')
     .forEach(el => el.classList.remove('drop-target', 'drop-current'));
-  hideFolderDropHint();
+  _hideFolderDropHint();
 }
 
-// ─── THE FOLDER DROP HINT ────────────────────────────────────────────────────
-// A chip at the cursor naming the folder — the band is the area, this is the
-// answer (a folder taller than the list hides its own header).
+// ─── FOLDER DROP HINT ────────────────────────────────────────────────────────
+// A chip at the cursor naming the folder, since a folder taller than the list
+// hides its own header.
 const folderDropHintEl = document.getElementById('folder-drop-hint');
-const FOLDER_HINT_OFFSET = 16; // clear of the cursor, so it never sits under it
 
-function showFolderDropHint(text, blocked, x, y) {
+function _showFolderDropHint(text, isBlocked, x, y) {
   folderDropHintEl.textContent = text;
   folderDropHintEl.classList.remove('hidden');
-  folderDropHintEl.classList.toggle('blocked', !!blocked);
+  folderDropHintEl.classList.toggle('blocked', !!isBlocked);
   // Flip to the other side of the cursor rather than run off the edge; measured
   // after the text is in, since the chip is as wide as the folder's name.
   const w = folderDropHintEl.offsetWidth, h = folderDropHintEl.offsetHeight;
@@ -157,41 +160,43 @@ function showFolderDropHint(text, blocked, x, y) {
   folderDropHintEl.style.top  = top + 'px';
 }
 
-function hideFolderDropHint() {
+function _hideFolderDropHint() {
   folderDropHintEl.className = 'hidden';
 }
 
-// The whole of a browse drag's folder feedback in one call — band, chip and
-// answer cannot disagree. Returns { folderId, hovering }: `folderId` is where a
-// drop would move the item (null for none); `hovering` is true over ANY folder
-// band (including the item's own, where the grid preview must not get a look in).
+// All of a browse drag's folder feedback in one call, so band, chip and answer
+// agree. Returns { folderId, hovering }: `folderId` is where a drop would move the
+// item (or null); `hovering` is true over ANY band, the item's own included,
+// where the grid preview must stay out.
 function showFolderDropFeedback(templateId, x, y) {
   clearFolderDropTargets();
-  const hoverId = getFolderDropAtPoint(x, y);
+  const hoverId = _getFolderDropAtPoint(x, y);
   if (!hoverId) return { folderId: null, hovering: false };
 
-  const folderId = folderDropTargetFor(templateId, x, y);
+  const folderId = getFolderDropTarget(templateId, x, y);
   if (folderId) {
-    setFolderBandClass(folderId, 'drop-target');
-    showFolderDropHint('Move to ' + folderNameOf(folderId), false, x, y);
+    _addFolderBandClass(folderId, 'drop-target');
+    _showFolderDropHint('Move to ' + getFolderName(folderId), false, x, y);
   } else {
-    // The item's own folder — say so rather than leave a dead patch of list.
-    setFolderBandClass(hoverId, 'drop-current');
-    showFolderDropHint('Already in ' + folderNameOf(hoverId), true, x, y);
+    // The item's own folder: say so rather than leave a dead patch of list
+    _addFolderBandClass(hoverId, 'drop-current');
+    _showFolderDropHint('Already in ' + getFolderName(hoverId), true, x, y);
   }
   return { folderId, hovering: true };
 }
 
-// Highlight / unhighlight cells
-let highlightedCells = [];
-function highlightCells(shape, gridRow, gridCol, valid) {
+// ─── CELL HIGHLIGHTS ─────────────────────────────────────────────────────────
+// Highlight the grid cells a shape would cover at (gridRow, gridCol).
+function highlightCells(shape, gridRow, gridCol, isValid) {
   clearHighlights();
-  const cls = valid ? 'highlight-valid' : 'highlight-invalid';
+  const cls = isValid ? 'highlight-valid' : 'highlight-invalid';
   getShapeCells(shape, gridRow, gridCol).forEach(({ row, col }) => {
     const cell = gridEl.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
     if (cell) { cell.classList.add(cls); highlightedCells.push(cell); }
   });
 }
+
+// Remove every cell highlight.
 function clearHighlights() {
   highlightedCells.forEach(c => c.classList.remove('highlight-valid', 'highlight-invalid'));
   highlightedCells = [];

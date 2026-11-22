@@ -3,6 +3,9 @@
 // =============================================================================
 'use strict';
 
+// ─── PLACING MODE ────────────────────────────────────────────────────────────
+// Enter PLACING mode for a template: the ghost follows the cursor until a click
+// drops a copy, a right-click or Escape cancels.
 function startPlacing(templateId) {
   if (isReadOnly()) return;
   if (state.db[templateId]?.abstract) return; // a magic family's header — see items.js
@@ -15,11 +18,12 @@ function startPlacing(templateId) {
   showTemplateDetails(templateId);
 
   // Attach document-level handlers
-  document.addEventListener('mousemove', onPlacingMouseMove);
-  document.addEventListener('click', onPlacingClick, true);
-  document.addEventListener('contextmenu', onPlacingRightClick, true);
+  document.addEventListener('mousemove', _onPlacingMouseMove);
+  document.addEventListener('click', _onPlacingClick, true);
+  document.addEventListener('contextmenu', _onPlacingRightClick, true);
 }
 
+// Leave PLACING mode, if active, and remove its document handlers.
 function cancelPlacing() {
   if (state.mode !== 'placing') return;
   state.mode = 'idle';
@@ -28,24 +32,27 @@ function cancelPlacing() {
   document.body.style.userSelect = '';
   hideGhost();
   clearHighlights();
-  document.removeEventListener('mousemove', onPlacingMouseMove);
-  document.removeEventListener('click', onPlacingClick, true);
-  document.removeEventListener('contextmenu', onPlacingRightClick, true);
+  document.removeEventListener('mousemove', _onPlacingMouseMove);
+  document.removeEventListener('click', _onPlacingClick, true);
+  document.removeEventListener('contextmenu', _onPlacingRightClick, true);
   renderItemList();
   renderStash();
 }
 
+// ─── STASH ───────────────────────────────────────────────────────────────────
+// Add one unplaced instance of a template to the stash.
 function addToStash(templateId) {
   if (isReadOnly()) return;
   const t = state.db[templateId];
   if (!t) return;
-  const id = newId();
+  const id = createInstanceId();
   state.instances[id] = { id, templateId, rotation: 0, row: null, col: null, stackCount: 1, containerId: state.activeContainer ?? null };
   renderStash();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
+// Move every item placed in the active grid into the stash.
 function stashAllItems() {
   const activeContainerId = state.activeContainer;
   const placed = Object.values(state.instances).filter(i =>
@@ -59,9 +66,10 @@ function stashAllItems() {
   });
   renderAllItems();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
+// Draw the stash: the unplaced items of the active grid, with their controls.
 function renderStash() {
   const section = document.getElementById('stash-section');
   const list    = document.getElementById('stash-list');
@@ -75,7 +83,7 @@ function renderStash() {
     (i.containerId ?? null) === activeContainerId && i.row !== null && i.row !== undefined
   );
 
-  // Always show when there are unplaced items; also show when there are placed items (for Stash All button)
+  // Shown while anything is unplaced, or placed (for the Stash All button)
   section.classList.toggle('hidden', unplaced.length === 0 && !hasPlaced);
 
   const countEl = document.getElementById('stash-count');
@@ -89,14 +97,14 @@ function renderStash() {
   unplaced.forEach(inst => {
     const t = state.db[inst.templateId];
     if (!t) return;
-    const color = rarityColor(t.rarity);
+    const color = getRarityColor(t.rarity);
 
     const card = document.createElement('div');
     card.className = 'stash-card';
     card.title = 'Drag onto the grid to place · click for details';
 
     const shape = normalizeShape(isStackable(t) ? [[1]] : t.shape);
-    const { rows, cols } = shapeDims(shape);
+    const { rows, cols } = getShapeDims(shape);
     const preview = document.createElement('div');
     preview.className = 'stash-shape';
     preview.style.gridTemplateColumns = `repeat(${cols}, 10px)`;
@@ -121,7 +129,7 @@ function renderStash() {
       delete state.instances[inst.id];
       renderStash();
       updateWeightDisplay();
-      debouncedSync();
+      scheduleSaveAndSync();
     });
 
     card.appendChild(preview);
@@ -139,47 +147,48 @@ function renderStash() {
   });
 }
 
-function onPlacingMouseMove(e) {
+// ─── PLACING HANDLERS ────────────────────────────────────────────────────────
+function _onPlacingMouseMove(e) {
   if (state.mode !== 'placing') return;
   const { templateId, rotation } = state.placing;
   const t = state.db[templateId];
   if (!t) return;
 
   const shape = getRotatedShape(t.shape, rotation);
-  const dims  = shapeDims(shape);
-  initGhostEl(shape, t.rarity); // No-op if shape/rarity unchanged
+  const dims  = getShapeDims(shape);
+  initGhostEl(shape, t.rarity); // no-op if shape and rarity are unchanged
 
-  const pos = cursorToGridPos(e.clientX, e.clientY, 0, 0);
+  const pos = getGridPosAtCursor(e.clientX, e.clientY, 0, 0);
 
   if (pos) {
     const { row: gr, col: gc } = pos;
     const screenPos = getGhostScreenPos(0, 0, gr, gc);
-    const valid = canPlace(shape, gr, gc);
+    const isValid = canPlace(shape, gr, gc);
     setGhostVisibility(true);
-    moveGhost(screenPos.x, screenPos.y, valid);
-    highlightCells(shape, gr, gc, valid);
+    moveGhost(screenPos.x, screenPos.y, isValid);
+    highlightCells(shape, gr, gc, isValid);
   } else {
     setGhostVisibility(false);
     clearHighlights();
   }
 }
 
-function onPlacingClick(e) {
+function _onPlacingClick(e) {
   if (state.mode !== 'placing') return;
   const { templateId, rotation } = state.placing;
   const t = state.db[templateId];
   if (!t) { cancelPlacing(); return; }
 
-  const pos = cursorToGridPos(e.clientX, e.clientY, 0, 0);
+  const pos = getGridPosAtCursor(e.clientX, e.clientY, 0, 0);
   if (!pos) { cancelPlacing(); return; }
 
   const shape = getRotatedShape(t.shape, rotation);
-  if (!canPlace(shape, pos.row, pos.col)) return; // Invalid — stay in placing mode
+  if (!canPlace(shape, pos.row, pos.col)) return; // invalid: stay in placing mode
 
   e.stopPropagation();
 
   if (isStackable(t)) {
-    openStackModal(stackSizeOf(t), count => finalizePlacement(t, shape, rotation, pos.row, pos.col, count));
+    openStackModal(getItemStackSize(t), count => finalizePlacement(t, shape, rotation, pos.row, pos.col, count));
     cancelPlacing();
   } else {
     finalizePlacement(t, shape, rotation, pos.row, pos.col, 1);
@@ -187,17 +196,18 @@ function onPlacingClick(e) {
   }
 }
 
-function onPlacingRightClick(e) {
+function _onPlacingRightClick(e) {
   e.preventDefault();
   e.stopPropagation();
   cancelPlacing();
 }
 
+// Create an instance of `template` at (row, col) on the active grid and redraw.
 function finalizePlacement(template, shape, rotation, row, col, stackCount) {
-  const id = newId();
+  const id = createInstanceId();
   state.instances[id] = { id, templateId: template.id, rotation, row, col, stackCount, containerId: state.activeContainer ?? null };
   placeOnGrid(id, shape, row, col);
-  // Initialize container grid for newly placed container items
+  // A newly placed container needs its own grid
   if (template.container && !state.containerGrids[id]) initContainerGrid(id);
   renderPlacedItem(state.instances[id]);
   updateGridFade();
@@ -205,5 +215,5 @@ function finalizePlacement(template, shape, rotation, row, col, stackCount) {
   renderStash();
   renderEquipPanel();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 }

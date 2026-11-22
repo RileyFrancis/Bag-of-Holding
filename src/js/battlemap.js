@@ -1,5 +1,5 @@
 // =============================================================================
-// BATTLEMAP — the table's maps: the model, the GM's library, and line of sight
+// BATTLEMAP — the table's maps: the model, the Firebase seam, and line of sight
 // =============================================================================
 'use strict';
 
@@ -19,188 +19,159 @@
 //           | { id, kind:'circle', x, y, r }
 //           | { id, kind:'poly',   points: [[x,y], [x,y], ...] }
 //
-// A wall, a fog mask and an elevation zone are three uses of the same shape —
-// the GM's Shape and Mode toolbar picks one of each independently (see THE
-// TOOLBAR in battlemap-view.js). `rayShapeHit()`/`rayShapeSpan()`/
-// `pointInWall()`/`traceMapShape()` are the one place each `kind` is handled,
-// so nothing that draws or casts a ray against a wall has to know a lasso
-// from a rectangle.
+// A wall, a fog mask and an elevation zone are three uses of the same shape.
+// The ray tests, isPointInWall() and the canvas's shape tracer (battlemap-view.js) are the
+// one place each `kind` is handled, so nothing else has to tell a lasso from a
+// rectangle.
 //
-// Every coordinate in the model is in the image's own pixels — never screen
-// pixels, never cells — because that is the one frame every client agrees on.
-// Reveal and fog are pacing, not security. This file is the model, the Firebase
-// seam and the geometry; battlemap-view.js is the canvas. See CLAUDE.md § Battle maps.
+// Every coordinate is in the image's own pixels, never screen pixels or cells:
+// that is the one frame every client agrees on. Reveal and fog are pacing, not
+// security. battlemap-view.js is the canvas.
 
-// =============================================================================
-// SHAPE OF A MAP
-// =============================================================================
-const MAP_GRID_DEFAULT = { type: 'square', size: 70, offsetX: 0, offsetY: 0, visible: true };
+// The standard 5-foot square, the unit a character's Speed is written in.
+const MAP_FEET_PER_CELL = 5;
 
-// The `color` here is only the fallback — the real one is the `--hostility-*`
-// token (see hostilityColor()).
-const HOSTILITY = {
-  party:   { label: 'Party',   color: '#2f7d3f' },
-  neutral: { label: 'Neutral', color: '#b08108' },
-  hostile: { label: 'Hostile', color: '#a5312a' },
-};
-const HOSTILITY_ORDER = ['party', 'neutral', 'hostile'];
+// px; the floor is what getMapCellSize() accepts back, the ceiling is the number
+// boxes' own, so a dragged size and a typed one agree.
+const MAP_GRID_MIN_SIZE = 8;
+const MAP_GRID_MAX_SIZE = 600;
 
-// A token's `size` is stored as a number of cells, not a word, so the geometry
-// never has to look one up and a homebrew size still works.
-const CREATURE_SIZES = [
-  { id: 'tiny',        label: 'Tiny',        cells: 0.5 },
-  { id: 'medium',      label: 'Small / Medium', cells: 1 },
-  { id: 'large',       label: 'Large',       cells: 2 },
-  { id: 'huge',        label: 'Huge',        cells: 3 },
-  { id: 'gargantuan',  label: 'Gargantuan',  cells: 4 },
-];
+const TAU = Math.PI * 2;
+const VISION_SWEEP = 180;    // rays in the uniform fan
+const VISION_NUDGE = 0.0006; // radians either side of a corner
 
-// A short opinionated list, not free text — a token is read at a glance across a
-// shared board.
-const CREATURE_ICONS = [
-  '🗡️', '🏹', '🛡️', '🪄', '✨', '🎵', '🐺', '🐉', '🕷️', '🦇',
-  '💀', '👹', '👻', '🧟', '🐻', '🐍', '🔥', '🧊', '⭐', '❓',
-];
+// Read out of CSS and cached. Baked into canvas fills and inline `--hc`, so a
+// palette swap must clear it and redraw (`_rerenderThemedContent()`).
+let hostilityColorCache = {};
 
-function mapGrid(map) {
+let partyBattlemapRef = null;
+
+// ─── SHAPE OF A MAP ─────────────────────────────────────────────────────────
+
+// The map's grid settings, with defaults filled in.
+function getMapGrid(map) {
   return { ...MAP_GRID_DEFAULT, ...(map?.grid ?? {}) };
 }
 
-// One cell, in image pixels. Never zero — it divides.
-function mapCellSize(map) {
-  const s = mapGrid(map).size;
-  return Number.isFinite(s) && s >= 4 ? s : MAP_GRID_DEFAULT.size;
+// One cell, in image pixels. Never zero: it divides.
+function getMapCellSize(map) {
+  const size = getMapGrid(map).size;
+  return Number.isFinite(size) && size >= 4 ? size : MAP_GRID_DEFAULT.size;
 }
 
-// This app assumes the standard 5-foot square — nothing about a map says
-// otherwise, and it is the unit a character's Speed stat is already written
-// in.
-const MAP_FEET_PER_CELL = 5;
-
-// Movement is measured on the grid a creature actually stands on, not the
-// picture underneath it: Manhattan distance between the cells a drag starts
-// and ends in (a diagonal step costs both axes, not the shorter straight line
-// between them), snapped through the same snapToGrid() a token's real
-// position is always in — so the answer is always a whole number of squares,
-// never a fraction of one. See the MOVEMENT section of
-// battlemap-initiative.js.
-function gridManhattanFeet(map, x0, y0, x1, y1, sizeCells) {
-  const cell = mapCellSize(map);
+// Movement in feet: Manhattan distance between the snapped cells a drag starts
+// and ends in, so the answer is always a whole number of squares.
+function getGridManhattanFeet(map, x0, y0, x1, y1, sizeCells) {
+  const cell = getMapCellSize(map);
   const p0 = snapToGrid(map, x0, y0, sizeCells);
   const p1 = snapToGrid(map, x1, y1, sizeCells);
   const cells = Math.round(Math.abs(p1.x - p0.x) / cell) + Math.round(Math.abs(p1.y - p0.y) / cell);
   return cells * MAP_FEET_PER_CELL;
 }
 
-// The same distance, unsnapped — continuous rather than stepped, so a live
-// drag in progress can be pulled back smoothly instead of jumping cell to
-// cell. Only for that: what is actually shown and spent is always the snapped
-// figure above.
-function gridManhattanFeetRaw(map, x0, y0, x1, y1) {
-  const cell = mapCellSize(map);
+// The same distance unsnapped, so a live drag can be pulled back smoothly.
+// What is shown and spent is always the snapped figure.
+function getGridManhattanFeetRaw(map, x0, y0, x1, y1) {
+  const cell = getMapCellSize(map);
   return (Math.abs(x1 - x0) + Math.abs(y1 - y0)) / cell * MAP_FEET_PER_CELL;
 }
 
-// A grid figure is fractional, stored to two places — somebody else's picture is
-// rarely a whole number of pixels per square, and rounding to one drifts up to
-// half a pixel per square (unmissable by the thirtieth).
+// Rounds a grid figure to two places. Not to whole pixels: that drifts up to
+// half a pixel per square, unmissable by the thirtieth.
 function roundGridValue(v) {
   return Number.isFinite(v) ? Math.round(v * 100) / 100 : 0;
 }
 
-// An offset means the same thing every cell along, so it is kept inside one cell
-// — an offset of 1840 in a number box means 24.
-function wrapGridOffset(v, cell) {
+// An offset means the same every cell along, so it is kept inside one cell.
+function _wrapGridOffset(v, cell) {
   if (!Number.isFinite(v) || !(cell > 0)) return 0;
   return roundGridValue(((v % cell) + cell) % cell);
 }
 
-// The size range a grid may be given. Floor is what mapCellSize() accepts back,
-// ceiling is the number boxes' own, so a dragged size and a typed one agree.
-const MAP_GRID_MIN_SIZE = 8;
-const MAP_GRID_MAX_SIZE = 600;
-
-function clampGridSize(v) {
+function _clampGridSize(v) {
   if (!Number.isFinite(v)) return MAP_GRID_DEFAULT.size;
   return Math.max(MAP_GRID_MIN_SIZE, Math.min(MAP_GRID_MAX_SIZE, v));
 }
 
-function gridSizeOf(grid) {
-  const s = grid?.size;
-  return Number.isFinite(s) && s >= 4 ? s : MAP_GRID_DEFAULT.size;
+function _getGridSize(grid) {
+  const size = grid?.size;
+  return Number.isFinite(size) && size >= 4 ? size : MAP_GRID_DEFAULT.size;
 }
 
-// Scale the whole grid about one point: a line at `x` lands at
-// `pivot + (x - pivot) * k`, so the offset moves by that and the size multiplies
-// — one transform describes the whole grid. The applied factor is read off the
-// CLAMPED size, or an offset would go on scaling past the size limits and slide
-// the grid sideways.
+// Scales the whole grid about one point and returns the { size, offsetX,
+// offsetY } patch. The factor is read off the CLAMPED size, or the offset would
+// keep scaling past the size limits and slide the grid sideways.
 function scaleGridAbout(grid, pivot, k) {
-  const base = gridSizeOf(grid);
-  const size = clampGridSize(base * k);
+  const base = _getGridSize(grid);
+  const size = _clampGridSize(base * k);
   const applied = size / base;
   return {
     size: roundGridValue(size),
-    offsetX: wrapGridOffset(pivot.x + (grid.offsetX - pivot.x) * applied, size),
-    offsetY: wrapGridOffset(pivot.y + (grid.offsetY - pivot.y) * applied, size),
+    offsetX: _wrapGridOffset(pivot.x + (grid.offsetX - pivot.x) * applied, size),
+    offsetY: _wrapGridOffset(pivot.y + (grid.offsetY - pivot.y) * applied, size),
   };
 }
 
-// Slide: the size is untouched and both offsets take the pointer's delta.
+// Slides the grid by the pointer's delta; returns the { offsetX, offsetY } patch.
 function slideGridBy(grid, dx, dy) {
-  const cell = gridSizeOf(grid);
+  const cell = _getGridSize(grid);
   return {
-    offsetX: wrapGridOffset(grid.offsetX + dx, cell),
-    offsetY: wrapGridOffset(grid.offsetY + dy, cell),
+    offsetX: _wrapGridOffset(grid.offsetX + dx, cell),
+    offsetY: _wrapGridOffset(grid.offsetY + dy, cell),
   };
 }
 
-function mapTokens(map) {
+// The map's creatures, as an array.
+function getMapTokens(map) {
   return Object.values(map?.tokens ?? {}).filter(t => t && t.id);
 }
-function mapWalls(map) {
+
+// The map's walls, as an array.
+function getMapWalls(map) {
   return Object.values(map?.walls ?? {}).filter(w => w && w.id);
 }
-function mapMasks(map) {
+
+// The map's fog masks, as an array.
+function getMapMasks(map) {
   return Object.values(map?.masks ?? {}).filter(m => m && m.id);
 }
 
 // A token's radius in image pixels. Tokens are circular.
-function tokenRadius(map, token) {
-  return (token.size ?? 1) * mapCellSize(map) / 2;
+function getTokenRadius(map, token) {
+  return (token.size ?? 1) * getMapCellSize(map) / 2;
 }
 
-// Read out of CSS and cached, like rarityColor() — baked into a canvas fill and
-// the icon buttons' inline `--hc`, so a palette swap must clear the cache and
-// redraw (`rerenderThemedContent()`).
-let _hostilityColorCache = {};
-
-function hostilityColor(h) {
+// The colour for a hostility key, from the `--hostility-*` token (cached).
+function getHostilityColor(h) {
   const key = HOSTILITY[h] ? h : 'neutral';
-  if (_hostilityColorCache[key]) return _hostilityColorCache[key];
+  if (hostilityColorCache[key]) return hostilityColorCache[key];
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue('--hostility-' + key).trim();
   const color = fromCss || HOSTILITY[key].color;
-  _hostilityColorCache[key] = color;
+  hostilityColorCache[key] = color;
   return color;
 }
 
-function clearHostilityColorCache() { _hostilityColorCache = {}; }
+// Forgets the cached hostility colours; call on a palette change.
+function clearHostilityColorCache() { hostilityColorCache = {}; }
 
-function newMapId()   { return 'map_'  + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
-function newPieceId(p) { return p + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+// A fresh map id.
+function createMapId()   { return 'map_'  + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
 
-// =============================================================================
-// FIREBASE
-// =============================================================================
-function battlemapPath(rest) {
+// A fresh piece id with prefix `p`. It leads with Date.now() (see getPieceTime()).
+function createPieceId(p) { return p + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+
+// ─── FIREBASE ───────────────────────────────────────────────────────────────
+
+function _getBattlemapPath(rest) {
   return `parties/${state.party.code}/battlemap` + (rest ? '/' + rest : '');
 }
-function battlemapRef(rest) { return firebaseDb.ref(battlemapPath(rest)); }
-function mapRef(mapId, rest) { return battlemapRef('maps/' + mapId + (rest ? '/' + rest : '')); }
+function _getBattlemapRef(rest) { return firebaseDb.ref(_getBattlemapPath(rest)); }
 
-let partyBattlemapRef = null;
+// The Firebase ref of one map, or of `rest` beneath it.
+function getMapRef(mapId, rest) { return _getBattlemapRef('maps/' + mapId + (rest ? '/' + rest : '')); }
 
+// Starts mirroring the party's battlemap node into `state.battlemap`.
 function subscribeToBattlemap(code) {
   unsubscribeFromBattlemap();
   if (!firebaseDb) return;
@@ -210,180 +181,187 @@ function subscribeToBattlemap(code) {
     state.battlemap = { activeId: val.activeId ?? null, maps: val.maps ?? {} };
     // The map the GM was editing may have been deleted from another tab.
     if (state.mapLibraryOpenId && !state.battlemap.maps[state.mapLibraryOpenId]) state.mapLibraryOpenId = null;
-    onBattlemapChanged();
+    _onBattlemapChanged();
   });
 }
 
+// Stops mirroring and empties `state.battlemap`.
 function unsubscribeFromBattlemap() {
   if (partyBattlemapRef) { partyBattlemapRef.off(); partyBattlemapRef = null; }
   state.battlemap = { activeId: null, maps: {} };
   state.mapLibraryOpenId = null;
-  onBattlemapChanged();
+  _onBattlemapChanged();
 }
 
 // Everything that has to notice a map changing, in one place.
-function onBattlemapChanged() {
+function _onBattlemapChanged() {
   syncLeftPanel();      // a first map makes the GM's Maps tab appear
   syncMapButton();
-  onBattlemapDataChanged(); // battlemap-view.js — redraws, or closes a map that went away
-  // Against the party's actual map, not whichever one a GM has open — see
-  // syncMyTurnBorder() in battlemap-initiative.js. Runs even off the map view,
-  // since the turn border is meant to reach a reader looking at their sheet.
+  onBattlemapDataChanged(); // redraws, or closes a map that went away
+  // Runs even off the map view: the turn border must reach a reader on their sheet.
   syncMyTurnBorder();
 }
 
-// =============================================================================
-// WHO SEES WHAT
-// =============================================================================
+// ─── WHO SEES WHAT ──────────────────────────────────────────────────────────
+
+// Whether this reader is the GM of an active party.
 function isMapGM() { return state.party.active && state.party.role === 'gm'; }
 
-// The GM alone edits the terrain, the grid and the fog. Adding a creature is
-// everyone's — see canAddCreature().
+// The GM alone edits the terrain, the grid and the fog; adding a creature is
+// everyone's (canAddCreature()).
 function canEditMap() { return isMapGM(); }
 
-// A creature is anybody's — deliberately NOT gated by isReadOnly(), which guards
+// A creature is anybody's: deliberately NOT gated by isReadOnly(), which guards
 // a *character*.
 function canAddCreature() { return state.party.active && isSignedIn(); }
 
-function allMaps() {
+// Every map in the library, in the GM's order.
+function getAllMaps() {
   return Object.values(state.battlemap?.maps ?? {})
     .filter(m => m && m.id)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-function mapById(id) { return id ? (state.battlemap?.maps ?? {})[id] ?? null : null; }
+// The map with this id, or null.
+function getMapById(id) { return id ? (state.battlemap?.maps ?? {})[id] ?? null : null; }
 
-function activeMapId() { return state.battlemap?.activeId ?? null; }
+// The id of the map the party is on, or null.
+function getActiveMapId() { return state.battlemap?.activeId ?? null; }
 
-// The map the party is on, as this reader may see it. A GM always gets it; a
-// player only once it is revealed.
-function mapForViewer() {
-  const map = mapById(activeMapId());
+// The map the party is on, as this reader may see it: a GM always, a player
+// only once it is revealed.
+function getMapForViewer() {
+  const map = getMapById(getActiveMapId());
   if (!map) return null;
   if (isMapGM()) return map;
   return map.revealed ? map : null;
 }
 
-// =============================================================================
-// GM EDITS
-// =============================================================================
+// ─── GM EDITS ───────────────────────────────────────────────────────────────
+
+// Puts the party on a map (null for none).
 function setActiveMap(mapId) {
   if (!canEditMap() || !firebaseDb) return;
-  battlemapRef('activeId').set(mapId ?? null);
+  _getBattlemapRef('activeId').set(mapId ?? null);
 }
 
+// Shows a map to the players or hides it.
 function setMapRevealed(mapId, revealed) {
   if (!canEditMap() || !firebaseDb) return;
-  mapRef(mapId).update({ revealed: !!revealed });
+  getMapRef(mapId).update({ revealed: !!revealed });
 }
 
+// Deletes a map and everything on it, after a confirm.
 function deleteMap(map) {
   if (!canEditMap() || !firebaseDb) return;
   if (!confirm(`Delete “${map.name}”? Its creatures, walls and fog go with it.`)) return;
   if (state.mapLibraryOpenId === map.id) state.mapLibraryOpenId = null;
-  if (activeMapId() === map.id) battlemapRef('activeId').set(null);
-  mapRef(map.id).remove();
+  if (getActiveMapId() === map.id) _getBattlemapRef('activeId').set(null);
+  getMapRef(map.id).remove();
   renderMapPanel();
 }
 
+// Writes a partial grid change over the map's current grid.
 function updateMapGrid(mapId, patch) {
   if (!canEditMap() || !firebaseDb) return;
-  const map = mapById(mapId);
+  const map = getMapById(mapId);
   if (!map) return;
-  mapRef(mapId, 'grid').set({ ...mapGrid(map), ...patch });
+  getMapRef(mapId, 'grid').set({ ...getMapGrid(map), ...patch });
 }
 
-// ─── CREATURES ─────────────────────────────────────────────────────────────
+// ─── CREATURES ──────────────────────────────────────────────────────────────
+
+// Places a creature; returns its new id, or null when not allowed.
 function addToken(mapId, token) {
   if (!canAddCreature() || !firebaseDb) return null;
-  const id = newPieceId('tok');
-  // Ordinarily a marker belongs to whoever placed it — but the GM may hand one
-  // straight to a player (creature-owner-field in the creature modal), which is
-  // why `token.ownerUid` is honoured first and only for the GM.
-  const ownerUid = (isMapGM() && token.ownerUid) ? token.ownerUid : (ownPlayerId() ?? '');
-  mapRef(mapId, 'tokens/' + id).set({ ...token, id, ownerUid });
+  const id = createPieceId('tok');
+  // A marker belongs to whoever placed it, but the GM may hand one straight to
+  // a player, so `token.ownerUid` is honoured only for the GM.
+  const ownerUid = (isMapGM() && token.ownerUid) ? token.ownerUid : (getOwnPlayerId() ?? '');
+  getMapRef(mapId, 'tokens/' + id).set({ ...token, id, ownerUid });
   return id;
 }
 
+// Writes a partial change to one creature.
 function updateToken(mapId, tokenId, patch) {
   if (!firebaseDb || !state.party.active) return;
-  mapRef(mapId, 'tokens/' + tokenId).update(patch);
+  getMapRef(mapId, 'tokens/' + tokenId).update(patch);
 }
 
-// Removed, or dragged (see onMapPointerDown in battlemap-view.js), by whoever
-// put it there, or by the GM. Pacing, like everything else a token permits —
-// see CLAUDE.md § Party membership.
+// Whether this reader may move or remove a token: whoever placed it, or the GM.
+// Pacing, not security.
 function canControlToken(token) {
-  return canEditMap() || (token.ownerUid && token.ownerUid === ownPlayerId());
+  return canEditMap() || (token.ownerUid && token.ownerUid === getOwnPlayerId());
 }
 
-// The account behind a token's ownerUid is one of the party's players (as
-// opposed to the GM, or nobody) — what the purple ring on the board means, and
-// half of what canControlToken() gates.
-function tokenOwnedByPlayer(token) {
+// Whether a token's owner is one of the party's players (not the GM, not
+// nobody): what the purple ring on the board means.
+function isTokenOwnedByPlayer(token) {
   return !!(token && token.ownerUid && state.party.players && state.party.players[token.ownerUid]);
 }
 
+// Removes one creature from a map.
 function removeToken(mapId, tokenId) {
   if (!firebaseDb) return;
-  mapRef(mapId, 'tokens/' + tokenId).remove();
+  getMapRef(mapId, 'tokens/' + tokenId).remove();
 }
 
-// ─── WALLS AND FOG REGIONS ─────────────────────────────────────────────────
+// ─── WALLS AND FOG REGIONS ──────────────────────────────────────────────────
+
+// Adds a wall shape to a map.
 function addWall(mapId, wall) {
   if (!canEditMap() || !firebaseDb) return;
-  const id = newPieceId('wall');
-  mapRef(mapId, 'walls/' + id).set({ ...wall, id });
+  const id = createPieceId('wall');
+  getMapRef(mapId, 'walls/' + id).set({ ...wall, id });
 }
 
+// Adds a fog mask shape to a map.
 function addMask(mapId, mask) {
   if (!canEditMap() || !firebaseDb) return;
-  const id = newPieceId('mask');
-  mapRef(mapId, 'masks/' + id).set({ ...mask, id });
+  const id = createPieceId('mask');
+  getMapRef(mapId, 'masks/' + id).set({ ...mask, id });
 }
 
+// Adds an elevation zone shape to a map.
 function addElevationZone(mapId, zone) {
   if (!canEditMap() || !firebaseDb) return;
-  const id = newPieceId('elev');
-  mapRef(mapId, 'elevation/' + id).set({ ...zone, id });
+  const id = createPieceId('elev');
+  getMapRef(mapId, 'elevation/' + id).set({ ...zone, id });
 }
 
+// Sets an elevation zone's height in feet (clamped).
 function setElevationHeight(mapId, id, height) {
   if (!canEditMap() || !firebaseDb) return;
-  mapRef(mapId, 'elevation/' + id + '/height').set(clampElevHeight(height));
+  getMapRef(mapId, 'elevation/' + id + '/height').set(clampElevHeight(height));
 }
 
+// Removes one wall, mask or elevation zone (`kind` is its model key).
 function removePiece(mapId, kind, id) {
   if (!canEditMap() || !firebaseDb) return;
-  mapRef(mapId, kind + '/' + id).remove();
+  getMapRef(mapId, kind + '/' + id).remove();
 }
 
-// When a piece was placed, read back out of its id (newPieceId() leads with
-// Date.now() in base 36) — so every piece already on a map has one, with no
-// field to add or migrate. 0 for an id that doesn't parse.
-function pieceTime(piece) {
-  const m = /^[a-z]+_([0-9a-z]+)_/.exec(String(piece?.id ?? ''));
-  return m ? parseInt(m[1], 36) : 0;
+// When a piece was placed, read back out of its id, so no field is needed.
+// 0 for an id that doesn't parse.
+function getPieceTime(piece) {
+  const match = /^[a-z]+_([0-9a-z]+)_/.exec(String(piece?.id ?? ''));
+  return match ? parseInt(match[1], 36) : 0;
 }
 
+// Removes every piece of one kind from a map, after a confirm.
 function clearMapPieces(mapId, kind, label) {
   if (!canEditMap() || !firebaseDb) return;
   if (!confirm(`Remove every ${label} from this map?`)) return;
-  mapRef(mapId, kind).remove();
+  getMapRef(mapId, kind).remove();
 }
 
-// =============================================================================
-// GEOMETRY — line of sight
-// =============================================================================
-// Straight lines from every party member, stopped by a wall the GM drew. Worked
-// out as a polygon per source, not a grid of lit cells — a map is a picture, and
-// the grid can be moved under it. Pacing, not security (computed and drawn on
-// the reader's own machine).
+// ─── GEOMETRY: LINE OF SIGHT ────────────────────────────────────────────────
+// Straight lines from every party member, stopped by walls. A polygon per
+// source, not lit cells: a map is a picture and the grid can move under it.
 
-// A ray against an axis-aligned rectangle (slab method). Returns the distance to
-// the near face, or null for a miss. The ray direction is a unit vector, so t is
-// in image pixels.
-function rayRect(ox, oy, dx, dy, r) {
+// Ray against an axis-aligned rectangle (slab method). Distance to the near
+// face in image pixels (the direction is a unit vector), or null for a miss.
+function _getRayRectHit(ox, oy, dx, dy, r) {
   let tmin = -Infinity, tmax = Infinity;
   const slab = (o, d, lo, hi) => {
     if (Math.abs(d) < 1e-9) return o >= lo && o <= hi;
@@ -398,7 +376,7 @@ function rayRect(ox, oy, dx, dy, r) {
   return tmin > 0 ? tmin : null; // a source inside the box is handled by the caller
 }
 
-function rayCircle(ox, oy, dx, dy, c) {
+function _getRayCircleHit(ox, oy, dx, dy, c) {
   const fx = ox - c.x, fy = oy - c.y;
   const b = 2 * (fx * dx + fy * dy);
   const cc = fx * fx + fy * fy - c.r * c.r;
@@ -411,48 +389,39 @@ function rayCircle(ox, oy, dx, dy, c) {
   return null;
 }
 
-// Even-odd ray casting, the standard test — a ray to +∞ along x crosses the
-// polygon's edges an odd number of times iff the point is inside.
-function pointInPolygon(x, y, points) {
-  let inside = false;
+// Even-odd ray casting.
+function _isPointInPolygon(x, y, points) {
+  let isInside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i], [xj, yj] = points[j];
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) isInside = !isInside;
   }
-  return inside;
+  return isInside;
 }
 
-function pointInWall(x, y, w) {
+// Whether a point lies inside a shape (wall, mask or elevation zone).
+function isPointInWall(x, y, w) {
   if (w.kind === 'circle') {
     const dx = x - w.x, dy = y - w.y;
     return dx * dx + dy * dy <= (w.r ?? 0) * (w.r ?? 0);
   }
-  if (w.kind === 'poly') return pointInPolygon(x, y, w.points || []);
+  if (w.kind === 'poly') return _isPointInPolygon(x, y, w.points || []);
   return x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h;
 }
 
-// The angles worth casting at: a uniform sweep, plus three rays at every corner
-// (one either side by a hair) — the straddling pair makes a shadow's edge a
-// straight line. Every angle is normalized into [0, 2π) before the sort — NOT a
-// tidy-up: `Math.atan2` answers in (-π, π] while the fan is written over
-// [0, 2π), so a raw sort interleaves two numberings and the coarse pass paints
-// over the shadow the corner rays cut.
-const TAU = Math.PI * 2;
-const VISION_SWEEP = 180;   // the uniform fan, in rays
-const VISION_NUDGE = 0.0006; // radians either side of a corner
-
-function normAngle(a) {
+function _normalizeAngle(a) {
   const m = a % TAU;
   return m < 0 ? m + TAU : m;
 }
 
-// `extraShapes` is aimed at too but never blocks a ray outright — elevation
-// zones ride along here so their edges cut a crisp line in the fog exactly
-// like a wall's, even though what happens at that edge (see the ELEVATION
-// section) is a distance-dependent taper rather than a hard stop.
-function visionAngles(ox, oy, walls, bounds, extraShapes) {
+// The angles worth casting at: a uniform sweep plus three rays at every corner
+// (one either side by a hair), so a shadow's edge is straight. Every angle is
+// normalized into [0, 2π) before the sort, NOT a tidy-up: atan2 answers in
+// (-π, π], and a mixed sort lets the coarse pass paint over corner shadows.
+// `extraShapes` (elevation zones) are aimed at but never block outright.
+function _getVisionAngles(ox, oy, walls, bounds, extraShapes) {
   const angles = [];
-  const push = a => angles.push(normAngle(a));
+  const push = a => angles.push(_normalizeAngle(a));
 
   for (let i = 0; i < VISION_SWEEP; i++) push(i * TAU / VISION_SWEEP);
 
@@ -463,13 +432,12 @@ function visionAngles(ox, oy, walls, bounds, extraShapes) {
 
   const aimShape = w => {
     if (w.kind === 'circle') {
-      // The two tangents — past either the ray misses the disc, which is where
-      // the shadow's edge is.
+      // The two tangents, where the shadow's edge is.
       const dx = w.x - ox, dy = w.y - oy;
-      const d = Math.hypot(dx, dy);
-      if (d <= (w.r ?? 0) || !d) return;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= (w.r ?? 0) || !dist) return;
       const base = Math.atan2(dy, dx);
-      const spread = Math.asin(Math.min(1, (w.r ?? 0) / d));
+      const spread = Math.asin(Math.min(1, (w.r ?? 0) / dist));
       push(base - spread - VISION_NUDGE); push(base - spread + VISION_NUDGE);
       push(base + spread - VISION_NUDGE); push(base + spread + VISION_NUDGE);
     } else if (w.kind === 'poly') {
@@ -487,106 +455,90 @@ function visionAngles(ox, oy, walls, bounds, extraShapes) {
 
   angles.sort((a, b) => a - b);
 
-  // Two rays a ten-thousandth of a radian apart are the same ray — drop the
-  // duplicates so the polygon carries no zero-length edges.
-  const out = [];
-  for (const a of angles) if (!out.length || a - out[out.length - 1] > 1e-7) out.push(a);
-  return out;
+  // Drop near-duplicate rays so the polygon carries no zero-length edges.
+  const unique = [];
+  for (const a of angles) if (!unique.length || a - unique[unique.length - 1] > 1e-7) unique.push(a);
+  return unique;
 }
 
 // The polygon one creature can see, in image pixels. A wall containing the
-// source is skipped. `elev` is optional — { zones, sourceHeight, ownZone,
-// cellPx } from elevationViewFor() — and shortens rays exactly as a wall
-// would, except by how far rather than whether at all. See the ELEVATION
-// section below and CLAUDE.md § The fog / Elevation.
+// source is skipped. `elev` (optional, from getElevationViewFor()) shortens rays
+// like a wall, by how far rather than whether.
 function computeVisionPolygon(ox, oy, walls, bounds, elev) {
-  const live = walls.filter(w => !pointInWall(ox, oy, w));
+  const liveWalls = walls.filter(w => !isPointInWall(ox, oy, w));
   // Never further than the far corner of the map, so the fan always terminates.
   const reach = Math.hypot(bounds.w, bounds.h) + Math.hypot(ox - bounds.x, oy - bounds.y);
-  const higherZones = elev ? elev.zones.filter(z => elevZoneHeight(z) > elev.sourceHeight) : [];
+  const higherZones = elev ? elev.zones.filter(z => getElevZoneHeight(z) > elev.sourceHeight) : [];
 
-  return visionAngles(ox, oy, live, bounds, elev ? elev.zones : null).map(a => {
+  return _getVisionAngles(ox, oy, liveWalls, bounds, elev ? elev.zones : null).map(a => {
     const dx = Math.cos(a), dy = Math.sin(a);
     let t = reach;
-    for (const w of live) {
-      const hit = rayShapeHit(ox, oy, dx, dy, w);
+    for (const w of liveWalls) {
+      const hit = _getRayShapeHit(ox, oy, dx, dy, w);
       if (hit !== null && hit < t) t = hit;
     }
-    if (elev) t = Math.min(t, elevationRayLimit(ox, oy, dx, dy, elev, higherZones));
+    if (elev) t = Math.min(t, _getElevationRayLimit(ox, oy, dx, dy, elev, higherZones));
     return [ox + dx * t, oy + dy * t];
   });
 }
 
-// Every creature the party can see out of — a union, so one player sees what
+// Every creature the party sees out of: a union, so one player sees what
 // another sees.
-function visionSources(map) {
-  return mapTokens(map).filter(t => t.hostility === 'party');
+function getVisionSources(map) {
+  return getMapTokens(map).filter(t => t.hostility === 'party');
 }
 
-// =============================================================================
-// GEOMETRY — elevation
-// =============================================================================
-// The GM paints zones, each with a `height` in feet in [-500, 500]. The base
-// map is height 0 and has no shape; every zone's height is measured from it.
-// Looking down is always free (a viewer sees every level below their own, no
-// matter the distance); looking up is not blocked outright, only *tapered*: the
-// farther back a viewer stands from a rise, the more of it they can see past its
-// edge, on the reasoning that a shallow enough sightline clears it. Right at the
-// foot of a cliff you see none of what is above it.
+// ─── GEOMETRY: ELEVATION ────────────────────────────────────────────────────
+// Each zone has a `height` in feet in [-500, 500], measured from the base map
+// (height 0). Looking down is always free. Looking up is tapered, never blocked
+// outright: the farther a viewer stands from a rise, the more of it they see.
 //
-// f(d) = floor(2d / h)   — d is how far the viewer is from the zone and h is the
-// zone's height RELATIVE to the viewer's own ground (zoneHeight − viewerHeight),
-// both in feet. f(d) is a count of tiles the viewer can see into the zone past
-// its near edge. h ≤ 0 means the viewer is level with or above the zone and
-// f(d) ≤ 0 — they see into it unimpeded.
-function elevZoneHeight(z) {
+// f(d) = floor(2d / h): tiles visible past the zone's near edge, where d is the
+// viewer's distance to it and h its height RELATIVE to the viewer's ground, both
+// in feet. h ≤ 0 is unimpeded.
+
+// A zone's height in feet from the base map.
+function getElevZoneHeight(z) {
   const h = Number(z?.height);
   if (Number.isFinite(h)) return h;
-  return z?.level === 'low' ? -20 : z?.level === 'high' ? 20 : 0; // legacy zones
+  return z?.level === 'low' ? -20 : z?.level === 'high' ? 20 : 0; // zones saved with a `level` word
 }
+
+// Clamps a typed height to a whole number of feet in [-500, 500].
 function clampElevHeight(v) {
   return Math.max(-500, Math.min(500, Math.round(Number(v) || 0)));
 }
 
-function mapElevationZones(map) {
+// The map's elevation zones, as an array.
+function getMapElevationZones(map) {
   return Object.values(map?.elevation ?? {}).filter(z => z && z.id);
 }
 
-// Last drawn wins where two zones overlap — the same rule a fog mask follows.
-function elevationZoneAt(map, x, y) {
-  const zones = mapElevationZones(map);
-  for (let i = zones.length - 1; i >= 0; i--) if (pointInWall(x, y, zones[i])) return zones[i];
+// Last drawn wins where two zones overlap, the same rule a fog mask follows.
+function _getElevationZoneAt(map, x, y) {
+  const zones = getMapElevationZones(map);
+  for (let i = zones.length - 1; i >= 0; i--) if (isPointInWall(x, y, zones[i])) return zones[i];
   return null;
 }
-// The ground height at a point, in feet from the base map (0 where unpainted).
-function elevationAt(map, x, y) {
-  const zone = elevationZoneAt(map, x, y);
-  return zone ? elevZoneHeight(zone) : 0;
-}
 
-// What a vision source needs to know about elevation, worked out once per
-// source rather than once per ray (computeVisionPolygon casts ~180 of them).
-// Null when the map has no elevation painted at all — the cheap, common case.
-function elevationViewFor(map, ox, oy) {
-  const zones = mapElevationZones(map);
+// What a vision source needs about elevation, worked out once per source
+// rather than per ray. Null when the map has no elevation (the common case).
+function getElevationViewFor(map, ox, oy) {
+  const zones = getMapElevationZones(map);
   if (!zones.length) return null;
-  const ownZone = elevationZoneAt(map, ox, oy);
-  return { zones, sourceHeight: ownZone ? elevZoneHeight(ownZone) : 0, ownZone, cellPx: mapCellSize(map) };
+  const ownZone = _getElevationZoneAt(map, ox, oy);
+  return { zones, sourceHeight: ownZone ? getElevZoneHeight(ownZone) : 0, ownZone, cellPx: getMapCellSize(map) };
 }
 
-// f(d) = floor(2d / h) — how many tiles past a rise's near edge a viewer
-// standing `dFeet` back from it can see, where `hFeet` is the rise's height
-// relative to the viewer. h ≤ 0 (level or looking down) is unimpeded.
-function elevationVisibleTiles(dFeet, hFeet) {
+// f(d) above: tiles visible past a rise of `hFeet` from `dFeet` back.
+function _getElevationVisibleTiles(dFeet, hFeet) {
   if (hFeet <= 0) return Infinity;
   return Math.max(0, Math.floor(2 * dFeet / hFeet));
 }
 
-// Both roots of the ray/shape intersection, not just the near one — where
-// rayRect()/rayCircle() answer "does this block the ray, and from how far",
-// this answers "how far does the ray travel while inside this shape", which is
-// what is needed to find where a low source's own ground ends.
-function rayRectSpan(ox, oy, dx, dy, r) {
+// Both roots of a ray/shape intersection ({ enter, exit }): how far the ray
+// travels inside the shape, needed to find where a low source's ground ends.
+function _getRayRectSpan(ox, oy, dx, dy, r) {
   let tmin = -Infinity, tmax = Infinity;
   const slab = (o, d, lo, hi) => {
     if (Math.abs(d) < 1e-9) return o >= lo && o <= hi;
@@ -600,7 +552,7 @@ function rayRectSpan(ox, oy, dx, dy, r) {
   if (tmax < tmin) return null;
   return { enter: tmin, exit: tmax };
 }
-function rayCircleSpan(ox, oy, dx, dy, c) {
+function _getRayCircleSpan(ox, oy, dx, dy, c) {
   const fx = ox - c.x, fy = oy - c.y;
   const b = 2 * (fx * dx + fy * dy);
   const cc = fx * fx + fy * fy - c.r * c.r;
@@ -610,10 +562,9 @@ function rayCircleSpan(ox, oy, dx, dy, c) {
   return { enter: (-b - s) / 2, exit: (-b + s) / 2 };
 }
 
-// One ray (from ox,oy, unit direction dx,dy — t unrestricted in sign) against
-// one segment (x1,y1)-(x2,y2). Returns t, or null if they never cross or run
-// parallel.
-function raySegment(ox, oy, dx, dy, x1, y1, x2, y2) {
+// A ray (t unrestricted in sign) against segment (x1,y1)-(x2,y2). Returns t, or
+// null if they never cross or run parallel.
+function _getRaySegmentHit(ox, oy, dx, dy, x1, y1, x2, y2) {
   const ex = x2 - x1, ey = y2 - y1;
   const denom = dx * ey - dy * ex;
   if (Math.abs(denom) < 1e-9) return null;
@@ -623,29 +574,24 @@ function raySegment(ox, oy, dx, dy, x1, y1, x2, y2) {
   return t;
 }
 
-// The nearest positive crossing with a lasso's edges (the loop implied
-// between consecutive points, last back to first) — a polygon's answer to
-// rayRect()/rayCircle().
-function rayPolygon(ox, oy, dx, dy, points) {
+// The nearest positive crossing with a lasso's closed loop of edges.
+function _getRayPolygonHit(ox, oy, dx, dy, points) {
   let best = null;
   for (let i = 0; i < points.length; i++) {
     const [x1, y1] = points[i], [x2, y2] = points[(i + 1) % points.length];
-    const t = raySegment(ox, oy, dx, dy, x1, y1, x2, y2);
+    const t = _getRaySegmentHit(ox, oy, dx, dy, x1, y1, x2, y2);
     if (t !== null && t > 1e-6 && (best === null || t < best)) best = t;
   }
   return best;
 }
 
-// The polygon's answer to rayRectSpan()/rayCircleSpan() — enter is the
-// smallest crossing, exit the largest, across every edge. Exact for a convex
-// trace (at most two crossings, matching the rect/circle case exactly); for a
-// concave one it is an approximation that can miss an inner lobe, accepted
-// for the same reason the whole shape is freehand rather than exact.
-function rayPolygonSpan(ox, oy, dx, dy, points) {
+// Smallest and largest crossing across every edge. Exact for a convex trace; for
+// a concave one it can miss an inner lobe, accepted since the shape is freehand.
+function _getRayPolygonSpan(ox, oy, dx, dy, points) {
   let enter = null, exit = null;
   for (let i = 0; i < points.length; i++) {
     const [x1, y1] = points[i], [x2, y2] = points[(i + 1) % points.length];
-    const t = raySegment(ox, oy, dx, dy, x1, y1, x2, y2);
+    const t = _getRaySegmentHit(ox, oy, dx, dy, x1, y1, x2, y2);
     if (t === null) continue;
     if (enter === null || t < enter) enter = t;
     if (exit === null || t > exit) exit = t;
@@ -653,67 +599,55 @@ function rayPolygonSpan(ox, oy, dx, dy, points) {
   return enter === null ? null : { enter, exit };
 }
 
-// The one place a wall/mask/elevation shape's `kind` decides which ray test
-// to run — computeVisionPolygon() and elevationRayLimit() both go through
-// these rather than repeating the three-way branch.
-function rayShapeHit(ox, oy, dx, dy, s) {
-  if (s.kind === 'circle') return rayCircle(ox, oy, dx, dy, s);
-  if (s.kind === 'poly') return rayPolygon(ox, oy, dx, dy, s.points || []);
-  return rayRect(ox, oy, dx, dy, s);
+// The one place a shape's `kind` picks which ray test to run.
+function _getRayShapeHit(ox, oy, dx, dy, s) {
+  if (s.kind === 'circle') return _getRayCircleHit(ox, oy, dx, dy, s);
+  if (s.kind === 'poly') return _getRayPolygonHit(ox, oy, dx, dy, s.points || []);
+  return _getRayRectHit(ox, oy, dx, dy, s);
 }
-function rayShapeSpan(ox, oy, dx, dy, s) {
-  if (s.kind === 'circle') return rayCircleSpan(ox, oy, dx, dy, s);
-  if (s.kind === 'poly') return rayPolygonSpan(ox, oy, dx, dy, s.points || []);
-  return rayRectSpan(ox, oy, dx, dy, s);
+function _getRayShapeSpan(ox, oy, dx, dy, s) {
+  if (s.kind === 'circle') return _getRayCircleSpan(ox, oy, dx, dy, s);
+  if (s.kind === 'poly') return _getRayPolygonSpan(ox, oy, dx, dy, s.points || []);
+  return _getRayRectSpan(ox, oy, dx, dy, s);
 }
 
-// How far along one ray elevation lets it travel, independent of walls —
-// computeVisionPolygon() takes the smaller of this and whatever a wall gives.
-// Distances along the ray are in image pixels; the formula works in feet, so
-// each is scaled by MAP_FEET_PER_CELL / cellPx. Two things can shorten a ray,
-// and both can apply at once (a viewer in a pit looking across the base map at
-// a rise beyond it):
-//   - if the viewer's own zone is below the base map, leaving it is itself a
-//     rise to base — `d` is measured to wherever that ground ends (span.exit),
-//     because that is how far back the viewer is from that particular edge;
-//   - entering a zone higher than the viewer, at whatever distance the ray
-//     first reaches it, using that zone's own height relative to the viewer —
-//     regardless of the ground in between, because h describes how far up the
-//     *viewer* is trying to see, not the local terrain step.
-// Both are independent, and the ray takes whichever cuts it shortest — seeing
-// a rise beyond a rise needs both to allow it.
-function elevationRayLimit(ox, oy, dx, dy, elev, higherZones) {
+// How far elevation lets one ray travel, in image pixels (the formula works in
+// feet, scaled by MAP_FEET_PER_CELL / cellPx). Two independent limits, the
+// shortest wins:
+//   - a viewer in a zone below base: leaving it is a rise to base, with d
+//     measured to where that ground ends (span.exit);
+//   - entering a zone higher than the viewer: d is where the ray first reaches
+//     it, h that zone's height relative to the viewer, whatever lies between.
+function _getElevationRayLimit(ox, oy, dx, dy, elev, higherZones) {
   let limit = Infinity;
   const pxToFeet = MAP_FEET_PER_CELL / elev.cellPx;
 
-  const ownHeight = elev.ownZone ? elevZoneHeight(elev.ownZone) : 0;
+  const ownHeight = elev.ownZone ? getElevZoneHeight(elev.ownZone) : 0;
   if (elev.ownZone && ownHeight < 0) {
-    const span = rayShapeSpan(ox, oy, dx, dy, elev.ownZone);
+    const span = _getRayShapeSpan(ox, oy, dx, dy, elev.ownZone);
     if (span && span.exit > 0) {
-      const tiles = elevationVisibleTiles(span.exit * pxToFeet, -ownHeight);
+      const tiles = _getElevationVisibleTiles(span.exit * pxToFeet, -ownHeight);
       limit = Math.min(limit, span.exit + tiles * elev.cellPx);
     }
   }
 
   higherZones.forEach(z => {
-    const hit = rayShapeHit(ox, oy, dx, dy, z);
+    const hit = _getRayShapeHit(ox, oy, dx, dy, z);
     if (hit === null) return;
-    const tiles = elevationVisibleTiles(hit * pxToFeet, elevZoneHeight(z) - elev.sourceHeight);
+    const tiles = _getElevationVisibleTiles(hit * pxToFeet, getElevZoneHeight(z) - elev.sourceHeight);
     limit = Math.min(limit, hit + tiles * elev.cellPx);
   });
 
   return limit;
 }
 
-// =============================================================================
-// GEOMETRY — snapping
-// =============================================================================
-// Where a creature snaps depends on how many cells it covers: an odd footprint
-// centres on a square, an even one on the line between two (where a Large
-// creature sits). Tiny centres like Medium.
+// ─── GEOMETRY: SNAPPING ─────────────────────────────────────────────────────
+
+// Snaps a creature's centre to the grid: an odd footprint centres on a square,
+// an even one on the line between two. Tiny centres like Medium.
 function snapToGrid(map, x, y, sizeCells) {
-  const g = mapGrid(map);
-  const cell = mapCellSize(map);
+  const g = getMapGrid(map);
+  const cell = getMapCellSize(map);
   const cells = Math.max(1, Math.round(sizeCells ?? 1));
   const half = cells % 2 === 1 ? cell / 2 : 0;
   const snap = (v, off) => Math.round((v - off - half) / cell) * cell + off + half;

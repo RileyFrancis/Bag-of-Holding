@@ -3,7 +3,7 @@
 // =============================================================================
 'use strict';
 
-// See CLAUDE.md § State model for the full shape and what is / isn't saved.
+// See CLAUDE.md § State for the full shape and what is / isn't saved.
 
 const state = {
   // The character on screen — the working copy of one slot out of
@@ -66,22 +66,28 @@ const state = {
   },
 };
 
-// Convenience
-function gridRows() { return state.character.strength * 3; }
-function normalRows() { return state.character.strength; }
+// ─── CONVENIENCE ACCESSORS ───────────────────────────────────────────────────
 
-function activeGrid() {
+// Main inventory row count: three rows per point of Strength.
+function getGridRows() { return state.character.strength * 3; }
+// Rows that carry no encumbrance: one per point of Strength.
+function getNormalRows() { return state.character.strength; }
+
+// Returns the grid on screen: the open container's interior, or the main inventory.
+function getActiveGrid() {
   return state.activeContainer
     ? (state.containerGrids[state.activeContainer] ?? state.grid)
     : state.grid;
 }
-function activeGridCols() {
+// Column count of the grid on screen (a container's own width, else GRID_COLS).
+function getActiveGridCols() {
   if (!state.activeContainer) return GRID_COLS;
   const t = state.db[state.instances[state.activeContainer]?.templateId];
   return t?.containerCols ?? 5;
 }
-function activeGridRows() {
-  if (!state.activeContainer) return gridRows();
+// Row count of the grid on screen (a container's own height, else getGridRows()).
+function getActiveGridRows() {
+  if (!state.activeContainer) return getGridRows();
   const t = state.db[state.instances[state.activeContainer]?.templateId];
   return t?.containerRows ?? 5;
 }

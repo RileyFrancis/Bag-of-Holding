@@ -3,17 +3,16 @@
 // =============================================================================
 'use strict';
 
-// Which base items' variant families are unfolded in the Browse list — a dog-
-// eared card's own click toggles its id in here. Session-only, like the folder
-// collapse state's cousin `collapsedFeatures`: not saved, not synced.
+// Which base items' variant families are unfolded in the Browse list; a dog-eared
+// card's own click toggles its id. Session-only: not saved, not synced.
 const expandedVariantIds = new Set();
 
-// The Browse list's search/rarity/tag filter for the render in progress, or
-// null with none set. Module-level so appendVariantRows can prune a family
-// to its matching members without threading it through every call.
+// The Browse list's search/rarity/tag filter for the render in progress, or null
+// with none set. Module-level so _appendVariantRows can prune a family to its
+// matching members without threading it through every call.
 let listFilter = null;
 
-function itemPasses(t) {
+function _doesItemPassFilter(t) {
   if (!listFilter) return true;
   const { search, rarityF, tagF } = listFilter;
   if (search && !t.name.toLowerCase().includes(search) && !t.description.toLowerCase().includes(search)) return false;
@@ -22,17 +21,19 @@ function itemPasses(t) {
   return true;
 }
 
-function familyPasses(t) {
-  return itemPasses(t) || !!t.variantIds?.some(id => state.db[id] && familyPasses(state.db[id]));
+function _doesFamilyPassFilter(t) {
+  return _doesItemPassFilter(t) || !!t.variantIds?.some(id => state.db[id] && _doesFamilyPassFilter(state.db[id]));
 }
 
-// While filtering, a family the filter only reaches *inside* opens itself and
+// While filtering, a family the filter only reaches inside opens itself and
 // shows just the matching members; one that matches as a whole (a search for
 // its own name) stays as the reader left it, with everything in it.
-function familyOpen(t) {
-  return expandedVariantIds.has(t.id) || (!!listFilter && !itemPasses(t) && familyPasses(t));
+function _isFamilyOpen(t) {
+  return expandedVariantIds.has(t.id) || (!!listFilter && !_doesItemPassFilter(t) && _doesFamilyPassFilter(t));
 }
 
+// Rebuild the Browse list from state.db under the current filters, sort order
+// and folders, then refresh the folder toolbar and tag filter.
 function renderItemList() {
   const listEl = document.getElementById('item-list');
   const search = document.getElementById('item-search').value.trim().toLowerCase();
@@ -41,16 +42,15 @@ function renderItemList() {
 
   listFilter = (search || rarityF || tagF) ? { search, rarityF, tagF } : null;
 
-  // A variant is never a top-level entry — it's shown nested under its base
-  // (see appendVariantRows), reached by expanding the base's dog-ear tag. A
-  // family is listed if anything in it passes, so a search for "Longsword +2"
-  // finds it inside Weapon, +1, +2, or +3.
-  const items = Object.values(state.db).filter(t => !t.variantOf && familyPasses(t));
+  // A variant is never a top-level entry: it is nested under its base (see
+  // _appendVariantRows). A family is listed if anything in it passes, so a
+  // search for "Longsword +2" finds it inside Weapon, +1, +2, or +3.
+  const items = Object.values(state.db).filter(t => !t.variantOf && _doesFamilyPassFilter(t));
 
-  // The chosen order (item-sort.js) — grouping only buckets an already-sorted list.
+  // The chosen order (item-sort.js); grouping only buckets an already-sorted list.
   sortItems(items);
 
-  // The list is rebuilt from scratch, so restore scrollTop — filing an item is
+  // The list is rebuilt from scratch, so restore scrollTop: filing an item is
   // the one render that happens mid-gesture, after auto-scroll carried the
   // reader down to a folder.
   const scrollTop = listEl.scrollTop;
@@ -59,27 +59,27 @@ function renderItemList() {
   listEl.classList.toggle('foldered', state.folders.length > 0);
 
   if (state.folders.length === 0) {
-    // No folders made yet — the plain flat list.
+    // No folders: the plain flat list.
     items.forEach(t => {
-      listEl.appendChild(buildItemCard(t));
-      appendVariantRows(listEl, t);
+      listEl.appendChild(_buildItemCard(t));
+      _appendVariantRows(listEl, t);
     });
   } else {
-    const filtering = !!(search || rarityF || tagF);
+    const isFiltering = !!(search || rarityF || tagF);
     groupItemsByFolder(items).forEach(group => {
       // While filtering, a folder with no matches is noise; unfiltered, empty
       // folders stay visible so there is something to drop items onto.
-      if (group.items.length === 0 && (filtering || group.id === UNFILED_ID)) return;
+      if (group.items.length === 0 && (isFiltering || group.id === UNFILED_ID)) return;
       // A search expands everything: a collapsed folder hiding the only match
       // would read as "no results".
-      const expanded = !!search || !isFolderCollapsed(group.id);
-      listEl.appendChild(buildFolderHeader(group, expanded, !!search));
+      const isExpanded = !!search || !isFolderCollapsed(group.id);
+      listEl.appendChild(_buildFolderHeader(group, isExpanded, !!search));
       // Cards carry their folder so a drag can drop anywhere in the group.
-      if (expanded) group.items.forEach(t => {
-        const card = buildItemCard(t);
+      if (isExpanded) group.items.forEach(t => {
+        const card = _buildItemCard(t);
         card.dataset.folderId = group.id;
         listEl.appendChild(card);
-        appendVariantRows(listEl, t, group.id);
+        _appendVariantRows(listEl, t, group.id);
       });
     });
   }
@@ -88,18 +88,17 @@ function renderItemList() {
 
   updateFolderToolbar(!!search);
 
-  // Rebuild tag filter
-  populateTagFilter();
+  _populateTagFilter();
 }
 
-function buildFolderHeader(group, expanded, searchLocked) {
+function _buildFolderHeader(group, isExpanded, isSearchLocked) {
   const el = document.createElement('div');
-  el.className = 'folder-header' + (expanded ? '' : ' collapsed');
+  el.className = 'folder-header' + (isExpanded ? '' : ' collapsed');
   el.dataset.folderId = group.id;
 
   const caret = document.createElement('span');
   caret.className = 'folder-caret';
-  caret.textContent = expanded ? '▾' : '▸';
+  caret.textContent = isExpanded ? '▾' : '▸';
 
   const name = document.createElement('span');
   name.className = 'folder-name';
@@ -132,7 +131,7 @@ function buildFolderHeader(group, expanded, searchLocked) {
     del.textContent = '✕';
     del.addEventListener('click', e => {
       e.stopPropagation();
-      const n = folderItemCount(group.id);
+      const n = getFolderItemCount(group.id);
       const msg = n
         ? `Delete the folder “${group.name}”?\n\nIts ${n} item${n > 1 ? 's' : ''} will be re-filed automatically — no items are deleted.`
         : `Delete the folder “${group.name}”?`;
@@ -148,32 +147,32 @@ function buildFolderHeader(group, expanded, searchLocked) {
   el.appendChild(count); // last, so every folder's count sits flush right
 
   // A search forces every folder open, so the header stops being a toggle.
-  if (searchLocked) el.classList.add('search-locked');
+  if (isSearchLocked) el.classList.add('search-locked');
   else el.addEventListener('click', () => { toggleFolderCollapsed(group.id); renderItemList(); });
 
   return el;
 }
 
-function buildItemCard(t, opts = {}) {
+function _buildItemCard(t, opts = {}) {
   const card = document.createElement('div');
   card.className = 'item-card';
   card.dataset.templateId = t.id;
   if (state.placing && state.placing.templateId === t.id) card.classList.add('placing');
   if (t.variantOf || opts.indent) card.classList.add('item-card-variant');
   if (opts.depth > 1) card.classList.add('item-card-depth-2');
-  // opts.indent means this is the base's own row, nested under its dog-ear —
+  // opts.indent means this is the base's own row, nested under its dog-ear:
   // it must behave like a plain placeable item there, not a second toggle.
   const hasVariants = !!t.variantIds?.length && !opts.indent;
   if (hasVariants) {
     card.classList.add('has-variants');
-    if (familyOpen(t)) card.classList.add('variants-expanded');
+    if (_isFamilyOpen(t)) card.classList.add('variants-expanded');
     const tag = document.createElement('div');
     tag.className = 'item-card-variant-tag';
     tag.title = `${t.variantIds.length} variant${t.variantIds.length > 1 ? 's' : ''}`;
     card.appendChild(tag);
   }
 
-  const color = rarityColor(t.rarity);
+  const color = getRarityColor(t.rarity);
 
   const swatch = document.createElement('div');
   swatch.className = 'item-card-swatch';
@@ -181,151 +180,30 @@ function buildItemCard(t, opts = {}) {
 
   const info = document.createElement('div');
   info.className = 'item-card-info';
-  const nm = document.createElement('div');
-  nm.className = 'item-card-name';
-  nm.textContent = t.name;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'item-card-name';
+  nameEl.textContent = t.name;
   const sub = document.createElement('div');
   sub.className = 'item-card-sub';
   // A magic family's header (items.js) is a choice of items, not one.
-  const w = t.abstract
+  const weightText = t.abstract
     ? `${t.familySize} option${t.familySize === 1 ? '' : 's'}`
     : isStackable(t)
-      ? `${formatWeight(unitWeight(t))} lb ea · stack ×${stackSizeOf(t)}`
-      : `${shapeWeight(t.shape)} lb`;
+      ? `${formatWeight(getItemUnitWeight(t))} lb ea · stack ×${getItemStackSize(t)}`
+      : `${getShapeWeight(t.shape)} lb`;
   const rarity = t.rarityVaries ? 'Rarity varies' : RARITY_META[t.rarity]?.label;
-  sub.textContent = `${rarity} · ${w}`;
+  sub.textContent = `${rarity} · ${weightText}`;
 
-  info.appendChild(nm);
+  info.appendChild(nameEl);
   info.appendChild(sub);
 
-  const shapePreview = buildMiniShapePreview(t.shape, color);
+  const shapePreview = _buildMiniShapePreview(t.shape, color);
 
   card.appendChild(swatch);
   card.appendChild(info);
   card.appendChild(shapePreview);
 
-  card.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || isReadOnly()) return;
-    e.preventDefault(); // prevent text selection on mousedown
-    const tid = t.id;
-    const startX = e.clientX, startY = e.clientY;
-    let dragging = false;
-
-    const onMove = me => {
-      if (t.abstract) return; // a family header only folds — nothing to drag
-      if (!dragging && Math.hypot(me.clientX - startX, me.clientY - startY) < 5) return;
-      if (!dragging) {
-        dragging = true;
-        document.body.style.userSelect = 'none';
-        card.classList.add('dragging'); // fade the one left behind
-        cancelPlacing();
-        startDragAutoScroll(me.clientX, me.clientY, dragRefresh);
-      }
-      updateDragAutoScroll(me.clientX, me.clientY);
-      const tmpl = state.db[tid];
-      if (!tmpl) return;
-      const shape = getRotatedShape(tmpl.shape, 0);
-      initGhostEl(shape, tmpl.rarity);
-
-      // No equip-slot highlighting for new items (not yet placed)
-      document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
-
-      // A shop or folder under the cursor wins over the grid.
-      clearShopDropTargets();
-      clearFolderDropTargets();
-      const shopDrop = getShopDropTargetAtPoint(me.clientX, me.clientY);
-      if (shopDrop) {
-        shopDrop.el.classList.add('drop-target');
-        setGhostVisibility(false);
-        clearHighlights();
-        return;
-      }
-      // Over any folder band the grid gets no look in.
-      if (showFolderDropFeedback(tid, me.clientX, me.clientY).hovering) {
-        setGhostVisibility(false);
-        clearHighlights();
-        return;
-      }
-
-      const pos = cursorToGridPos(me.clientX, me.clientY, 0, 0);
-      if (pos) {
-        const sp = getGhostScreenPos(0, 0, pos.row, pos.col);
-        const valid = canPlace(shape, pos.row, pos.col);
-        setGhostVisibility(true);
-        moveGhost(sp.x, sp.y, valid);
-        highlightCells(shape, pos.row, pos.col, valid);
-      } else {
-        setGhostVisibility(false);
-        clearHighlights();
-      }
-    };
-
-    const onUp = ue => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.body.style.userSelect = '';
-      stopDragAutoScroll();
-      if (!dragging) {
-        // A dog-eared card's click is the fold toggle, full stop — it never
-        // places the base item or opens its details. The base item itself is
-        // reached as the first row of the unfolded family (see
-        // appendVariantRows), where it's a plain card like any variant.
-        if (hasVariants) {
-          if (familyOpen(t)) expandedVariantIds.delete(tid);
-          else expandedVariantIds.add(tid);
-          renderItemList();
-          return;
-        }
-        // Treat as click → enter placing mode as before
-        startPlacing(tid);
-        return;
-      }
-      // End of drag: restore ghost visibility and clean up
-      const shopDrop = getShopDropTargetAtPoint(ue.clientX, ue.clientY);
-      const folderId = folderDropTargetFor(tid, ue.clientX, ue.clientY);
-      setGhostVisibility(true);
-      hideGhost();
-      clearHighlights();
-      clearShopDropTargets();
-      clearFolderDropTargets();
-      card.classList.remove('dragging');
-      document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
-
-      // Dropped on a shop → onto the shelf it goes, nothing enters the grid.
-      if (shopDrop) {
-        addItemsToShop(shopDrop.shopId, [tid]);
-        return;
-      }
-
-      // Dropped in another folder → reclassify (Unfiled = a deliberate "no folder").
-      if (folderId) {
-        setItemFolder(tid, folderId);
-        renderItemList();
-        return;
-      }
-
-      const tmpl = state.db[tid];
-      if (!tmpl) return;
-      const shape = getRotatedShape(tmpl.shape, 0);
-      const pos = cursorToGridPos(ue.clientX, ue.clientY, 0, 0);
-      if (pos && canPlace(shape, pos.row, pos.col)) {
-        if (isStackable(tmpl)) {
-          openStackModal(stackSizeOf(tmpl),
-            count => finalizePlacement(tmpl, shape, 0, pos.row, pos.col, count));
-        } else {
-          finalizePlacement(tmpl, shape, 0, pos.row, pos.col, 1);
-        }
-      }
-      // If dropped outside/invalid, silently cancel — no placing mode
-    };
-
-    // Re-runs the hover logic above on a cursor that has not moved, for the
-    // frames where auto-scroll moved the content under it instead.
-    function dragRefresh(x, y) { onMove({ clientX: x, clientY: y }); }
-
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-  });
+  _attachItemCardPointer(card, t, hasVariants);
   card.addEventListener('pointerenter', e => {
     tooltipTimer = setTimeout(() => showTemplateTooltip(t.id, e.clientX, e.clientY), 1000);
   });
@@ -339,38 +217,166 @@ function buildItemCard(t, opts = {}) {
   return card;
 }
 
-// A base item's variants, indented directly beneath its card — only while
-// its dog-ear tag has it expanded. Full cards, not a stripped-down row, so a
-// variant drags, places, and tooltips exactly like any other item.
-//
-// The base item leads the list as a row of itself (opts.indent) — its own
-// card no longer places it (see buildItemCard's click handler), so the plain,
-// unenhanced item has to be reachable somewhere once the family is unfolded.
-// A magic family's header is `abstract` — nothing to place — so it has no such
-// row, and its rows may be headers themselves (Weapon +1 → each weapon), drawn
-// one level deeper.
-function appendVariantRows(listEl, t, folderId, depth = 1) {
-  if (!t.variantIds?.length || !familyOpen(t)) return;
+// A press on a Browse card: a click folds a family or starts placing, a drag
+// drops the item onto a shop, a folder or the grid.
+function _attachItemCardPointer(card, t, hasVariants) {
+  card.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || isReadOnly()) return;
+    e.preventDefault(); // prevent text selection on mousedown
+    const tid = t.id;
+    const startX = e.clientX, startY = e.clientY;
+    let isDragging = false;
+
+    const onMove = me => {
+      if (t.abstract) return; // a family header only folds: nothing to drag
+      if (!isDragging && Math.hypot(me.clientX - startX, me.clientY - startY) < 5) return;
+      if (!isDragging) {
+        isDragging = true;
+        document.body.style.userSelect = 'none';
+        card.classList.add('dragging'); // fade the one left behind
+        cancelPlacing();
+        startDragAutoScroll(me.clientX, me.clientY, dragRefresh);
+      }
+      updateDragAutoScroll(me.clientX, me.clientY);
+      _showCatalogueDragHover(tid, me.clientX, me.clientY);
+    };
+
+    const onUp = ue => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      stopDragAutoScroll();
+      if (!isDragging) {
+        // A dog-eared card's click is only the fold toggle; the base item is
+        // reached as the first row of the unfolded family (see _appendVariantRows).
+        if (hasVariants) {
+          if (_isFamilyOpen(t)) expandedVariantIds.delete(tid);
+          else expandedVariantIds.add(tid);
+          renderItemList();
+          return;
+        }
+        startPlacing(tid);
+        return;
+      }
+      _dropCatalogueItem(card, tid, ue.clientX, ue.clientY);
+    };
+
+    // Re-runs the hover logic on a cursor that has not moved, for the frames
+    // where auto-scroll moved the content under it instead.
+    function dragRefresh(x, y) { onMove({ clientX: x, clientY: y }); }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+// Hover feedback for a Browse item dragged to (x, y). A shop or folder under the
+// cursor wins over the grid.
+function _showCatalogueDragHover(tid, x, y) {
+  const tmpl = state.db[tid];
+  if (!tmpl) return;
+  const shape = getRotatedShape(tmpl.shape, 0);
+  initGhostEl(shape, tmpl.rarity);
+
+  // No equip-slot highlighting for new items (not yet placed)
+  document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
+
+  clearShopDropTargets();
+  clearFolderDropTargets();
+  const shopDrop = getShopDropTargetAtPoint(x, y);
+  if (shopDrop) {
+    shopDrop.el.classList.add('drop-target');
+    setGhostVisibility(false);
+    clearHighlights();
+    return;
+  }
+  // Over any folder band the grid gets no look in.
+  if (showFolderDropFeedback(tid, x, y).hovering) {
+    setGhostVisibility(false);
+    clearHighlights();
+    return;
+  }
+
+  const pos = getGridPosAtCursor(x, y, 0, 0);
+  if (pos) {
+    const sp = getGhostScreenPos(0, 0, pos.row, pos.col);
+    const isValid = canPlace(shape, pos.row, pos.col);
+    setGhostVisibility(true);
+    moveGhost(sp.x, sp.y, isValid);
+    highlightCells(shape, pos.row, pos.col, isValid);
+  } else {
+    setGhostVisibility(false);
+    clearHighlights();
+  }
+}
+
+// End of a Browse item drag at (x, y): clean up the ghost and highlights, then
+// drop onto a shop, refile into a folder, or place on the grid.
+function _dropCatalogueItem(card, tid, x, y) {
+  const shopDrop = getShopDropTargetAtPoint(x, y);
+  const folderId = getFolderDropTarget(tid, x, y);
+  setGhostVisibility(true);
+  hideGhost();
+  clearHighlights();
+  clearShopDropTargets();
+  clearFolderDropTargets();
+  card.classList.remove('dragging');
+  document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
+
+  // Dropped on a shop: onto the shelf it goes, nothing enters the grid.
+  if (shopDrop) {
+    addItemsToShop(shopDrop.shopId, [tid]);
+    return;
+  }
+
+  // Dropped in another folder: reclassify (Unfiled = a deliberate "no folder").
+  if (folderId) {
+    setItemFolder(tid, folderId);
+    renderItemList();
+    return;
+  }
+
+  const tmpl = state.db[tid];
+  if (!tmpl) return;
+  const shape = getRotatedShape(tmpl.shape, 0);
+  const pos = getGridPosAtCursor(x, y, 0, 0);
+  // Dropped outside or on an invalid spot: silently cancel, no placing mode.
+  if (!pos || !canPlace(shape, pos.row, pos.col)) return;
+  if (isStackable(tmpl)) {
+    openStackModal(getItemStackSize(tmpl),
+      count => finalizePlacement(tmpl, shape, 0, pos.row, pos.col, count));
+  } else {
+    finalizePlacement(tmpl, shape, 0, pos.row, pos.col, 1);
+  }
+}
+
+// A base item's variants, indented beneath its card while its family is open.
+// Full cards, so a variant drags, places and tooltips like any other item. The
+// base item leads as a row of itself (opts.indent), since its own card only
+// folds. A magic family's header is `abstract` (nothing to place), so it has no
+// such row, and its rows may be headers themselves, drawn one level deeper.
+function _appendVariantRows(listEl, t, folderId, depth = 1) {
+  if (!t.variantIds?.length || !_isFamilyOpen(t)) return;
   if (!t.abstract) {
-    const selfCard = buildItemCard(t, { indent: true, depth });
+    const selfCard = _buildItemCard(t, { indent: true, depth });
     if (folderId) selfCard.dataset.folderId = folderId;
     listEl.appendChild(selfCard);
   }
   // The whole family when the header itself matched; otherwise just the hits.
-  const all = itemPasses(t);
+  const doesHeaderPass = _doesItemPassFilter(t);
   t.variantIds.forEach(vid => {
     const variant = state.db[vid];
-    if (!variant || (!all && !familyPasses(variant))) return;
-    const card = buildItemCard(variant, { depth });
+    if (!variant || (!doesHeaderPass && !_doesFamilyPassFilter(variant))) return;
+    const card = _buildItemCard(variant, { depth });
     if (folderId) card.dataset.folderId = folderId;
     listEl.appendChild(card);
-    appendVariantRows(listEl, variant, folderId, depth + 1);
+    _appendVariantRows(listEl, variant, folderId, depth + 1);
   });
 }
 
-function buildMiniShapePreview(shape, color) {
+function _buildMiniShapePreview(shape, color) {
   const norm = normalizeShape(shape);
-  const { rows, cols } = shapeDims(norm);
+  const { rows, cols } = getShapeDims(norm);
   const clampR = Math.min(rows, 6), clampC = Math.min(cols, 6);
   const div = document.createElement('div');
   div.className = 'item-card-shape';
@@ -385,7 +391,7 @@ function buildMiniShapePreview(shape, color) {
   return div;
 }
 
-function populateTagFilter() {
+function _populateTagFilter() {
   const sel = document.getElementById('tag-filter');
   const current = sel.value;
   const allTags = new Set();
@@ -399,9 +405,8 @@ function populateTagFilter() {
   sel.value = current;
 }
 
-// =============================================================================
-// RENDERING — DETAILS PANEL
-// =============================================================================
+// ─── RENDERING — DETAILS PANEL ───
+// Select a catalogue template, show it in the Details tab and wire its actions.
 function showTemplateDetails(templateId) {
   state.selected = { type: 'template', id: templateId };
   const t = state.db[templateId];
@@ -409,7 +414,7 @@ function showTemplateDetails(templateId) {
   populateDetailsPanel(t);
   switchTab('details');
 
-  // showShopItemDetails() hides these — goods on a shelf are not yours to place.
+  // _showShopItemDetails() hides these: goods on a shelf are not yours to place.
   document.getElementById('details-actions').classList.remove('hidden');
   document.getElementById('details-place-btn').classList.remove('hidden');
   document.getElementById('details-place-btn').onclick = () => startPlacing(t.id);
@@ -419,6 +424,7 @@ function showTemplateDetails(templateId) {
   document.getElementById('details-delete-btn').onclick = () => deleteTemplate(t.id);
 }
 
+// Select a placed or stashed instance, show it in the Details tab and wire its actions.
 function showInstanceDetails(instanceId) {
   const inst = state.instances[instanceId];
   if (!inst) return;
@@ -439,7 +445,7 @@ function showInstanceDetails(instanceId) {
       inst.col = null;
       renderAllItems();
       updateWeightDisplay();
-      debouncedSync();
+      scheduleSaveAndSync();
     }
     switchTab('browse');
   };
@@ -452,12 +458,13 @@ function showInstanceDetails(instanceId) {
   };
 }
 
+// Fill the Details panel for a template, or for one instance of it when `inst` is given.
 function populateDetailsPanel(t, inst) {
-  const color = rarityColor(t.rarity);
+  const color = getRarityColor(t.rarity);
   const shape = inst ? getRotatedShape(t.shape, inst.rotation ?? 0) : t.shape;
   const weight = isStackable(t)
-    ? (inst ? `${formatWeight(unitWeight(t) * (inst.stackCount ?? 1))} lb (×${inst.stackCount ?? 1})` : `${formatWeight(unitWeight(t))} lb each`)
-    : `${shapeWeight(shape)} lb`;
+    ? (inst ? `${formatWeight(getItemUnitWeight(t) * (inst.stackCount ?? 1))} lb (×${inst.stackCount ?? 1})` : `${formatWeight(getItemUnitWeight(t))} lb each`)
+    : `${getShapeWeight(shape)} lb`;
 
   document.getElementById('details-placeholder').classList.add('hidden');
   document.getElementById('details-content').classList.remove('hidden');
@@ -469,7 +476,7 @@ function populateDetailsPanel(t, inst) {
   badge.style.color = color;
   badge.style.border = `1px solid ${color}66`;
 
-  renderDetailsShapePreview(shape, color);
+  _renderDetailsShapePreview(shape, color);
 
   const imgEl = document.getElementById('details-image');
   if (t.image) { imgEl.src = t.image; imgEl.classList.remove('hidden'); }
@@ -483,8 +490,8 @@ function populateDetailsPanel(t, inst) {
   if (isStackable(t)) {
     stackRow.classList.remove('hidden');
     document.getElementById('details-stack').textContent = inst
-      ? `${inst.stackCount ?? 1} / ${stackSizeOf(t)}`
-      : `×${stackSizeOf(t)} max`;
+      ? `${inst.stackCount ?? 1} / ${getItemStackSize(t)}`
+      : `×${getItemStackSize(t)} max`;
   } else {
     stackRow.classList.add('hidden');
   }
@@ -523,9 +530,8 @@ function populateDetailsPanel(t, inst) {
   descEl.textContent = '';
   if (t.description) renderMarkdownInto(descEl, t.description);
 
-  // Only the "Label: text" properties (Ability/Utilize/Craft, on artisan's
-  // tools and the like) are abilities — a bare flag like "Finesse" or
-  // "Heavy" has no colon and isn't one.
+  // Only "Label: text" properties (Ability/Utilize/Craft on artisan's tools and
+  // the like) are abilities; a bare flag like "Finesse" has no colon.
   const abilitiesEl = document.getElementById('details-abilities');
   abilitiesEl.innerHTML = '';
   const abilities = (t.properties || []).filter(p => p.includes(':'));
@@ -546,10 +552,10 @@ function populateDetailsPanel(t, inst) {
   });
 }
 
-function renderDetailsShapePreview(shape, color) {
+function _renderDetailsShapePreview(shape, color) {
   const preview = document.getElementById('details-shape-preview');
   const norm = normalizeShape(shape);
-  const { rows, cols } = shapeDims(norm);
+  const { rows, cols } = getShapeDims(norm);
   preview.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
   preview.style.gridTemplateRows    = `repeat(${rows}, 20px)`;
   preview.innerHTML = '';

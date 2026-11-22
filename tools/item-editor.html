@@ -496,7 +496,7 @@ function csvField(v) {
 // A CSV row can't hold a real newline (src/js/items.js splits the whole file
 // on \n before parsing rows), so a description that wants a paragraph break,
 // list, or heading is written as a literal "\n" — unescaped on load by
-// unescapeDescription() in items.js. Mirror of that function, in reverse.
+// _unescapeDescription() in items.js. Mirror of that function, in reverse.
 function escapeDescriptionNewlines(str) {
   return String(str ?? '').replace(/\r\n?/g, '\n').split('\n').join('\\n');
 }

@@ -64,7 +64,7 @@ In load order.
 | File | Contents |
 |------|----------|
 | `items.js` | CSV parsing into `DEFAULT_ITEMS` |
-| `constants.js` | `CELL`, `GRID_COLS`, `RARITY_META`, `RARITY_ORDER`, `getDefaultEquipLayout` |
+| `constants.js` | Constants read by more than one file: grid geometry, rarities, sheet abilities/skills, folder and homebrew kinds, battle-map defaults, the default equip layout |
 | `state.js` | The `state` object and convenience accessors |
 | `folders.js` | Browse-list folders: model, persistence, folder modals |
 | `item-sort.js` | The Browse list's sort order: the modes, their persistence, the menu |
@@ -113,7 +113,7 @@ In load order.
 | `battlemap-view.js` | The map itself: the camera, the canvas, the fog, the pointer |
 | `battlemap-initiative.js` | The turn order: the model, the panel, the GM's group roll |
 | `tooltip.js` | Hover tooltip |
-| `main.js` | `init()` and the single call to it |
+| `main.js` | `_initApp()` and the single call to it |
 
 ## `src/css/`
 
@@ -225,7 +225,7 @@ silently fail to replicate a deletion.
 ## Data files
 
 `data/items.csv` is the default item database — one row per mundane item. **An
-item's `id` is the slug of its name** (`itemSlug()`: `War Pick` → `war-pick`), so
+item's `id` is the slug of its name** (`_getItemSlug()`: `War Pick` → `war-pick`), so
 rows can be inserted or reordered freely, but renaming one changes its id — add
 the old id to `LEGACY_ITEM_IDS` in `items.js` when you do. That table also maps
 the numeric row ids found in old saves, and is applied wherever saved instances
@@ -298,7 +298,7 @@ place, and falls back to a download otherwise.
 status (`maxLevel` > 1 stacks: each level is the id repeated in the saved list) —
 `description` Markdown, same rules again. A status with `derived` (`encumbered` /
 `heavilyEncumbered`) is worked out from the inventory by
-`encumbranceLevel()` and never offered in the picker or saved; every other one
+`getEncumbranceLevel()` and never offered in the picker or saved; every other one
 is picked by the player into `character.statuses`, an id list.
 
 The character sheet's written sections (Backstory, Appearance) are Markdown, and
@@ -324,7 +324,7 @@ be wrong in one of the two themes. The single exception is the hue wheel in
   lightness, which is what keeps a custom colour readable on either ground.
 - Rarity and coin colours differ per theme and are read out of CSS by JS. Any
   render path that bakes a palette colour into an inline style must be re-run
-  from `rerenderThemedContent()` on a theme switch.
+  from `_rerenderThemedContent()` on a theme switch.
 
 ## Configuration
 
@@ -340,7 +340,7 @@ its index page, so a body starting with `<` is rejected as "not a config".
 ## Versioning
 
 `VERSION` is one line at the project root, deliberately not in the source, so a
-release bump never means editing code. `loadAppVersion()` in `main.js` fetches it
+release bump never means editing code. `_loadAppVersion()` in `main.js` fetches it
 **asynchronously**, unlike `items.csv` and `.env` — nothing waits on it, so it
 must not hold up the boot. A missing file leaves the Settings footer blank and
 changes nothing else.

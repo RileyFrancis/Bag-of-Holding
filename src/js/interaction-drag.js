@@ -1,13 +1,16 @@
 // =============================================================================
-// INTERACTION-DRAG — DRAGGING mode for placed items, plus R-key rotation
+// INTERACTION-DRAG — DRAGGING mode for placed items, R-key rotation, Escape
 // =============================================================================
 'use strict';
 
-let dragHoverSlotId = null; // slot id the drag ghost is currently hovering over
-
 const DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
-let dragIntent = null;    // pending drag: waiting to see if pointer moves enough
 
+let dragHoverSlotId = null; // slot id the drag ghost is currently hovering over
+let dragIntent = null;      // pending drag: waiting to see if pointer moves enough
+
+// ─── DRAG START ──────────────────────────────────────────────────────────────
+// Pointer down on a placed item: arm a drag that starts once the pointer moves
+// past DRAG_THRESHOLD; a release before that opens the item's details.
 function onItemPointerDown(e) {
   if (e.button !== 0) return;
   if (isReadOnly()) return;
@@ -23,8 +26,9 @@ function onItemPointerDown(e) {
   if (!template) return;
 
   const shape = getRotatedShape(template.shape, inst.rotation);
-  const dims  = shapeDims(shape);
+  const dims  = getShapeDims(shape);
 
+  // The cell under the pointer becomes the drag anchor
   const itemRect  = el.getBoundingClientRect();
   const localX    = e.clientX - itemRect.left;
   const localY    = e.clientY - itemRect.top;
@@ -33,7 +37,7 @@ function onItemPointerDown(e) {
 
   if (!shape[anchorRow]?.[anchorCol]) return;
 
-  // Record intent but don't start the drag yet — wait for movement threshold
+  // Record intent but don't start the drag until the pointer moves enough
   dragIntent = {
     instanceId, el,
     anchorRow: Math.min(anchorRow, dims.rows - 1),
@@ -41,29 +45,29 @@ function onItemPointerDown(e) {
     startX: e.clientX, startY: e.clientY,
   };
 
-  document.addEventListener('pointermove', onDragIntentMove);
-  document.addEventListener('pointerup', onDragIntentUp);
+  document.addEventListener('pointermove', _onDragIntentMove);
+  document.addEventListener('pointerup', _onDragIntentUp);
   e.preventDefault();
 }
 
-function onDragIntentMove(e) {
+function _onDragIntentMove(e) {
   if (!dragIntent) return;
   const dx = e.clientX - dragIntent.startX;
   const dy = e.clientY - dragIntent.startY;
   if (dx * dx + dy * dy < DRAG_THRESHOLD * DRAG_THRESHOLD) return;
 
-  // Movement threshold crossed — activate the drag
-  document.removeEventListener('pointermove', onDragIntentMove);
-  document.removeEventListener('pointerup', onDragIntentUp);
+  // Movement threshold crossed: activate the drag
+  document.removeEventListener('pointermove', _onDragIntentMove);
+  document.removeEventListener('pointerup', _onDragIntentUp);
   const intent = dragIntent;
   dragIntent = null;
-  activateItemDrag(intent, e);
+  _activateItemDrag(intent, e);
 }
 
-function onDragIntentUp(e) {
-  // Pointer released before threshold — treat as a click
-  document.removeEventListener('pointermove', onDragIntentMove);
-  document.removeEventListener('pointerup', onDragIntentUp);
+function _onDragIntentUp(e) {
+  // Pointer released before the threshold: treat as a click
+  document.removeEventListener('pointermove', _onDragIntentMove);
+  document.removeEventListener('pointerup', _onDragIntentUp);
   if (!dragIntent) return;
   const { instanceId } = dragIntent;
   dragIntent = null;
@@ -71,7 +75,7 @@ function onDragIntentUp(e) {
   if (inst) showInstanceDetails(instanceId);
 }
 
-function activateItemDrag(intent, e) {
+function _activateItemDrag(intent, e) {
   const { instanceId, el, anchorRow, anchorCol } = intent;
   const inst = state.instances[instanceId];
   if (!inst) return;
@@ -95,11 +99,12 @@ function activateItemDrag(intent, e) {
   document.body.style.userSelect = 'none';
   // Hold the cursor near a panel's edge and the panel scrolls, so a grid row or
   // an equip slot below the fold is still reachable without letting go.
-  startDragAutoScroll(e.clientX, e.clientY, dragMoveAt);
-  document.addEventListener('pointermove', onDragMove);
-  document.addEventListener('pointerup', onDragEnd);
+  startDragAutoScroll(e.clientX, e.clientY, _replayDragMoveAt);
+  document.addEventListener('pointermove', _onDragMove);
+  document.addEventListener('pointerup', _onDragEnd);
 }
 
+// Pointer down on a stash card: start dragging that instance at once.
 function onStashPointerDown(e, instanceId) {
   if (e.button !== 0) return;
   if (isReadOnly()) return;
@@ -125,17 +130,18 @@ function onStashPointerDown(e, instanceId) {
 
   showGhost(shape, template.rarity, e.clientX, e.clientY);
   document.body.style.userSelect = 'none';
-  startDragAutoScroll(e.clientX, e.clientY, dragMoveAt);
-  document.addEventListener('pointermove', onDragMove);
-  document.addEventListener('pointerup', onDragEnd);
+  startDragAutoScroll(e.clientX, e.clientY, _replayDragMoveAt);
+  document.addEventListener('pointermove', _onDragMove);
+  document.addEventListener('pointerup', _onDragEnd);
   e.preventDefault();
 }
 
-// Re-runs onDragMove for a cursor that has not moved, on the frames where
-// auto-scroll moved the content under it instead.
-function dragMoveAt(x, y) { onDragMove({ clientX: x, clientY: y }); }
+// Re-run the drag move for a still cursor, on frames where auto-scroll moved
+// the content under it instead.
+function _replayDragMoveAt(x, y) { _onDragMove({ clientX: x, clientY: y }); }
 
-function onDragMove(e) {
+// ─── DRAG MOVE AND DROP ──────────────────────────────────────────────────────
+function _onDragMove(e) {
   if (state.mode !== 'dragging') return;
   updateDragAutoScroll(e.clientX, e.clientY);
   const drag = state.dragging;
@@ -143,21 +149,22 @@ function onDragMove(e) {
   const template = state.db[inst.templateId];
   const shape = getRotatedShape(template.shape, inst.rotation);
 
-  const pos = cursorToGridPos(e.clientX, e.clientY, drag.anchorRow, drag.anchorCol);
+  // Grid preview
+  const pos = getGridPosAtCursor(e.clientX, e.clientY, drag.anchorRow, drag.anchorCol);
   if (pos) {
     const { row: gr, col: gc } = pos;
     const screenPos = getGhostScreenPos(0, 0, gr, gc);
-    const valid = canPlace(shape, gr, gc, drag.instanceId) ||
-                  !!stackMergeTarget(drag.instanceId, gr, gc);
+    const isValid = canPlace(shape, gr, gc, drag.instanceId) ||
+                    !!_getStackMergeTarget(drag.instanceId, gr, gc);
     setGhostVisibility(true);
-    moveGhost(screenPos.x, screenPos.y, valid);
-    highlightCells(shape, gr, gc, valid);
+    moveGhost(screenPos.x, screenPos.y, isValid);
+    highlightCells(shape, gr, gc, isValid);
   } else {
     setGhostVisibility(false);
     clearHighlights();
   }
 
-  // Highlight equip slot using bounding-rect check; track hovered slot for onDragEnd
+  // Equip slot hover, tracked for the drop
   document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
   dragHoverSlotId = null;
   const equipCard = getEquipCardAtPoint(e.clientX, e.clientY);
@@ -170,10 +177,10 @@ function onDragMove(e) {
   }
 }
 
-function onDragEnd(e) {
+function _onDragEnd(e) {
   if (state.mode !== 'dragging') return;
-  document.removeEventListener('pointermove', onDragMove);
-  document.removeEventListener('pointerup', onDragEnd);
+  document.removeEventListener('pointermove', _onDragMove);
+  document.removeEventListener('pointerup', _onDragEnd);
   document.body.style.userSelect = '';
   stopDragAutoScroll();
 
@@ -182,12 +189,12 @@ function onDragEnd(e) {
   const template = state.db[inst.templateId];
   const shape = getRotatedShape(template.shape, inst.rotation);
 
-  let placed = false;
+  let isPlaced = false;
 
-  // Drop onto the slot highlighted during the drag — the tracked id is more
+  // Drop onto the slot highlighted during the drag: the tracked id is more
   // reliable than re-checking at pointerup, where coordinates can be stale.
   if (dragHoverSlotId) {
-    // Restore grid position first (skip if dragged from stash — item has no grid pos)
+    // Restore the grid position first (an item from the stash has none)
     if (drag.origRow !== null && drag.origRow !== undefined) {
       inst.row = drag.origRow;
       inst.col = drag.origCol;
@@ -196,20 +203,20 @@ function onDragEnd(e) {
       placeOnGrid(inst.id, restoreShape, inst.row, inst.col);
     }
     equipItem(drag.instanceId, dragHoverSlotId);
-    placed = true;
+    isPlaced = true;
     dragHoverSlotId = null;
   }
 
   // Otherwise try to drop on the inventory grid
-  if (!placed) {
-    const pos = cursorToGridPos(e.clientX, e.clientY, drag.anchorRow, drag.anchorCol);
+  if (!isPlaced) {
+    const pos = getGridPosAtCursor(e.clientX, e.clientY, drag.anchorRow, drag.anchorCol);
     if (pos) {
       const { row: gr, col: gc } = pos;
-      const target = stackMergeTarget(drag.instanceId, gr, gc);
+      const target = _getStackMergeTarget(drag.instanceId, gr, gc);
       if (target) {
         // Top up the stack underneath; whatever doesn't fit falls through to
         // the restore below, back where it came from.
-        const moved = Math.min(stackSizeOf(template) - (target.stackCount ?? 1), inst.stackCount ?? 1);
+        const moved = Math.min(getItemStackSize(template) - (target.stackCount ?? 1), inst.stackCount ?? 1);
         target.stackCount = (target.stackCount ?? 1) + moved;
         inst.stackCount = (inst.stackCount ?? 1) - moved;
         if (inst.stackCount <= 0) {
@@ -217,21 +224,21 @@ function onDragEnd(e) {
             if (state.equipped[s] === inst.id) delete state.equipped[s];
           }
           delete state.instances[inst.id];
-          placed = true;
+          isPlaced = true;
         }
       } else if (canPlace(shape, gr, gc, drag.instanceId)) {
         inst.row = gr;
         inst.col = gc;
         inst.containerId = state.activeContainer ?? null;
         placeOnGrid(inst.id, shape, gr, gc);
-        placed = true;
+        isPlaced = true;
       }
     }
   }
 
-  if (!placed) {
-    // Restore original position (also the leftover of a partial stack merge);
-    // if dragged from stash, leave unplaced (row stays null)
+  // Restore the original position (also the leftover of a partial stack merge);
+  // an item from the stash stays unplaced
+  if (!isPlaced) {
     inst.row = drag.origRow;
     inst.col = drag.origCol;
     inst.rotation = drag.origRotation;
@@ -241,6 +248,7 @@ function onDragEnd(e) {
     }
   }
 
+  // Tear down
   state.mode = 'idle';
   state.dragging = null;
   dragHoverSlotId = null;
@@ -250,27 +258,27 @@ function onDragEnd(e) {
   document.querySelectorAll('.eq-card.drag-hover').forEach(c => c.classList.remove('drag-hover'));
   renderAllItems();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
 // The stack a dragged stack would pour into if dropped at (row, col): another
 // stack of the same item with room left. A stackable shape is always [[1]], so
 // the cell under the anchor is the whole footprint.
-function stackMergeTarget(instanceId, row, col) {
+function _getStackMergeTarget(instanceId, row, col) {
   const inst = state.instances[instanceId];
   const template = inst && state.db[inst.templateId];
   if (!template || !isStackable(template)) return null;
-  const targetId = activeGrid()[row]?.[col];
+  const targetId = getActiveGrid()[row]?.[col];
   if (!targetId || targetId === instanceId) return null;
   const target = state.instances[targetId];
   if (!target || target.templateId !== inst.templateId) return null;
-  if ((target.stackCount ?? 1) >= stackSizeOf(template)) return null;
+  if ((target.stackCount ?? 1) >= getItemStackSize(template)) return null;
   return target;
 }
 
-// Convert cursor position to grid row/col, accounting for anchor offset.
-// Returns null when cursor is not over the visible grid scroll area.
-function cursorToGridPos(clientX, clientY, anchorRow, anchorCol) {
+// Convert a cursor position to the grid row/col of the shape's origin, given the
+// anchor cell. Returns null when the cursor is outside the visible grid area.
+function getGridPosAtCursor(clientX, clientY, anchorRow, anchorCol) {
   const scrollEl = document.getElementById('grid-scroll');
   const scrollRect = scrollEl.getBoundingClientRect();
   if (clientX < scrollRect.left || clientX > scrollRect.right ||
@@ -283,80 +291,83 @@ function cursorToGridPos(clientX, clientY, anchorRow, anchorCol) {
   return { row, col };
 }
 
-// =============================================================================
-// INTERACTION — ROTATE (R key)
-// =============================================================================
+// ─── ROTATE (R KEY) AND CANCEL (ESCAPE) ──────────────────────────────────────
+// Rotate the item being placed and redraw the ghost at the last pointer position.
+function _rotatePlacingItem() {
+  const placing = state.placing;
+  placing.rotation = (placing.rotation + 1) % 4;
+  ghostShapeKey = ''; // force a ghost rebuild on the next mousemove
+  const template = state.db[placing.templateId];
+  if (!template) return;
+  const newShape = getRotatedShape(template.shape, placing.rotation);
+  const pos = getGridPosAtCursor(lastPointerX, lastPointerY, 0, 0);
+  // Outside the grid the ghost stays hidden; the next mousemove shows it
+  if (!pos) return;
+  const screenPos = getGhostScreenPos(0, 0, pos.row, pos.col);
+  const isValid = canPlace(newShape, pos.row, pos.col);
+  showGhost(newShape, template.rarity, screenPos.x, screenPos.y);
+  moveGhost(screenPos.x, screenPos.y, isValid);
+  highlightCells(newShape, pos.row, pos.col, isValid);
+}
+
+// Rotate the dragged item about its anchor cell and redraw ghost and highlights.
+function _rotateDraggedItem() {
+  const drag = state.dragging;
+  const inst = state.instances[drag.instanceId];
+  const template = state.db[inst.templateId];
+  const { rows, cols } = getShapeDims(getRotatedShape(template.shape, inst.rotation));
+  const { row: newAnchorRow, col: newAnchorCol } = getRotatedAnchorCW(drag.anchorRow, drag.anchorCol, rows, cols);
+  drag.anchorRow = newAnchorRow;
+  drag.anchorCol = newAnchorCol;
+  inst.rotation = (inst.rotation + 1) % 4;
+
+  // Rebuild the ghost at the current pointer position
+  const newShape = getRotatedShape(template.shape, inst.rotation);
+  ghostShapeKey = ''; // force a rebuild
+  const ghostX = lastPointerX - drag.anchorCol * CELL;
+  const ghostY = lastPointerY - drag.anchorRow * CELL;
+  showGhost(newShape, template.rarity, ghostX, ghostY);
+
+  // Update the grid highlights
+  const pos = getGridPosAtCursor(lastPointerX, lastPointerY, drag.anchorRow, drag.anchorCol);
+  if (pos) {
+    const screenPos = getGhostScreenPos(0, 0, pos.row, pos.col);
+    const isValid = canPlace(newShape, pos.row, pos.col, drag.instanceId);
+    moveGhost(screenPos.x, screenPos.y, isValid);
+    highlightCells(newShape, pos.row, pos.col, isValid);
+  }
+}
+
+// Abort a drag and put the item back where it started.
+function _cancelItemDrag() {
+  const drag = state.dragging;
+  const inst = state.instances[drag.instanceId];
+  const template = state.db[inst.templateId];
+  inst.rotation = drag.origRotation;
+  const shape = getRotatedShape(template.shape, inst.rotation);
+  placeOnGrid(inst.id, shape, drag.origRow, drag.origCol);
+  inst.row = drag.origRow;
+  inst.col = drag.origCol;
+  document.removeEventListener('pointermove', _onDragMove);
+  document.removeEventListener('pointerup', _onDragEnd);
+  stopDragAutoScroll();
+  state.mode = 'idle';
+  state.dragging = null;
+  hideGhost();
+  clearHighlights();
+  renderAllItems();
+}
+
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea, select')) return;
 
   if (e.key === 'r' || e.key === 'R') {
-    if (state.mode === 'placing') {
-      state.placing.rotation = (state.placing.rotation + 1) % 4;
-      ghostShapeKey = ''; // Force ghost rebuild on next mousemove
-      // Immediately update ghost at last known pointer position
-      const pt = state.placing;
-      const tp = state.db[pt.templateId];
-      if (tp) {
-        const ns = getRotatedShape(tp.shape, pt.rotation);
-        const pp = cursorToGridPos(lastPointerX, lastPointerY, 0, 0);
-        if (pp) {
-          const sp = getGhostScreenPos(0, 0, pp.row, pp.col);
-          const vv = canPlace(ns, pp.row, pp.col);
-          showGhost(ns, tp.rarity, sp.x, sp.y);
-          moveGhost(sp.x, sp.y, vv);
-          highlightCells(ns, pp.row, pp.col, vv);
-        }
-        // If cursor is outside grid, leave ghost hidden — next mousemove will show it
-      }
-      return;
-    }
-    if (state.mode === 'dragging') {
-      const drag = state.dragging;
-      const inst = state.instances[drag.instanceId];
-      const template = state.db[inst.templateId];
-      const { rows, cols } = shapeDims(getRotatedShape(template.shape, inst.rotation));
-      const { row: nr, col: nc } = rotateAnchorCW(drag.anchorRow, drag.anchorCol, rows, cols);
-      drag.anchorRow = nr;
-      drag.anchorCol = nc;
-      inst.rotation = (inst.rotation + 1) % 4;
-      // Rebuild ghost at current pointer position
-      const newShape = getRotatedShape(template.shape, inst.rotation);
-      ghostShapeKey = ''; // Force rebuild
-      const newX = lastPointerX - drag.anchorCol * CELL;
-      const newY = lastPointerY - drag.anchorRow * CELL;
-      showGhost(newShape, template.rarity, newX, newY);
-      // Re-run drag move logic to update highlights
-      const pos2 = cursorToGridPos(lastPointerX, lastPointerY, drag.anchorRow, drag.anchorCol);
-      if (pos2) {
-        const sp = getGhostScreenPos(0, 0, pos2.row, pos2.col);
-        const v = canPlace(newShape, pos2.row, pos2.col, drag.instanceId);
-        moveGhost(sp.x, sp.y, v);
-        highlightCells(newShape, pos2.row, pos2.col, v);
-      }
-      return;
-    }
+    if (state.mode === 'placing') { _rotatePlacingItem(); return; }
+    if (state.mode === 'dragging') { _rotateDraggedItem(); return; }
   }
 
   if (e.key === 'Escape') {
     cancelPlacing();
-    if (state.mode === 'dragging') {
-      // Restore
-      const drag = state.dragging;
-      const inst = state.instances[drag.instanceId];
-      const template = state.db[inst.templateId];
-      inst.rotation = drag.origRotation;
-      const shape = getRotatedShape(template.shape, inst.rotation);
-      placeOnGrid(inst.id, shape, drag.origRow, drag.origCol);
-      inst.row = drag.origRow;
-      inst.col = drag.origCol;
-      document.removeEventListener('pointermove', onDragMove);
-      document.removeEventListener('pointerup', onDragEnd);
-      stopDragAutoScroll();
-      state.mode = 'idle';
-      state.dragging = null;
-      hideGhost();
-      clearHighlights();
-      renderAllItems();
-    }
+    if (state.mode === 'dragging') _cancelItemDrag();
   }
 });

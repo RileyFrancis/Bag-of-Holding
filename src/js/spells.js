@@ -3,43 +3,68 @@
 // =============================================================================
 'use strict';
 
-// Same shape as class-features.js / species-traits.js: two small registries —
-// `data/spell-slots.json` (how many slots of each spell level a class grants,
-// indexed by that class's OWN level) and `data/spells.json` (every spell this
-// app knows, each tagged with the classes that can cast it) — and a section
-// that draws them onto a third view of a character, alongside the inventory
-// and the sheet. A character's classes are matched by name, exactly as
-// class-features.js matches them; a class this app has no slot table for grants
-// no spells at all, the same way an unknown class shows no features.
+// Two registries, `data/spell-slots.json` (slots per spell level, indexed by a
+// class's OWN level) and `data/spells.json` (each spell tagged with the classes
+// that cast it), drawn onto the Spells view. Classes are matched by name, as in
+// class-features.js; a class with no slot table grants no spells.
 //
-// Spell Slots totals follow the rules' own Multiclass Spellcaster table: full
-// caster levels (Bard/Cleric/Druid/Sorcerer/Wizard) count in full, half-caster
-// levels (Paladin/Ranger/Artificer) count floored by 2, and Eldritch
-// Knight/Arcane Trickster levels count floored by 3 — each class's
-// contribution floored BEFORE summing, per RAW — and the blended total is
-// looked up once in `multiclassSlotsByLevel` (see multiclassCasterLevel()).
-// Warlock's Pact Magic is never blended into that total; it is its own pool,
-// read off the Warlock entry alone and shown as a separate line.
+// Slot totals follow the Multiclass Spellcaster table (_getMulticlassCasterLevel()).
+// Warlock's Pact Magic is its own pool, never blended into that total.
+// The view can be turned off per character (`character.spellsEnabled`, default on).
 //
-// The whole sheet can be turned off per character (`character.spellsEnabled`,
-// default on), from Character Setup — see character-setup.js — for a
-// character with no need of it.
-//
-// The Available Spells panel (in the sidebar's Spells tab) is not limited to
-// the character's own classes the way Spell Slots and Spells Known are — a
-// feat (Magic Initiate and the like) can grant a spell from a class with no
-// levels in it at all, so its class checkboxes always list every class this
-// app's spell data knows of, just unchecked by default for any the character
-// doesn't actually have. See `spellbookClassRows()` / `spellbookAvailableSpells()`.
+// The Available Spells panel offers every class the spell data knows, not only the
+// character's own, because a feat (Magic Initiate) can grant a spell from any class.
 
-// =============================================================================
-// LOADING THE REGISTRIES
-// =============================================================================
+// Multiclass Spellcaster table membership. Warlock is never matched: Pact Magic is its own pool.
+const FULL_CASTER_CLASSES = ['Bard', 'Cleric', 'Druid', 'Sorcerer', 'Wizard'];
+const HALF_CASTER_CLASSES = ['Paladin', 'Ranger', 'Artificer'];
+// The class alone grants nothing; only this exact subclass (trimmed, case-insensitive) does.
+const THIRD_CASTER_SUBCLASSES = [
+  { className: 'Fighter', subclassName: 'Eldritch Knight' },
+  { className: 'Rogue', subclassName: 'Arcane Trickster' },
+];
+
+// Browser furniture, not a fact about any character: never saved or synced.
+const SPELLBOOK_PREFS_KEY = 'dnd_inventory_spellbook';
+const SPELLBOOK_SORT_MODES = ['class', 'school', 'all'];
+
+const TIME_UNIT_MINUTES = { round: 0.1, minute: 1, hour: 60, day: 1440 }; // minutes per unit
+const ACTION_TAGS = ['Action', 'Bonus Action', 'Reaction'];
+
+// Each facet boils a spell's free text down to short tags, ranked the way a reader
+// thinks of them (Action before 1 minute before 1 hour). `all: true` means a spell
+// must carry EVERY checked tag (tick M to find spells that need one); the rest match ANY.
+const SPELLBOOK_FACETS = [
+  { key: 'schools', label: 'Schools', tags: s => [s.school || 'Other'], rank: () => 0 },
+  { key: 'castingTimes', label: 'Casting Time', tags: _getSpellCastingTimeTags, rank: _getCastingTimeRank },
+  { key: 'components', label: 'Components', tags: _getSpellComponentTags, rank: t => 'VSM'.indexOf(t), all: true,
+    titles: { V: 'Verbal', S: 'Somatic', M: 'Material' } },
+  { key: 'ranges', label: 'Range', tags: _getSpellRangeTags, rank: _getRangeRank },
+  { key: 'durations', label: 'Duration', tags: _getSpellDurationTags, rank: _getDurationRank },
+];
+
+// Schools with a glyph (img/icon/spells/, .ico-school-* in icons.css), lower-cased.
+// Anything else (homebrew, a typo) is printed as text instead.
+const SPELL_SCHOOLS_WITH_ICONS = ['abjuration', 'conjuration', 'divination', 'enchantment',
+  'evocation', 'illusion', 'necromancy', 'transmutation'];
+
+const SPELL_SLOT_POOLS = ['slots', 'pact'];
+
+// Hold time before the cast wheel opens, and movement (px) that opens it sooner;
+// the advantage wheel's own feel (dice.js), so the two gestures read alike.
+const CAST_WHEEL_HOLD_MS = 180;
+const CAST_WHEEL_REACH = 9;
+const CAST_WHEEL_DEADZONE = 24; // px; letting go inside it casts the default pick
+
+// Short, not the item tooltip's 1.2 s: the list is read by running the pointer down it.
+const SPELL_HOVER_DELAY_MS = 300;
+
+// ─── LOADING THE REGISTRIES ───
 let DEFAULT_SPELL_SLOTS = [];
 let DEFAULT_MULTICLASS_SLOTS = {};
 let DEFAULT_SPELLS = [];
 
-function loadDefaultSpellSlots() {
+function _loadDefaultSpellSlots() {
   try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', 'data/spell-slots.json', false); // synchronous, like classes.json
@@ -48,8 +73,8 @@ function loadDefaultSpellSlots() {
     const body = xhr.responseText.trim();
     if (body.startsWith('<')) throw new Error('not JSON'); // an unknown-path index page
     const parsed = JSON.parse(body);
-    DEFAULT_SPELL_SLOTS = sanitizeSpellSlotClasses(parsed.classes);
-    DEFAULT_MULTICLASS_SLOTS = sanitizeSlotsByLevel(parsed.multiclassSlotsByLevel);
+    DEFAULT_SPELL_SLOTS = _sanitizeSpellSlotClasses(parsed.classes);
+    DEFAULT_MULTICLASS_SLOTS = _sanitizeSlotsByLevel(parsed.multiclassSlotsByLevel);
   } catch (e) {
     // not fatal — the sheet is usable with no slot table known
     DEFAULT_SPELL_SLOTS = [];
@@ -57,7 +82,7 @@ function loadDefaultSpellSlots() {
   }
 }
 
-function loadDefaultSpells() {
+function _loadDefaultSpells() {
   try {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', 'data/spells.json', false);
@@ -71,9 +96,8 @@ function loadDefaultSpells() {
   }
 }
 
-// Shared by a class's own `slotsByLevel` and the top-level
-// `multiclassSlotsByLevel` table — both are level → nine-number-array maps.
-function sanitizeSlotsByLevel(raw) {
+// Shared by a class's `slotsByLevel` and `multiclassSlotsByLevel`: level → nine numbers.
+function _sanitizeSlotsByLevel(raw) {
   const slotsByLevel = {};
   Object.entries(raw ?? {}).forEach(([level, slots]) => {
     const lvl = parseInt(level, 10);
@@ -84,16 +108,18 @@ function sanitizeSlotsByLevel(raw) {
   return slotsByLevel;
 }
 
-function sanitizeSpellSlotClasses(raw) {
+function _sanitizeSpellSlotClasses(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map(c => {
     const name = String(c?.name ?? '').trim();
     if (!name) return null;
-    const slotsByLevel = sanitizeSlotsByLevel(c?.slotsByLevel);
+    const slotsByLevel = _sanitizeSlotsByLevel(c?.slotsByLevel);
     return Object.keys(slotsByLevel).length ? { name, slotsByLevel } : null;
   }).filter(Boolean);
 }
 
+// Cleans a raw spell list into the app's spell shape, dropping entries with no
+// id, name, level or class. Shared with homebrew-share.js.
 function sanitizeSpellList(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map(s => {
@@ -113,36 +139,32 @@ function sanitizeSpellList(raw) {
       components: String(s?.components ?? '').trim(),
       duration: String(s?.duration ?? '').trim(),
       classes,
-      source: cleanSource(s?.source), // short book label, same helper class-features.js uses
+      source: cleanSource(s?.source), // short book label (class-features.js)
       description: String(s?.description ?? ''),
     };
   }).filter(Boolean);
 }
 
-loadDefaultSpellSlots();
-loadDefaultSpells();
+_loadDefaultSpellSlots();
+_loadDefaultSpells();
 
-// =============================================================================
-// THE REGISTRIES
-// =============================================================================
+// ─── THE REGISTRIES ───
 // The app's spells, then usable homebrew ones (homebrew-share.js).
-function allSpells() {
-  return withHomebrewSpells(DEFAULT_SPELLS);
+function _getAllSpells() {
+  return getSpellsWithHomebrew(DEFAULT_SPELLS);
 }
 
-// Trimmed, case-insensitive — the same free-text match class-features.js uses
-// for `findClassByName()`, just against the slot table's own class list.
-function findSpellSlotClass(name) {
+// Trimmed, case-insensitive match against the slot table's class names.
+function _findSpellSlotClass(name) {
   const key = String(name ?? '').trim().toLowerCase();
   if (!key) return null;
   return DEFAULT_SPELL_SLOTS.find(c => c.name.toLowerCase() === key) ?? null;
 }
 
-// The slots array [level1..level9] a class of the given level has, walking
-// down to the nearest level actually present — the table above happens to be
-// dense, but a hand-authored one need not be.
-function spellSlotsForClass(className, level) {
-  const def = findSpellSlotClass(className);
+// The slots [level1..level9] for a class at a level, walking down to the nearest
+// level present, since a hand-authored table need not be dense.
+function _getSpellSlotsForClass(className, level) {
+  const def = _findSpellSlotClass(className);
   if (!def) return null;
   const lvl = Math.max(1, Math.min(20, parseInt(level, 10) || 1));
   for (let l = lvl; l >= 1; l--) {
@@ -151,58 +173,41 @@ function spellSlotsForClass(className, level) {
   return [0, 0, 0, 0, 0, 0, 0, 0, 0];
 }
 
-// A character's classes that this app has a slot table for, each with its own
-// slots and the highest spell level those slots reach (0 = cantrips only).
-// Whether the app knows the character's OTHER classes is irrelevant here —
-// same as `characterClassLevel()` reading one class at a time.
-function spellcastingEntriesOf(character) {
-  return classEntriesOf(character)
-    .filter(e => findSpellSlotClass(e.name))
+// The character's classes that have a slot table, each with its own slots and the
+// highest spell level they reach (0 = cantrips only).
+function _getSpellcastingEntries(character) {
+  return getClassEntries(character)
+    .filter(e => _findSpellSlotClass(e.name))
     .map(e => {
-      const slots = spellSlotsForClass(e.name, e.level);
+      const slots = _getSpellSlotsForClass(e.name, e.level);
       let maxSpellLevel = 0;
       slots.forEach((n, i) => { if (n > 0) maxSpellLevel = i + 1; });
       return { name: e.name, level: e.level, slots, maxSpellLevel };
     });
 }
 
-function classMatchesAny(className, names) {
+function _isClassNameInList(className, names) {
   const key = className.trim().toLowerCase();
   return names.some(n => n.trim().toLowerCase() === key);
 }
 
-// The rules' own multiclass caster-level math (PHB "Spell Slots" under
-// Multiclassing) — read off RAW `classLevels` (name + level + subclass), not
-// `spellcastingEntriesOf()`'s filtered list, because Eldritch Knight/Arcane
-// Trickster contribute here despite this app having no spell-slot table (or
-// spell list) of their own under "Fighter"/"Rogue". Warlock is deliberately
-// never matched here — Pact Magic is its own pool, see `pactMagicSlots()`.
-const FULL_CASTER_CLASSES = ['Bard', 'Cleric', 'Druid', 'Sorcerer', 'Wizard'];
-const HALF_CASTER_CLASSES = ['Paladin', 'Ranger', 'Artificer'];
-// { class, subclass }: the class ALONE grants nothing — only this exact
-// free-text subclass does, matched the same trimmed/case-insensitive way
-// `findSubclassByName()` in class-features.js matches a character's subclass.
-const THIRD_CASTER_SUBCLASSES = [
-  { className: 'Fighter', subclassName: 'Eldritch Knight' },
-  { className: 'Rogue', subclassName: 'Arcane Trickster' },
-];
-
-// Each class's contribution is floored BEFORE summing — a Paladin 3/Ranger 3
-// multiclass counts as caster level 1+1=2, not floor((3+3)/2)=3. That
-// per-class flooring is RAW, not a simplification.
-function multiclassCasterLevel(rawEntries) {
+// The PHB multiclass caster level, read off RAW `classLevels` rather than
+// `_getSpellcastingEntries()`, because Eldritch Knight/Arcane Trickster add levels
+// with no slot table of their own. Each class is floored BEFORE summing, per RAW:
+// Paladin 3/Ranger 3 is 1+1=2, not floor((3+3)/2)=3.
+function _getMulticlassCasterLevel(rawEntries) {
   let level = 0;
   (rawEntries ?? []).forEach(e => {
     const name = String(e?.name ?? '').trim();
     const lvl = Math.max(0, parseInt(e?.level, 10) || 0);
     if (!name || !lvl) return;
-    if (classMatchesAny(name, FULL_CASTER_CLASSES)) {
+    if (_isClassNameInList(name, FULL_CASTER_CLASSES)) {
       level += lvl;
-    } else if (classMatchesAny(name, HALF_CASTER_CLASSES)) {
+    } else if (_isClassNameInList(name, HALF_CASTER_CLASSES)) {
       level += Math.floor(lvl / 2);
     } else {
-      const third = THIRD_CASTER_SUBCLASSES.find(t => classMatchesAny(name, [t.className]));
-      if (third && classMatchesAny(String(e?.subclass ?? ''), [third.subclassName])) {
+      const third = THIRD_CASTER_SUBCLASSES.find(t => _isClassNameInList(name, [t.className]));
+      if (third && _isClassNameInList(String(e?.subclass ?? ''), [third.subclassName])) {
         level += Math.floor(lvl / 3);
       }
     }
@@ -210,9 +215,9 @@ function multiclassCasterLevel(rawEntries) {
   return level;
 }
 
-// The blended multiclass caster level's slots, off `multiclassSlotsByLevel` —
-// same nearest-level-at-or-below walk as `spellSlotsForClass()`.
-function multiclassSpellSlots(casterLevel) {
+// The slots for a blended caster level, with the same nearest-level walk as
+// `_getSpellSlotsForClass()`.
+function _getMulticlassSpellSlots(casterLevel) {
   const lvl = Math.max(0, Math.min(20, casterLevel));
   for (let l = lvl; l >= 1; l--) {
     if (DEFAULT_MULTICLASS_SLOTS[l]) return DEFAULT_MULTICLASS_SLOTS[l];
@@ -220,113 +225,87 @@ function multiclassSpellSlots(casterLevel) {
   return [0, 0, 0, 0, 0, 0, 0, 0, 0];
 }
 
-// Pact Magic is its own pool, always read off the Warlock entry alone at the
-// Warlock's own level — never blended into `multiclassSpellSlots()`.
-function pactMagicSlots(character) {
-  const entry = classEntriesOf(character).find(e => classMatchesAny(String(e?.name ?? ''), ['Warlock']));
+// Pact Magic, read off the Warlock entry alone at its own level; never blended
+// into `_getMulticlassSpellSlots()`.
+function _getPactMagicSlots(character) {
+  const entry = getClassEntries(character).find(e => _isClassNameInList(String(e?.name ?? ''), ['Warlock']));
   if (!entry || !(parseInt(entry.level, 10) > 0)) return null;
-  return spellSlotsForClass('Warlock', entry.level);
+  return _getSpellSlotsForClass('Warlock', entry.level);
 }
 
-// Whether the sheet's own view is offered at all for this character — a
-// per-character preference set in Character Setup, on by default so an older
-// save (no field yet) still gets it.
-function spellSheetEnabled(character) {
+// Whether this character's Spells view is offered (Character Setup). On unless
+// set false, so a save without the field still gets it.
+function isSpellSheetEnabled(character) {
   return character?.spellsEnabled !== false;
 }
 
-// Whether a spell is on the character's own list, kept separately from
-// availability: `spellbookAvailableSpells()` answers "could this character
-// ever cast it", this answers "have they actually picked it" for the
-// Available Spells panel's toggle and #spell-list's own filter.
-function isSpellKnown(character, spellId) {
+// Whether the character has picked this spell; availability is a separate
+// question (`_getSpellbookAvailableSpells()`).
+function _isSpellKnown(character, spellId) {
   return Array.isArray(character?.knownSpells) && character.knownSpells.includes(spellId);
 }
 
-// The panel's whole write path — a card's click, nothing else touches
-// `knownSpells`. Guarded the way every other character edit is
-// (`isReadOnly()`), since a picker card is a button, not an `<input>`
-// `renderCharacterSheet()` can just disable.
-function toggleKnownSpell(spellId) {
+// The only write to `knownSpells`. Guarded by `isReadOnly()` itself, because a
+// picker card is a button `renderCharacterSheet()` does not disable.
+function _toggleKnownSpell(spellId) {
   if (isReadOnly()) return;
   const known = Array.isArray(state.character.knownSpells) ? state.character.knownSpells.slice() : [];
   const at = known.indexOf(spellId);
   if (at === -1) known.push(spellId); else known.splice(at, 1);
   state.character.knownSpells = known;
-  renderSpellSheetContent(); // bypasses the signature gate — classes/level didn't change
-  debouncedSync();
+  _renderSpellSheetContent(); // bypasses the signature gate — classes/level didn't change
+  scheduleSaveAndSync();
 }
 
-// =============================================================================
-// THE AVAILABLE SPELLS PANEL — the pool, and its filter/sort preferences
-// =============================================================================
-// This browser's furniture, like item-sort.js's own key — a way of reading the
-// spell list, not a fact about any character. Never saved or synced.
-const SPELLBOOK_PREFS_KEY = 'dnd_inventory_spellbook';
-const SPELLBOOK_SORT_MODES = ['class', 'school', 'all'];
-
-// =============================================================================
-// FILTER FACETS — every axis but class, read off a spell's own text
-// =============================================================================
-// data/spells.json keeps these as the free text the rules print ("Reaction,
-// which you take when…", "Concentration, up to 1 minute", "120 feet (Square)"),
-// so each facet boils a spell down to one or more short tags, and orders its
-// tags the way a reader thinks of them (Action before 1 minute before 1 hour)
-// rather than alphabetically. `all: true` means a spell must carry EVERY
-// checked tag (Components: tick M to find the spells that need one); the rest
-// match on ANY checked tag.
-const TIME_UNIT_MINUTES = { round: 0.1, minute: 1, hour: 60, day: 1440 };
+// ─── FILTER FACETS — every axis but class, read off a spell's own free text ───
 
 // "10 minutes" → 10, "1 day" → 1440; null for anything that isn't a span of time.
-function timeSpanMinutes(text) {
+function _getTimeSpanMinutes(text) {
   const m = /^(\d+)\s+(round|minute|hour|day)s?$/i.exec(text);
   return m ? parseInt(m[1], 10) * TIME_UNIT_MINUTES[m[2].toLowerCase()] : null;
 }
 
-// "1 Minute" and "1 minute" are one tag; "Until Dispelled" and "Until
-// dispelled" too. Sentence case, which every tag in the data reads well in —
-// except the action types, which the rules capitalise and are left alone.
-function sentenceCase(text) {
+// Sentence case, so "1 Minute" and "1 minute" are one tag. Action types skip it
+// (the rules capitalise them).
+function _toSentenceCase(text) {
   const t = String(text ?? '').trim();
   return t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '';
 }
 
 // What's left of a field once its parenthetical and any trailing ", which you
 // take when…" clause are cut away.
-function leadingPhrase(text) {
+function _getLeadingPhrase(text) {
   return String(text ?? '').split(/\s*[(,]/)[0].trim();
 }
 
-const ACTION_TAGS = ['Action', 'Bonus Action', 'Reaction'];
-
-function spellCastingTimeTags(spell) {
+function _getSpellCastingTimeTags(spell) {
   const text = String(spell.castingTime ?? '');
-  const lead = leadingPhrase(text);
+  const lead = _getLeadingPhrase(text);
   const action = ACTION_TAGS.find(a => a.toLowerCase() === lead.toLowerCase());
-  const tags = [action ?? sentenceCase(lead)].filter(Boolean);
+  const tags = [action ?? _toSentenceCase(lead)].filter(Boolean);
   if (/\(ritual\)/i.test(text)) tags.push('Ritual');
   return tags;
 }
 
-function castingTimeRank(tag) {
+function _getCastingTimeRank(tag) {
   const action = ACTION_TAGS.indexOf(tag);
   if (action !== -1) return action;
   if (tag === 'Ritual') return 1e9;
-  const minutes = timeSpanMinutes(tag);
+  const minutes = _getTimeSpanMinutes(tag);
   return minutes === null ? 1e8 : 10 + minutes;
 }
 
-function spellComponentTags(spell) {
-  const letters = leadingPhrase(String(spell.components ?? '').replace(/,/g, ' '));
+function _getSpellComponentTags(spell) {
+  const letters = _getLeadingPhrase(String(spell.components ?? '').replace(/,/g, ' '));
   return ['V', 'S', 'M'].filter(c => new RegExp('\\b' + c + '\\b').test(letters));
 }
 
-function spellRangeTags(spell) {
-  const tag = sentenceCase(leadingPhrase(spell.range));
+function _getSpellRangeTags(spell) {
+  const tag = _toSentenceCase(_getLeadingPhrase(spell.range));
   return tag ? [tag] : [];
 }
 
-function rangeRank(tag) {
+function _getRangeRank(tag) {
   if (tag === 'Self') return 0;
   if (tag === 'Touch') return 1;
   const m = /^(\d+)\s+(feet|foot|miles?)$/i.exec(tag);
@@ -339,35 +318,26 @@ function rangeRank(tag) {
 // Concentration is its own tag alongside the span it lasts, so "1 minute"
 // finds a minute-long spell whether or not it needs concentration, and
 // "Concentration" finds every one that does.
-function spellDurationTags(spell) {
+function _getSpellDurationTags(spell) {
   const text = String(spell.duration ?? '').trim();
-  const concentration = /^concentration/i.test(text);
+  const needsConcentration = /^concentration/i.test(text);
   const span = text.replace(/^concentration,?\s*/i, '').replace(/^up to\s*/i, '');
-  const tags = span ? [sentenceCase(span)] : [];
-  if (concentration) tags.push('Concentration');
+  const tags = span ? [_toSentenceCase(span)] : [];
+  if (needsConcentration) tags.push('Concentration');
   return tags;
 }
 
-function durationRank(tag) {
+function _getDurationRank(tag) {
   if (tag === 'Instantaneous') return 0;
   if (tag === 'Concentration') return 1e9;
-  const minutes = timeSpanMinutes(tag);
+  const minutes = _getTimeSpanMinutes(tag);
   if (minutes !== null) return 1 + minutes;
   if (/^until dispelled/i.test(tag)) return 1e7 + tag.length;
   return 1e8;
 }
 
-const SPELLBOOK_FACETS = [
-  { key: 'schools', label: 'Schools', tags: s => [s.school || 'Other'], rank: () => 0 },
-  { key: 'castingTimes', label: 'Casting Time', tags: spellCastingTimeTags, rank: castingTimeRank },
-  { key: 'components', label: 'Components', tags: spellComponentTags, rank: t => 'VSM'.indexOf(t), all: true,
-    titles: { V: 'Verbal', S: 'Somatic', M: 'Material' } },
-  { key: 'ranges', label: 'Range', tags: spellRangeTags, rank: rangeRank },
-  { key: 'durations', label: 'Duration', tags: spellDurationTags, rank: durationRank },
-];
-
 // Whether a spell survives one facet's checked tags.
-function spellPassesFacet(spell, facet, checked) {
+function _doesSpellPassFacet(spell, facet, checked) {
   if (!checked.length) return true;
   const tags = facet.tags(spell);
   return facet.all ? checked.every(t => tags.includes(t)) : checked.some(t => tags.includes(t));
@@ -376,152 +346,128 @@ function spellPassesFacet(spell, facet, checked) {
 // The options a facet offers: every tag in the pool, plus any tag still
 // checked that the pool no longer has (a class unchecked, a level lost) —
 // otherwise it would keep filtering with no box left to untick.
-function spellbookFacetOptions(facet, available, checked) {
+function _getSpellbookFacetOptions(facet, available, checked) {
   const tags = new Set(checked);
   available.forEach(spell => facet.tags(spell).forEach(t => tags.add(t)));
   return [...tags].sort((a, b) => facet.rank(a) - facet.rank(b) || a.localeCompare(b));
 }
 
-function spellbookFiltersAreDefault(prefs) {
+function _areSpellbookFiltersDefault(prefs) {
   return !prefs.hiddenClasses.length && !prefs.shownExtraClasses.length &&
     SPELLBOOK_FACETS.every(f => !prefs[f.key].length);
 }
 
+// ─── THE AVAILABLE SPELLS PANEL — the pool, and its filter/sort preferences ───
 // Session-only, like Browse's own search box — what's typed is a moment's
 // question, not a preference worth keeping.
 let spellbookQuery = '';
 
-function spellNameMatches(spell, query) {
+function _doesSpellNameMatch(spell, query) {
   return !query || spell.name.toLowerCase().includes(query);
 }
 
-// Every facet list is opt-IN — empty means "no filter on this axis" — so the
-// defaults are just empty lists, and Reset is a matter of emptying them. The
-// class lists are the exception (see `spellbookClassChecked()`): their
-// default is the character's own classes checked, which empty lists already
-// mean. An older `hiddenSchools` (opt-out) is simply dropped.
-function defaultSpellbookFilters() {
+// Every list empty. Facet lists are opt-IN (empty = no filter on that axis), and
+// empty class lists already mean "only the character's own classes checked".
+function _getDefaultSpellbookFilters() {
   const prefs = { hiddenClasses: [], shownExtraClasses: [] };
   SPELLBOOK_FACETS.forEach(f => { prefs[f.key] = []; });
   return prefs;
 }
 
-function loadSpellbookPrefs() {
+function _loadSpellbookPrefs() {
   const strings = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : []);
   let raw = null;
   try { raw = JSON.parse(localStorage.getItem(SPELLBOOK_PREFS_KEY)); } catch (e) { /* private mode */ }
-  const prefs = defaultSpellbookFilters();
+  const prefs = _getDefaultSpellbookFilters();
   Object.keys(prefs).forEach(key => { prefs[key] = strings(raw?.[key]); });
   prefs.sortMode = SPELLBOOK_SORT_MODES.includes(raw?.sortMode) ? raw.sortMode : 'class';
   return prefs;
 }
 
-let spellbookPrefs = loadSpellbookPrefs();
+let spellbookPrefs = _loadSpellbookPrefs();
 
-function saveSpellbookPrefs() {
+function _saveSpellbookPrefs() {
   try { localStorage.setItem(SPELLBOOK_PREFS_KEY, JSON.stringify(spellbookPrefs)); } catch (e) { /* private mode */ }
 }
 
-// Every class this app's spell data knows of, alphabetically — deliberately
-// not limited to the character's own classes. A feat (Magic Initiate and the
-// like) can grant a spell from a class the character has no levels in at all,
-// so the panel must be able to show any class's list on request.
-function spellbookAllClassNames() {
+// Every class the spell data knows, alphabetically. Deliberately not limited to the
+// character's own: a feat can grant a spell from a class they have no levels in.
+function _getSpellbookAllClassNames() {
   const names = new Set();
-  allSpells().forEach(s => s.classes.forEach(c => names.add(c)));
+  _getAllSpells().forEach(s => s.classes.forEach(c => names.add(c)));
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-// The rows the panel offers: the character's own spellcasting classes first
-// (their own class order, carrying their own `entry` for the level gate
-// below), then every other class, alphabetically. `own` decides both that
-// gate and which preference list a checkbox toggles.
-function spellbookClassRows(entries) {
+// The panel's class rows: own spellcasting classes first (carrying `entry` for the
+// level gate), then every other class. `own` picks the gate and the prefs list.
+function _getSpellbookClassRows(entries) {
   const ownNames = new Set(entries.map(e => e.name));
-  const extra = spellbookAllClassNames().filter(n => !ownNames.has(n));
+  const extra = _getSpellbookAllClassNames().filter(n => !ownNames.has(n));
   return entries.map(e => ({ name: e.name, own: true, entry: e }))
     .concat(extra.map(name => ({ name, own: false, entry: null })));
 }
 
-// An owned class defaults to shown — `hiddenClasses` is an opt-OUT list. Any
-// other class defaults to hidden — `shownExtraClasses`
-// is an opt-IN list — so "every class is an option, but only your own are
-// checked to start" needs no first-run bookkeeping: an empty prefs object
-// already means exactly that.
-function spellbookClassChecked(row) {
+// Owned classes are opt-OUT (`hiddenClasses`), others opt-IN (`shownExtraClasses`),
+// so empty prefs already mean "only your own checked", with no first-run setup.
+function _isSpellbookClassChecked(row) {
   return row.own
     ? !spellbookPrefs.hiddenClasses.includes(row.name)
     : spellbookPrefs.shownExtraClasses.includes(row.name);
 }
 
-function setSpellbookClassChecked(row, checked) {
+function _setSpellbookClassChecked(row, isChecked) {
   const list = row.own ? spellbookPrefs.hiddenClasses : spellbookPrefs.shownExtraClasses;
-  const member = row.own ? !checked : checked;
+  const shouldBeListed = row.own ? !isChecked : isChecked;
   const at = list.indexOf(row.name);
-  if (member && at === -1) list.push(row.name);
-  else if (!member && at !== -1) list.splice(at, 1);
-  saveSpellbookPrefs();
-  renderSpellSheetContent();
+  if (shouldBeListed && at === -1) list.push(row.name);
+  else if (!shouldBeListed && at !== -1) list.splice(at, 1);
+  _saveSpellbookPrefs();
+  _renderSpellSheetContent();
 }
 
-// Whether `row`'s class actually grants `spell` — the one reachability rule
-// everything else in this section is built from. An owned class is gated by
-// its own slots, same as ever; any other class has no level to gate it by, so
-// a name match is reachable outright. Tag membership alone is *not* enough
-// for an owned class past its own cap — a spell tagged with both an owned and
-// an unrelated class (e.g. Misty Step, Wizard/Warlock) must not read as
-// "granted by Wizard" for a Wizard too low-level to actually reach it, even
-// though it's still reachable overall via the other tag.
-function spellGrantsRow(spell, row) {
-  if (!classMatchesAny(row.name, spell.classes)) return false;
+// The one reachability rule: an owned class is gated by its own slots, any other
+// class grants on a name match. A tag alone is not enough for an owned class, or
+// Misty Step (Wizard/Warlock) would read "granted by Wizard" to a low Wizard.
+function _doesRowGrantSpell(spell, row) {
+  if (!_isClassNameInList(row.name, spell.classes)) return false;
   if (!row.own) return true;
   return spell.level === 0 || row.entry.maxSpellLevel >= spell.level;
 }
 
-// Every row among `classRows` that actually grants this spell — own classes
-// first, in class order, extra classes after. A spell shared by two of them
-// (e.g. Guidance for a Cleric/Druid) is listed under both, the same way a
-// real spellbook would repeat it.
-function spellGrantingClasses(spell, classRows) {
-  return classRows.filter(r => spellGrantsRow(spell, r)).map(r => r.name);
+// The names of every row that grants this spell, own classes first. A spell
+// shared by two (Guidance for a Cleric/Druid) is listed under both.
+function _getSpellGrantingClasses(spell, classRows) {
+  return classRows.filter(r => _doesRowGrantSpell(spell, r)).map(r => r.name);
 }
 
-// The panel's whole pool, independent of which checkboxes are currently on —
-// those only decide what's *displayed* (`spellbookSections()`), not what's
-// known. A spell reachable via any row at all (owned-and-in-range, or simply
-// tagged with a class the character has no levels in) belongs in the pool;
-// the checkbox, defaulting off for a class the character doesn't have, is
-// what actually keeps it out of sight until asked for.
-function spellbookAvailableSpells(classRows) {
-  return allSpells()
-    .filter(spell => spellGrantingClasses(spell, classRows).length > 0)
+// The panel's whole pool, independent of the checkboxes: they decide only what is
+// displayed (`_getSpellbookSections()`). Any spell some row grants belongs here.
+function _getSpellbookAvailableSpells(classRows) {
+  return _getAllSpells()
+    .filter(spell => _getSpellGrantingClasses(spell, classRows).length > 0)
     .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 }
 
-// Every facet's checked tags. Class is not one of them — in Class mode it
-// decides which group a spell is listed under, not just whether it is.
-function spellPassesFacets(spell, prefs) {
-  return SPELLBOOK_FACETS.every(f => spellPassesFacet(spell, f, prefs[f.key]));
+// Every facet's checked tags. Class is not a facet: in Class mode it picks the
+// group a spell is listed under.
+function _doesSpellPassFacets(spell, prefs) {
+  return SPELLBOOK_FACETS.every(f => _doesSpellPassFacet(spell, f, prefs[f.key]));
 }
 
 // The whole filter: granted by a checked class, and through every facet. What
 // a search shows in full; anything else it matches is greyed below.
-function spellPassesFilters(spell, classRows, prefs) {
-  const enabledNames = new Set(classRows.filter(spellbookClassChecked).map(r => r.name));
-  return spellPassesFacets(spell, prefs) &&
-    spellGrantingClasses(spell, classRows).some(c => enabledNames.has(c));
+function _doesSpellPassFilters(spell, classRows, prefs) {
+  const enabledNames = new Set(classRows.filter(_isSpellbookClassChecked).map(r => r.name));
+  return _doesSpellPassFacets(spell, prefs) &&
+    _getSpellGrantingClasses(spell, classRows).some(c => enabledNames.has(c));
 }
 
-// Groups `available` for the panel per `prefs`: by class (checked classes, in
-// `classRows` order), by school (alphabetical), or `all` (one flat list) —
-// sorted by level then name within every group either way. A spell filtered
-// out drops from view entirely (never from `knownSpells` itself — see
-// `renderSpellSheetContent()`). A spell surviving via more than one checked
-// class is listed once per class group, but only once for school/all (a spell
-// has one school, and `all` has no groups to repeat it into).
-function spellbookSections(available, classRows, prefs) {
+// Groups `available` by class (checked, in `classRows` order), by school, or into
+// one flat list (`all`), each by level then name. A spell is repeated per class
+// group, never for school/all. Filtering hides a spell; `knownSpells` is untouched.
+function _getSpellbookSections(available, classRows, prefs) {
   const byLevelThenName = (a, b) => a.level - b.level || a.name.localeCompare(b.name);
-  const isVisible = spell => spellPassesFilters(spell, classRows, prefs);
+  const isVisible = spell => _doesSpellPassFilters(spell, classRows, prefs);
 
   if (prefs.sortMode === 'all') {
     const spells = available.filter(isVisible).sort(byLevelThenName);
@@ -542,10 +488,10 @@ function spellbookSections(available, classRows, prefs) {
   }
 
   const byClass = new Map();
-  classRows.forEach(row => { if (spellbookClassChecked(row)) byClass.set(row.name, []); });
+  classRows.forEach(row => { if (_isSpellbookClassChecked(row)) byClass.set(row.name, []); });
   available.forEach(spell => {
-    if (!spellPassesFacets(spell, prefs)) return;
-    spellGrantingClasses(spell, classRows).forEach(cls => {
+    if (!_doesSpellPassFacets(spell, prefs)) return;
+    _getSpellGrantingClasses(spell, classRows).forEach(cls => {
       if (byClass.has(cls)) byClass.get(cls).push(spell);
     });
   });
@@ -554,34 +500,31 @@ function spellbookSections(available, classRows, prefs) {
     .map(([heading, spells]) => ({ heading, spells: spells.sort(byLevelThenName) }));
 }
 
-// The meta line on a picker card — whichever axis isn't already the group
-// heading is the useful thing to print beside the spell's name. The school is
-// never printed: every card carries its glyph (schoolIcon()) instead, so in
-// Class mode the line is empty, and only an unrecognised school falls back to
-// its name.
-function spellPickerMeta(spell, classRows, prefs) {
-  const classes = spellGrantingClasses(spell, classRows);
-  const schoolText = schoolIconName(spell.school) ? '' : (spell.school || '');
+// A picker card's meta line: whichever axis isn't the group heading. The school
+// shows as its glyph (createSchoolIcon()), so only an unrecognised one is printed.
+function _getSpellPickerMeta(spell, classRows, prefs) {
+  const classes = _getSpellGrantingClasses(spell, classRows);
+  const schoolText = _getSchoolIconName(spell.school) ? '' : (spell.school || '');
   if (prefs.sortMode === 'class') return schoolText;
   return [schoolText, classes.join(', ')].filter(Boolean).join(' · ');
 }
 
-function renderSpellbookSettings(classRows, available) {
+function _renderSpellbookSettings(classRows, available) {
   const classBox = document.getElementById('spellbook-class-filters');
   const facetBox = document.getElementById('spellbook-facet-filters');
   if (!classBox || !facetBox) return;
 
   classBox.textContent = '';
   classRows.forEach(row => {
-    classBox.appendChild(spellbookFilterCheckbox(
-      row.name, spellbookClassChecked(row),
-      checked => setSpellbookClassChecked(row, checked)));
+    classBox.appendChild(_createSpellbookFilterCheckbox(
+      row.name, _isSpellbookClassChecked(row),
+      isChecked => _setSpellbookClassChecked(row, isChecked)));
   });
 
   facetBox.textContent = '';
   SPELLBOOK_FACETS.forEach(facet => {
     const checked = spellbookPrefs[facet.key];
-    const options = spellbookFacetOptions(facet, available, checked);
+    const options = _getSpellbookFacetOptions(facet, available, checked);
     if (!options.length) return;
     const section = document.createElement('div');
     const label = document.createElement('span');
@@ -590,8 +533,8 @@ function renderSpellbookSettings(classRows, available) {
     const group = document.createElement('div');
     group.className = 'spellbook-filter-group';
     options.forEach(tag => {
-      const box = spellbookFilterCheckbox(tag, checked.includes(tag),
-        on => setSpellbookFilter(facet.key, tag, on));
+      const box = _createSpellbookFilterCheckbox(tag, checked.includes(tag),
+        isChecked => _setSpellbookFilter(facet.key, tag, isChecked));
       if (facet.titles?.[tag]) box.title = facet.titles[tag];
       group.appendChild(box);
     });
@@ -603,12 +546,12 @@ function renderSpellbookSettings(classRows, available) {
     radio.checked = radio.value === spellbookPrefs.sortMode;
   });
   // The panel folds away, so the button says when something in it is narrowing the list.
-  const filtered = !spellbookFiltersAreDefault(spellbookPrefs);
-  document.getElementById('spellbook-settings-btn').classList.toggle('filtered', filtered);
-  document.getElementById('spellbook-reset-filters').disabled = !filtered;
+  const isFiltered = !_areSpellbookFiltersDefault(spellbookPrefs);
+  document.getElementById('spellbook-settings-btn').classList.toggle('filtered', isFiltered);
+  document.getElementById('spellbook-reset-filters').disabled = !isFiltered;
 }
 
-function spellbookFilterCheckbox(label, checked, onChange) {
+function _createSpellbookFilterCheckbox(label, checked, onChange) {
   const wrap = document.createElement('label');
   const box = document.createElement('input');
   box.type = 'checkbox';
@@ -618,28 +561,28 @@ function spellbookFilterCheckbox(label, checked, onChange) {
   return wrap;
 }
 
-function setSpellbookFilter(prefKey, name, checked) {
+function _setSpellbookFilter(prefKey, name, isChecked) {
   const list = spellbookPrefs[prefKey];
   const at = list.indexOf(name);
-  if (checked && at === -1) list.push(name);
-  else if (!checked && at !== -1) list.splice(at, 1);
-  saveSpellbookPrefs();
-  renderSpellSheetContent();
+  if (isChecked && at === -1) list.push(name);
+  else if (!isChecked && at !== -1) list.splice(at, 1);
+  _saveSpellbookPrefs();
+  _renderSpellSheetContent();
 }
 
 // Every facet unticked and the class boxes back to the character's own —
 // the sort mode and the search box are not filters, and are left alone.
-function resetSpellbookFilters() {
-  spellbookPrefs = { ...defaultSpellbookFilters(), sortMode: spellbookPrefs.sortMode };
-  saveSpellbookPrefs();
-  renderSpellSheetContent();
+function _resetSpellbookFilters() {
+  spellbookPrefs = { ..._getDefaultSpellbookFilters(), sortMode: spellbookPrefs.sortMode };
+  _saveSpellbookPrefs();
+  _renderSpellSheetContent();
 }
 
-document.getElementById('spellbook-reset-filters').addEventListener('click', resetSpellbookFilters);
+document.getElementById('spellbook-reset-filters').addEventListener('click', _resetSpellbookFilters);
 
 document.getElementById('spellbook-search').addEventListener('input', e => {
   spellbookQuery = e.target.value.trim().toLowerCase();
-  renderSpellSheetContent();
+  _renderSpellSheetContent();
   document.getElementById('spellbook-list').scrollTop = 0;
 });
 
@@ -651,71 +594,67 @@ document.querySelectorAll('#spellbook-sort input[name="spellbook-sort"]').forEac
   radio.addEventListener('change', () => {
     if (!radio.checked) return;
     spellbookPrefs.sortMode = SPELLBOOK_SORT_MODES.includes(radio.value) ? radio.value : 'class';
-    saveSpellbookPrefs();
-    renderSpellSheetContent();
+    _saveSpellbookPrefs();
+    _renderSpellSheetContent();
   });
 });
 
-// =============================================================================
-// THE SECTION
-// =============================================================================
+// ─── THE SECTION ───
 // `syncCharacterViewUI()` re-runs on every roster sync, but this view only
 // changes with classes and levels — same guard as `classFeaturesSig`.
 let spellSheetSig = null;
 
-function spellSheetSignature() {
+function _getSpellSheetSignature() {
   const c = state.character || {};
   // Subclass is part of the signature — the Eldritch Knight/Arcane Trickster
-  // check in `multiclassCasterLevel()` reads it, same as `classFeaturesSig`.
-  return classEntriesOf(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟') +
-    '‖' + homebrewUsableKey() + // a homebrew spell enabled or edited under the sheet
+  // check in `_getMulticlassCasterLevel()` reads it, same as `classFeaturesSig`.
+  return getClassEntries(c).map(e => `${e.name}:${e.level}:${e.subclass}`).join('␟') +
+    '‖' + getHomebrewUsableKey() + // a homebrew spell enabled or edited under the sheet
     '‖' + JSON.stringify(c.spellSlotsUsed ?? null); // a cast, synced in from whoever made it
 }
 
+// Redraws the Spells view when its signature changes (classes, usable homebrew, slots spent).
 function renderSpellSheet() {
-  const sig = spellSheetSignature();
+  const sig = _getSpellSheetSignature();
   if (sig === spellSheetSig) return;
   spellSheetSig = sig;
-  renderSpellSheetContent();
+  _renderSpellSheetContent();
 }
 
-// The actual draw, split out from the signature gate above so
-// `toggleKnownSpell()` can force a repaint on every click — picking a spell
-// changes nothing the signature watches (classes/level).
-function renderSpellSheetContent() {
+// The draw itself, outside the signature gate, so a known-spell toggle or prefs
+// change (neither in the signature) can force a repaint.
+function _renderSpellSheetContent() {
   const slotsBox = document.getElementById('spell-slots');
   const listBox = document.getElementById('spell-list');
   const pickerBox = document.getElementById('spellbook-list');
   if (!slotsBox || !listBox || !pickerBox) return;
 
   const character = state.character;
-  const rawEntries = classEntriesOf(character);
-  const entries = spellcastingEntriesOf(character);
+  const rawEntries = getClassEntries(character);
+  const entries = _getSpellcastingEntries(character);
 
   slotsBox.textContent = '';
   listBox.textContent = '';
   pickerBox.textContent = '';
-  hideSpellHoverCard(); // its row is gone, and no pointerleave will say so
+  _hideSpellHoverCard(); // its row is gone, and no pointerleave will say so
 
-  // Slots are drawn from the RAW class list, not `entries` — an Eldritch
-  // Knight/Arcane Trickster contributes a real slot count via
-  // `multiclassCasterLevel()` even though this app has no spell-list data
-  // under "Fighter"/"Rogue" for the Known/Available sections below.
-  const casterLevel = multiclassCasterLevel(rawEntries);
-  const totals = multiclassSpellSlots(casterLevel);
-  const pact = pactMagicSlots(character);
+  // Slots come from the RAW class list, not `entries`: Eldritch Knight/Arcane
+  // Trickster add slots despite having no spell-list data.
+  const casterLevel = _getMulticlassCasterLevel(rawEntries);
+  const totals = _getMulticlassSpellSlots(casterLevel);
+  const pact = _getPactMagicSlots(character);
   const hasTotals = totals.some(n => n > 0);
   const hasPact = !!pact && pact.some(n => n > 0);
   const readOnly = isReadOnly();
 
-  if (hasTotals) slotsBox.appendChild(spellSlotGroup(totals, 'slots', readOnly));
+  if (hasTotals) slotsBox.appendChild(_createSpellSlotGroup(totals, 'slots', readOnly));
   if (hasPact) {
-    if (hasTotals) slotsBox.appendChild(spellbookGroupHeading('Pact Magic'));
-    slotsBox.appendChild(spellSlotGroup(pact, 'pact', readOnly));
+    if (hasTotals) slotsBox.appendChild(_createSpellbookGroupHeading('Pact Magic'));
+    slotsBox.appendChild(_createSpellSlotGroup(pact, 'pact', readOnly));
   }
-  balanceSpellSlotRows();
+  _balanceSpellSlotRows();
   if (!hasTotals && !hasPact && (entries.length || casterLevel > 0)) {
-    slotsBox.appendChild(spellNote('No spell slots yet — cantrips only.'));
+    slotsBox.appendChild(_createSpellNote('No spell slots yet — cantrips only.'));
   }
 
   if (!entries.length) {
@@ -723,102 +662,97 @@ function renderSpellSheetContent() {
     const note = names.length
       ? `No known spellcasting class among ${names.map(n => `“${n}”`).join(', ')}.`
       : 'Add a class in Character Setup to see its spells.';
-    listBox.appendChild(spellNote(note));
-    pickerBox.appendChild(spellNote(note));
-    renderSpellbookSettings([], []);
+    listBox.appendChild(_createSpellNote(note));
+    pickerBox.appendChild(_createSpellNote(note));
+    _renderSpellbookSettings([], []);
     return;
   }
 
-  const classRows = spellbookClassRows(entries);
-  const available = spellbookAvailableSpells(classRows);
-  renderSpellbookSettings(classRows, available);
+  const classRows = _getSpellbookClassRows(entries);
+  const available = _getSpellbookAvailableSpells(classRows);
+  _renderSpellbookSettings(classRows, available);
 
   if (!available.length) {
-    listBox.appendChild(spellNote('No spells known at this level yet.'));
-    pickerBox.appendChild(spellNote('No spells available at this level yet.'));
+    listBox.appendChild(_createSpellNote('No spells known at this level yet.'));
+    pickerBox.appendChild(_createSpellNote('No spells available at this level yet.'));
     return;
   }
 
-  const known = available.filter(s => isSpellKnown(character, s.id));
+  const known = available.filter(s => _isSpellKnown(character, s.id));
   if (!known.length) {
-    listBox.appendChild(spellNote('Nothing picked yet — choose from Available Spells.'));
+    listBox.appendChild(_createSpellNote('Nothing picked yet — choose from Available Spells.'));
   } else {
     let lastLevel = null;
     known.forEach(spell => {
       if (spell.level !== lastLevel) {
         lastLevel = spell.level;
-        listBox.appendChild(spellLevelHeading(spell.level));
+        listBox.appendChild(_createSpellLevelHeading(spell.level));
       }
-      listBox.appendChild(castableSpellCard(spell, readOnly));
+      listBox.appendChild(_createCastableSpellCard(spell, readOnly));
     });
   }
 
-  // A search looks inside the filters first; whatever else it matches by name
-  // is listed after, greyed — still a click to pick, just plainly outside
-  // what the boxes ask for.
+  // A search shows matches inside the filters first, then the rest greyed (still pickable).
   const query = spellbookQuery;
-  const named = available.filter(s => spellNameMatches(s, query));
-  const sections = spellbookSections(named, classRows, spellbookPrefs);
-  const outside = query ? named.filter(s => !spellPassesFilters(s, classRows, spellbookPrefs)) : [];
+  const named = available.filter(s => _doesSpellNameMatch(s, query));
+  const sections = _getSpellbookSections(named, classRows, spellbookPrefs);
+  const outside = query ? named.filter(s => !_doesSpellPassFilters(s, classRows, spellbookPrefs)) : [];
   if (!sections.length) {
-    pickerBox.appendChild(spellNote(
+    pickerBox.appendChild(_createSpellNote(
       !query ? 'Nothing matches the current filters.'
       : outside.length ? 'Nothing within the current filters.'
       : `No spell called “${document.getElementById('spellbook-search').value.trim()}”.`));
   }
   sections.forEach(({ heading, spells }) => {
-    if (heading) pickerBox.appendChild(spellbookGroupHeading(heading));
+    if (heading) pickerBox.appendChild(_createSpellbookGroupHeading(heading));
     let lastLevel = null;
     spells.forEach(spell => {
       if (spell.level !== lastLevel) {
         lastLevel = spell.level;
-        pickerBox.appendChild(spellLevelHeading(spell.level));
+        pickerBox.appendChild(_createSpellLevelHeading(spell.level));
       }
-      pickerBox.appendChild(spellPickerCard(
-        spell, isSpellKnown(character, spell.id), readOnly,
-        spellPickerMeta(spell, classRows, spellbookPrefs)));
+      pickerBox.appendChild(_createSpellPickerCard(
+        spell, _isSpellKnown(character, spell.id), readOnly,
+        _getSpellPickerMeta(spell, classRows, spellbookPrefs)));
     });
   });
   if (outside.length) {
-    pickerBox.appendChild(spellbookGroupHeading('Outside your filters'));
+    pickerBox.appendChild(_createSpellbookGroupHeading('Outside your filters'));
     outside.forEach(spell => {
-      const card = spellPickerCard(spell, isSpellKnown(character, spell.id), readOnly,
-        [spell.level === 0 ? 'Cantrip' : spellLevelLabel(spell.level).replace(' Level', ''),
-          spellGrantingClasses(spell, classRows).join(', ')].filter(Boolean).join(' · '));
+      const card = _createSpellPickerCard(spell, _isSpellKnown(character, spell.id), readOnly,
+        [spell.level === 0 ? 'Cantrip' : _getSpellLevelLabel(spell.level).replace(' Level', ''),
+          _getSpellGrantingClasses(spell, classRows).join(', ')].filter(Boolean).join(' · '));
       card.classList.add('outside');
       pickerBox.appendChild(card);
     });
   }
 }
 
-function spellbookGroupHeading(text) {
+function _createSpellbookGroupHeading(text) {
   const h = document.createElement('h4');
   h.className = 'spellbook-group-heading';
   h.textContent = text;
   return h;
 }
 
-function spellLevelLabel(level) {
+function _getSpellLevelLabel(level) {
   if (level === 0) return 'Cantrips';
   const suffix = level === 1 ? 'st' : level === 2 ? 'nd' : level === 3 ? 'rd' : 'th';
   return `${level}${suffix} Level`;
 }
 
-// One pool's tiles. Its rows are evened out by `balanceSpellSlotRows()`.
-function spellSlotGroup(counts, pool, readOnly) {
+// One pool's tiles. Its rows are evened out by `_balanceSpellSlotRows()`.
+function _createSpellSlotGroup(counts, pool, readOnly) {
   const group = document.createElement('div');
   group.className = 'spell-slot-group';
-  counts.forEach((count, i) => { if (count > 0) group.appendChild(spellSlotTile(i + 1, count, pool, readOnly)); });
+  counts.forEach((count, i) => { if (count > 0) group.appendChild(_createSpellSlotTile(i + 1, count, pool, readOnly)); });
   return group;
 }
 
-// Plain wrapping would fill each row and leave the remainder alone on the
-// last (7 tiles → 6 + 1); this works out the fewest rows that fit, deals the
-// tiles across them as evenly as possible (7 → 4 + 3, or 3 + 2 + 2), and
-// marks each row's end with a break the CSS honours. Rows are centred. Re-run
-// on every redraw and every resize of the box — the slots sheet moves between
-// a narrow column and the full width of the list (spells.css).
-function balanceSpellSlotRows() {
+// Deals the tiles evenly over the fewest rows that fit (7 → 4 + 3, not 6 + 1),
+// marking row ends with breaks the CSS honours. Re-run on redraw and on resize,
+// since the box moves between a narrow column and full width (spells.css).
+function _balanceSpellSlotRows() {
   const box = document.getElementById('spell-slots');
   const width = box.clientWidth;
   if (!width) return; // the view is hidden — the observer re-runs this on show
@@ -841,21 +775,21 @@ function balanceSpellSlotRows() {
   });
 }
 
-new ResizeObserver(balanceSpellSlotRows).observe(document.getElementById('spell-slots'));
+new ResizeObserver(_balanceSpellSlotRows).observe(document.getElementById('spell-slots'));
 
 // Slots left over slots in all, and a pip per slot — filled while unspent.
 // A pip is the manual fix for a cast made by mistake (or one made at the
 // table without the app): clicking a filled pip spends down to it, an empty
 // one refills up to it, the way a paper tracker is ticked.
-function spellSlotTile(level, count, pool, readOnly) {
-  const left = spellSlotsLeft(state.character, pool, level, count);
+function _createSpellSlotTile(level, count, pool, readOnly) {
+  const left = _getSpellSlotsLeft(state.character, pool, level, count);
 
   const tile = document.createElement('div');
   tile.className = 'spell-slot-tile' + (left === 0 ? ' spent' : '');
 
   const lvl = document.createElement('span');
   lvl.className = 'spell-slot-level';
-  lvl.textContent = spellLevelLabel(level);
+  lvl.textContent = _getSpellLevelLabel(level);
 
   const n = document.createElement('span');
   n.className = 'spell-slot-count';
@@ -872,9 +806,9 @@ function spellSlotTile(level, count, pool, readOnly) {
     pip.type = 'button';
     pip.className = 'spell-slot-pip' + (i < left ? ' full' : '');
     pip.disabled = readOnly;
-    pip.setAttribute('aria-label', `${spellLevelLabel(level)} slot ${i + 1}: ${i < left ? 'unspent' : 'spent'}`);
+    pip.setAttribute('aria-label', `${_getSpellLevelLabel(level)} slot ${i + 1}: ${i < left ? 'unspent' : 'spent'}`);
     // Pip i filled → i left (spend it and everything above); empty → i + 1 left.
-    pip.addEventListener('click', () => setSpellSlotsLeft(pool, level, count, i < left ? i : i + 1));
+    pip.addEventListener('click', () => _setSpellSlotsLeft(pool, level, count, i < left ? i : i + 1));
     pips.appendChild(pip);
   }
 
@@ -882,19 +816,18 @@ function spellSlotTile(level, count, pool, readOnly) {
   return tile;
 }
 
-function spellLevelHeading(level) {
+function _createSpellLevelHeading(level) {
   const h = document.createElement('h4');
   h.className = 'spell-level-heading';
-  h.textContent = spellLevelLabel(level);
+  h.textContent = _getSpellLevelLabel(level);
   return h;
 }
 
-// Parsed descriptions are cached by their raw Markdown string, same reasoning
-// as class-features.js's featureDescCache — data/spells.json never changes at
-// runtime, so the parse + sanitize only needs to happen once per spell.
+// Parsed descriptions keyed by raw Markdown: spell text never changes at runtime,
+// so each is parsed and sanitized once.
 const spellDescCache = new Map();
 
-function renderSpellDesc(el, src) {
+function _renderSpellDesc(el, src) {
   const key = String(src ?? '');
   let tpl = spellDescCache.get(key);
   if (!tpl) {
@@ -905,19 +838,16 @@ function renderSpellDesc(el, src) {
   el.appendChild(tpl.content.cloneNode(true));
 }
 
-// The eight schools that have a glyph (img/icon/spells/, .ico-school-* in
-// icons.css), keyed by the lower-cased name data/spells.json uses. Anything
-// else — homebrew, a typo — gets null and is printed as text instead.
-const SPELL_SCHOOLS_WITH_ICONS = ['abjuration', 'conjuration', 'divination', 'enchantment',
-  'evocation', 'illusion', 'necromancy', 'transmutation'];
-function schoolIconName(school) {
+function _getSchoolIconName(school) {
   const key = String(school ?? '').trim().toLowerCase();
   return SPELL_SCHOOLS_WITH_ICONS.includes(key) ? key : null;
 }
-function schoolIcon(school) {
-  const key = schoolIconName(school);
+
+// The school's glyph element, or null for a school with none.
+function createSchoolIcon(school) {
+  const key = _getSchoolIconName(school);
   if (!key) return null;
-  const el = iconEl('school-' + key);
+  const el = createIconEl('school-' + key);
   el.classList.add('ico-school');
   el.title = String(school).trim();
   el.setAttribute('role', 'img');
@@ -925,7 +855,7 @@ function schoolIcon(school) {
   return el;
 }
 
-function spellCard(spell) {
+function _createSpellCard(spell) {
   const card = document.createElement('article');
   card.className = 'spell-card';
 
@@ -935,7 +865,7 @@ function spellCard(spell) {
   name.className = 'spell-name';
   name.textContent = spell.name;
   head.appendChild(name);
-  const icon = schoolIcon(spell.school);
+  const icon = createSchoolIcon(spell.school);
   const schoolText = [icon ? null : spell.school, spell.source].filter(Boolean).join(' · ');
   if (schoolText) {
     const school = document.createElement('span');
@@ -953,13 +883,11 @@ function spellCard(spell) {
     meta.appendChild(span);
   });
 
-  // A `<div>`, not a `<p>`: the description is Markdown and comes back
-  // block-level, same as class-features.js's feature-desc. `renderSpellDesc`
-  // is the only way markup may be built from this string — markdown.js is the
-  // one sanctioned path app-wide, sanitizer included, no exceptions per file.
+  // A `<div>`: the Markdown comes back block-level. Markup is built only through
+  // `_renderSpellDesc` (markdown.js and its sanitizer), never directly.
   const desc = document.createElement('div');
   desc.className = 'spell-desc';
-  renderSpellDesc(desc, spell.description);
+  _renderSpellDesc(desc, spell.description);
 
   card.append(head, meta, desc);
   // The school's glyph rides the card's top-right corner, large — see .spell-card .ico-school.
@@ -967,13 +895,12 @@ function spellCard(spell) {
   return card;
 }
 
-// A row in the Available Spells panel — the whole card is the toggle, same as
-// a Browse card starting a placement is its whole click. `metaText` is
-// whichever axis isn't already the group heading (see `spellPickerMeta()`).
-function spellPickerCard(spell, known, readOnly, metaText) {
+// A row in the Available Spells panel; the whole card is the toggle. `metaText`
+// comes from `_getSpellPickerMeta()`.
+function _createSpellPickerCard(spell, isKnown, readOnly, metaText) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = 'spell-pick-card' + (known ? ' known' : '');
+  card.className = 'spell-pick-card' + (isKnown ? ' known' : '');
   card.disabled = readOnly;
 
   const dot = document.createElement('span');
@@ -988,88 +915,74 @@ function spellPickerCard(spell, known, readOnly, metaText) {
   meta.textContent = metaText || '';
 
   card.append(dot, name, meta);
-  const icon = schoolIcon(spell.school);
+  const icon = createSchoolIcon(spell.school);
   if (icon) card.appendChild(icon);
-  card.addEventListener('click', () => toggleKnownSpell(spell.id));
-  card.addEventListener('pointerenter', () => scheduleSpellHoverCard(spell, card));
-  card.addEventListener('pointerleave', hideSpellHoverCard);
+  card.addEventListener('click', () => _toggleKnownSpell(spell.id));
+  card.addEventListener('pointerenter', () => _scheduleSpellHoverCard(spell, card));
+  card.addEventListener('pointerleave', _hideSpellHoverCard);
   return card;
 }
 
-// =============================================================================
-// CASTING — spending slots, and the upcast wheel
-// =============================================================================
-// A click on a Spells Known card casts it from the lowest slot that can; a held
-// press opens a wheel of every slot level it could be cast with instead. What
-// is stored is `character.spellSlotsUsed = { slots: [...], pact: [...] }` —
-// slots SPENT per level (index 0 = 1st), never slots left, so the maximum is
-// always whatever the class table says now: a level-up's new slot arrives
-// fresh, and a level lost never leaves a stale count behind. Saved and synced
-// like any sheet field. Gated by `isReadOnly()`, unlike a roll — a cast writes.
-const SPELL_SLOT_POOLS = ['slots', 'pact'];
-
-// Hold time before the wheel opens, and movement that opens it sooner — the
-// advantage wheel's own feel (dice.js), so the two gestures read alike.
-const CAST_WHEEL_HOLD_MS = 180;
-const CAST_WHEEL_REACH = 9;
-// Inside this radius, letting go casts the default pick.
-const CAST_WHEEL_DEADZONE = 24;
-
+// ─── CASTING — spending slots, and the upcast wheel ───
+// A click on a Spells Known card casts from the lowest slot that can; a held press
+// opens a wheel of every slot level instead. `character.spellSlotsUsed = { slots,
+// pact }` stores slots SPENT per level (index 0 = 1st), never slots left, so a
+// level-up's new slot arrives fresh. Gated by `isReadOnly()`, unlike a roll: a cast writes.
 const castWheelEl = document.getElementById('cast-wheel');
 
-function spellSlotsUsedOf(character, pool, level) {
+function _getSpellSlotsUsed(character, pool, level) {
   const n = parseInt(character?.spellSlotsUsed?.[pool]?.[level - 1], 10);
   return n > 0 ? n : 0;
 }
 
-function spellSlotsLeft(character, pool, level, total) {
-  return Math.max(0, total - spellSlotsUsedOf(character, pool, level));
+function _getSpellSlotsLeft(character, pool, level, total) {
+  return Math.max(0, total - _getSpellSlotsUsed(character, pool, level));
 }
 
 // Rewritten whole, as a dense nine-number array — RTDB reads a sparse one back
 // as an object, which the reader above would survive but needn't.
-function setSpellSlotsUsed(pool, level, used) {
+function _setSpellSlotsUsed(pool, level, used) {
   const c = state.character;
-  const arr = Array.from({ length: 9 }, (_, i) => spellSlotsUsedOf(c, pool, i + 1));
+  const arr = Array.from({ length: 9 }, (_, i) => _getSpellSlotsUsed(c, pool, i + 1));
   arr[level - 1] = Math.max(0, used);
   c.spellSlotsUsed = { ...(c.spellSlotsUsed ?? {}), [pool]: arr };
 }
 
-function setSpellSlotsLeft(pool, level, total, left) {
+function _setSpellSlotsLeft(pool, level, total, left) {
   if (isReadOnly()) return;
-  setSpellSlotsUsed(pool, level, total - Math.max(0, Math.min(total, left)));
+  _setSpellSlotsUsed(pool, level, total - Math.max(0, Math.min(total, left)));
   renderSpellSheet(); // slot usage is in the signature
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
-// A Long Rest refills everything; a Short Rest refills Pact Magic only. No
-// button calls these yet — the rest controls are to get a home of their own.
-function longRestSpellSlots()  { restoreSpellSlots(SPELL_SLOT_POOLS); }
-function shortRestSpellSlots() { restoreSpellSlots(['pact']); }
+// A Long Rest refills everything; a Short Rest refills Pact Magic only. Not wired
+// to any button yet.
+function _restoreSpellSlotsForLongRest()  { _restoreSpellSlots(SPELL_SLOT_POOLS); }
+function _restoreSpellSlotsForShortRest() { _restoreSpellSlots(['pact']); }
 
-function restoreSpellSlots(pools) {
+function _restoreSpellSlots(pools) {
   if (isReadOnly()) return;
   const c = state.character;
   c.spellSlotsUsed = { ...(c.spellSlotsUsed ?? {}) };
   pools.forEach(pool => { c.spellSlotsUsed[pool] = Array(9).fill(0); });
   renderSpellSheet();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
 // Every { pool, level, total, left } this spell could be cast with — any slot
 // at or above its own level, in either pool. Lowest level first, and the
 // ordinary pool before Pact Magic at the same level. A cantrip has none.
-function castOptions(character, spell) {
+function _getCastOptions(character, spell) {
   if (!(spell.level > 0)) return [];
   const pools = {
-    slots: multiclassSpellSlots(multiclassCasterLevel(classEntriesOf(character))),
-    pact: pactMagicSlots(character) ?? [],
+    slots: _getMulticlassSpellSlots(_getMulticlassCasterLevel(getClassEntries(character))),
+    pact: _getPactMagicSlots(character) ?? [],
   };
   const opts = [];
   SPELL_SLOT_POOLS.forEach(pool => pools[pool].forEach((total, i) => {
     const level = i + 1;
     if (total > 0 && level >= spell.level) {
-      opts.push({ pool, level, total, left: spellSlotsLeft(character, pool, level, total) });
+      opts.push({ pool, level, total, left: _getSpellSlotsLeft(character, pool, level, total) });
     }
   }));
   return opts.sort((a, b) => a.level - b.level || (a.pool === 'pact') - (b.pool === 'pact'));
@@ -1077,32 +990,32 @@ function castOptions(character, spell) {
 
 // What a plain click spends: the cheapest slot that still has one left. For a
 // Warlock that's the pact slot at its own level — Pact Magic always casts at it.
-function defaultCastOption(options) {
+function _getDefaultCastOption(options) {
   return options.find(o => o.left > 0) ?? null;
 }
 
-function findSpellById(id) {
-  return allSpells().find(s => s.id === id) ?? null;
+function _findSpellById(id) {
+  return _getAllSpells().find(s => s.id === id) ?? null;
 }
 
 // The one write path. `opt` null on a cantrip; on a levelled spell with no
 // slot left, nothing is spent or said — the card shakes instead.
-function castSpell(spellId, opt) {
+function _castSpell(spellId, opt) {
   if (isReadOnly()) return;
-  const spell = findSpellById(spellId);
+  const spell = _findSpellById(spellId);
   if (!spell) return;
   if (spell.level > 0) {
-    if (!opt || opt.left <= 0) { flashSpellCard(spellId, 'no-slot'); return; }
-    setSpellSlotsUsed(opt.pool, opt.level, spellSlotsUsedOf(state.character, opt.pool, opt.level) + 1);
+    if (!opt || opt.left <= 0) { _flashSpellCard(spellId, 'no-slot'); return; }
+    _setSpellSlotsUsed(opt.pool, opt.level, _getSpellSlotsUsed(state.character, opt.pool, opt.level) + 1);
   }
   renderSpellSheet();
-  flashSpellCard(spellId, 'cast');
-  postCastToChat(spell, spell.level > 0 ? opt : null);
-  debouncedSync();
+  _flashSpellCard(spellId, 'cast');
+  _postCastToChat(spell, spell.level > 0 ? opt : null);
+  scheduleSaveAndSync();
 }
 
 // Found again by id, because the cast above has just redrawn the list.
-function flashSpellCard(spellId, cls) {
+function _flashSpellCard(spellId, cls) {
   const card = document.querySelector(`#spell-list .spell-card[data-spell-id="${CSS.escape(spellId)}"]`);
   if (!card) return;
   card.classList.remove('cast', 'no-slot');
@@ -1112,31 +1025,29 @@ function flashSpellCard(spellId, cls) {
 }
 
 // "4th level", plus where the slot came from when that's not obvious.
-function castLevelText(level, baseLevel, pact) {
+function getCastLevelText(level, baseLevel, isPactSlot) {
   if (!(level > 0)) return 'Cantrip';
-  const text = spellLevelLabel(level).replace(' Level', ' level');
-  const notes = [level > baseLevel ? 'upcast' : '', pact ? 'Pact Magic' : ''].filter(Boolean);
+  const text = _getSpellLevelLabel(level).replace(' Level', ' level');
+  const notes = [level > baseLevel ? 'upcast' : '', isPactSlot ? 'Pact Magic' : ''].filter(Boolean);
   return notes.length ? `${text} (${notes.join(', ')})` : text;
 }
 
-// Pushed from here rather than chat.js so a cast's shape stays in one file —
-// the same split as dice.js's `postRollToChat()`, and the same silent fall
-// through `canChat()` with no campaign. `text` is the whole sentence, for an
-// older client that draws any unknown `kind` as a plain line (and for the tab
-// bubble, which shows it as speech).
-function postCastToChat(spell, opt) {
+// Pushed from here so a cast's shape lives in one file (as dice.js's rolls do);
+// silent with no campaign. `text` is the whole sentence, for clients that draw an
+// unknown `kind` as a plain line, and for the tab bubble.
+function _postCastToChat(spell, opt) {
   if (typeof canChat !== 'function' || !canChat()) return;
-  chatFollowNewest();
+  pinChatToNewest();
 
   const character = String(state.character?.name ?? '').trim();
   const level = opt ? opt.level : 0;
   const pact = opt?.pool === 'pact';
-  const sentence = `${character || chatAuthorName()} casts ${spell.name}` +
-    (level > 0 ? ` at ${castLevelText(level, spell.level, pact)}` : '') + '.';
+  const sentence = `${character || getChatAuthorName()} casts ${spell.name}` +
+    (level > 0 ? ` at ${getCastLevelText(level, spell.level, pact)}` : '') + '.';
 
   firebaseDb.ref('parties/' + state.party.code + '/chat').push({
-    uid: ownPlayerId(),
-    name: chatAuthorName(),
+    uid: getOwnPlayerId(),
+    name: getChatAuthorName(),
     kind: 'cast',
     text: sentence,
     cast: {
@@ -1147,17 +1058,17 @@ function postCastToChat(spell, opt) {
   }).catch(() => { /* the slot is spent either way */ });
 }
 
-// A Spells Known card, made castable. The hover card draws `spellCard()` too,
-// and must not be.
-function castableSpellCard(spell, readOnly) {
-  const card = spellCard(spell);
+// A Spells Known card, made castable. The hover card draws `_createSpellCard()`
+// too, and must not be castable.
+function _createCastableSpellCard(spell, readOnly) {
+  const card = _createSpellCard(spell);
   card.dataset.spellId = spell.id;
   if (readOnly) return card;
   card.classList.add('castable');
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
-  const opts = castOptions(state.character, spell);
-  const pick = defaultCastOption(opts);
+  const opts = _getCastOptions(state.character, spell);
+  const pick = _getDefaultCastOption(opts);
   if (spell.level > 0 && !pick) {
     card.classList.add('no-slots');
     card.title = 'No slots left';
@@ -1170,28 +1081,28 @@ function castableSpellCard(spell, readOnly) {
 // The live press, or null.
 let castGesture = null;
 
-function beginCastGesture(e, card) {
+function _beginCastGesture(e, card) {
   if (e.button !== 0 || isReadOnly()) return;
   if (e.target.closest('a')) return; // a link in the description is still a link
-  endCastGesture(false);
-  const spell = findSpellById(card.dataset.spellId);
+  _endCastGesture(false);
+  const spell = _findSpellById(card.dataset.spellId);
   if (!spell) return;
   e.preventDefault(); // no text selection dragging out of the card
 
-  const options = castOptions(state.character, spell);
+  const options = _getCastOptions(state.character, spell);
   castGesture = {
     spellId: spell.id, card, options,
-    pick: defaultCastOption(options), hover: null, shown: false,
+    pick: _getDefaultCastOption(options), hover: null, shown: false,
     x0: e.clientX, y0: e.clientY, pointerId: e.pointerId,
     // One option is nothing to choose between — the wheel never opens.
-    timer: options.length > 1 ? setTimeout(openCastWheel, CAST_WHEEL_HOLD_MS) : null,
+    timer: options.length > 1 ? setTimeout(_openCastWheel, CAST_WHEEL_HOLD_MS) : null,
   };
   try { card.setPointerCapture(e.pointerId); } catch (_) { /* still works uncaptured */ }
 }
 
 // A ring of options around the cursor, the first at twelve o'clock, going
 // clockwise up the levels. Nudged only as far as it takes to stay on screen.
-function openCastWheel() {
+function _openCastWheel() {
   const g = castGesture;
   if (!g || g.shown) return;
   g.shown = true;
@@ -1214,7 +1125,7 @@ function openCastWheel() {
     el.style.animationDelay = (i * 18) + 'ms';
     const lvl = document.createElement('span');
     lvl.className = 'cast-wheel-level';
-    lvl.textContent = spellLevelLabel(opt.level).replace(' Level', '');
+    lvl.textContent = _getSpellLevelLabel(opt.level).replace(' Level', '');
     const sub = document.createElement('span');
     sub.className = 'cast-wheel-sub';
     sub.textContent = opt.pool === 'pact' ? `Pact · ${opt.left}` : `${opt.left} left`;
@@ -1226,25 +1137,25 @@ function openCastWheel() {
   castWheelEl.style.setProperty('--wx', Math.max(reach + pad, Math.min(g.x0, window.innerWidth - reach - pad)) + 'px');
   castWheelEl.style.setProperty('--wy', Math.max(reach + pad, Math.min(g.y0, window.innerHeight - reach - pad)) + 'px');
   castWheelEl.classList.remove('hidden');
-  paintCastWheel();
+  _paintCastWheel();
 }
 
 // The option under the pointer, or — in the middle — the one a plain click
 // would spend. A spent one (or none at all) means letting go casts nothing.
-function paintCastWheel() {
+function _paintCastWheel() {
   const g = castGesture;
   if (!g) return;
   const shown = g.hover ?? g.pick;
   g.options.forEach(o => o.el?.classList.toggle('active', o === shown));
-  const baseLevel = findSpellById(g.spellId)?.level ?? 1;
+  const baseLevel = _findSpellById(g.spellId)?.level ?? 1;
   castWheelEl.querySelector('.cast-wheel-caption').textContent =
     !shown ? 'No slots left'
     : shown.left <= 0 ? 'None left'
-    : castLevelText(shown.level, baseLevel, shown.pool === 'pact');
+    : getCastLevelText(shown.level, baseLevel, shown.pool === 'pact');
   castWheelEl.classList.toggle('blocked', !shown || shown.left <= 0);
 }
 
-function endCastGesture(cast) {
+function _endCastGesture(cast) {
   const g = castGesture;
   if (!g) return;
   castGesture = null;
@@ -1256,12 +1167,12 @@ function endCastGesture(cast) {
   if (g.hover && g.hover.left <= 0) return; // let go on a spent option: backed out
   // Re-read off the character rather than trusted from the press — a sync may
   // have spent that slot while the wheel was open.
-  const spell = findSpellById(g.spellId);
+  const spell = _findSpellById(g.spellId);
   const chosen = g.hover ?? g.pick;
   const fresh = spell && chosen
-    ? castOptions(state.character, spell).find(o => o.pool === chosen.pool && o.level === chosen.level)
+    ? _getCastOptions(state.character, spell).find(o => o.pool === chosen.pool && o.level === chosen.level)
     : null;
-  castSpell(g.spellId, fresh ?? null);
+  _castSpell(g.spellId, fresh ?? null);
 }
 
 window.addEventListener('pointermove', e => {
@@ -1269,7 +1180,7 @@ window.addEventListener('pointermove', e => {
   if (!g) return;
   const dx = e.clientX - g.x0;
   const dy = e.clientY - g.y0;
-  if (!g.shown && g.options.length > 1 && Math.hypot(dx, dy) > CAST_WHEEL_REACH) openCastWheel();
+  if (!g.shown && g.options.length > 1 && Math.hypot(dx, dy) > CAST_WHEEL_REACH) _openCastWheel();
   if (!g.shown) return;
   if (Math.hypot(dx, dy) < CAST_WHEEL_DEADZONE) {
     g.hover = null;
@@ -1279,20 +1190,20 @@ window.addEventListener('pointermove', e => {
     const off = o => Math.abs(Math.atan2(Math.sin(a - o.angle), Math.cos(a - o.angle)));
     g.hover = g.options.reduce((best, o) => off(o) < off(best) ? o : best);
   }
-  paintCastWheel();
+  _paintCastWheel();
 });
 
-window.addEventListener('pointerup', () => endCastGesture(true));
-window.addEventListener('pointercancel', () => endCastGesture(false));
+window.addEventListener('pointerup', () => _endCastGesture(true));
+window.addEventListener('pointercancel', () => _endCastGesture(false));
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && castGesture) endCastGesture(false);
+  if (e.key === 'Escape' && castGesture) _endCastGesture(false);
 });
 
 const spellListEl = document.getElementById('spell-list');
 
 spellListEl.addEventListener('pointerdown', e => {
   const card = e.target.closest('.spell-card.castable');
-  if (card) beginCastGesture(e, card);
+  if (card) _beginCastGesture(e, card);
 });
 
 // The keyboard's way in: Enter or Space on a focused card casts the default,
@@ -1303,41 +1214,35 @@ spellListEl.addEventListener('keydown', e => {
   if (!card || card !== e.target) return;
   e.preventDefault();
   e.stopPropagation(); // or Enter would open the chat modal too
-  const spell = findSpellById(card.dataset.spellId);
-  if (spell) castSpell(spell.id, defaultCastOption(castOptions(state.character, spell)));
+  const spell = _findSpellById(card.dataset.spellId);
+  if (spell) _castSpell(spell.id, _getDefaultCastOption(_getCastOptions(state.character, spell)));
 });
 
-// =============================================================================
-// THE HOVER CARD
-// =============================================================================
-// Hovering a row of Available Spells shows the spell in full — the same card
-// Spells Known draws, plus its level and classes, which a known spell gets from
-// its heading instead. Out beside the sidebar, at the row's height, so the list
-// stays readable under it. A short delay, not the item tooltip's 1.2 s: this is
-// a list read by running the pointer down it.
-const SPELL_HOVER_DELAY_MS = 300;
+// ─── THE HOVER CARD ───
+// Hovering a row of Available Spells shows the full spell card plus its level and
+// classes, beside the sidebar at the row's height so the list stays readable.
 const spellHoverEl = document.getElementById('spell-hover-card');
 let spellHoverTimer = null;
 
-function scheduleSpellHoverCard(spell, row) {
-  hideSpellHoverCard();
-  spellHoverTimer = setTimeout(() => showSpellHoverCard(spell, row), SPELL_HOVER_DELAY_MS);
+function _scheduleSpellHoverCard(spell, row) {
+  _hideSpellHoverCard();
+  spellHoverTimer = setTimeout(() => _showSpellHoverCard(spell, row), SPELL_HOVER_DELAY_MS);
 }
 
-function hideSpellHoverCard() {
+function _hideSpellHoverCard() {
   clearTimeout(spellHoverTimer);
   spellHoverTimer = null;
   spellHoverEl.classList.add('hidden');
   spellHoverEl.textContent = '';
 }
 
-function showSpellHoverCard(spell, row) {
+function _showSpellHoverCard(spell, row) {
   if (!row.isConnected) return; // the list was redrawn under the timer
-  const card = spellCard(spell);
+  const card = _createSpellCard(spell);
   const line = document.createElement('div');
   line.className = 'spell-hover-level';
   line.textContent = [
-    spell.level === 0 ? 'Cantrip' : spellLevelLabel(spell.level),
+    spell.level === 0 ? 'Cantrip' : _getSpellLevelLabel(spell.level),
     spell.school,
     spell.classes.join(', '),
   ].filter(Boolean).join(' · ');
@@ -1358,11 +1263,11 @@ function showSpellHoverCard(spell, row) {
 
 // The card isn't anchored to anything that moves, so a scroll would leave it
 // beside the wrong row; and C/I/S can switch the view out from under it.
-document.addEventListener('scroll', hideSpellHoverCard, { capture: true });
-document.addEventListener('keydown', hideSpellHoverCard);
-window.addEventListener('resize', hideSpellHoverCard);
+document.addEventListener('scroll', _hideSpellHoverCard, { capture: true });
+document.addEventListener('keydown', _hideSpellHoverCard);
+window.addEventListener('resize', _hideSpellHoverCard);
 
-function spellNote(text) {
+function _createSpellNote(text) {
   const p = document.createElement('p');
   p.className = 'spell-note';
   p.textContent = text;

@@ -4,8 +4,8 @@
 'use strict';
 
 // `<html data-theme>` is always 'light' | 'dark' (the inline script in <head>
-// sets it before first paint). The stored PREFERENCE may also be 'system',
-// re-resolved whenever the OS setting changes. Not in the save file — the theme
+// sets it before first paint). The stored preference may also be 'system',
+// re-resolved whenever the OS setting changes. Not in the save file: the theme
 // belongs to the browser and must be readable before app state loads.
 
 const THEME_KEY = 'dnd_inventory_theme';
@@ -15,6 +15,7 @@ const systemDarkQuery = window.matchMedia
   ? window.matchMedia('(prefers-color-scheme: dark)')
   : null;
 
+// The stored theme preference: 'light', 'dark' or 'system' (the default).
 function getThemePreference() {
   try {
     const stored = localStorage.getItem(THEME_KEY);
@@ -24,37 +25,37 @@ function getThemePreference() {
   }
 }
 
-function systemPrefersDark() {
+function _doesSystemPreferDark() {
   return !!(systemDarkQuery && systemDarkQuery.matches);
 }
 
 // 'system' → whichever palette the OS is asking for right now
-function resolveTheme(pref) {
+function _resolveTheme(pref) {
   if (pref === 'light' || pref === 'dark') return pref;
-  return systemPrefersDark() ? 'dark' : 'light';
+  return _doesSystemPreferDark() ? 'dark' : 'light';
 }
 
 // Paint the resolved palette and bring rarity-coloured DOM back in sync.
-function applyTheme(pref, { rerender = true } = {}) {
-  document.documentElement.setAttribute('data-theme', resolveTheme(pref));
-  // A custom accent is per-palette, so which half applies just changed — after
-  // `data-theme`, before anything reads a colour out of CSS (appearance.js).
+function _applyTheme(pref, { rerender = true } = {}) {
+  document.documentElement.setAttribute('data-theme', _resolveTheme(pref));
+  // A custom accent is per-palette, so this must run after `data-theme` and
+  // before anything reads a colour out of CSS.
   applyAccentVars();
   clearRarityColorCache();
   updateThemePickerUI(pref);
   updateAppearanceUI();
-  if (rerender) rerenderThemedContent();
+  if (rerender) _rerenderThemedContent();
 }
 
-function setThemePreference(pref) {
+function _setThemePreference(pref) {
   if (!THEME_CHOICES.includes(pref)) return;
   try { localStorage.setItem(THEME_KEY, pref); } catch (e) { /* non-fatal */ }
-  applyTheme(pref);
+  _applyTheme(pref);
 }
 
 // Rarity colours are read from CSS and baked into inline styles when these
 // render, so a palette swap means re-running them.
-function rerenderThemedContent() {
+function _rerenderThemedContent() {
   renderAllItems();
   renderItemList();
   renderStash();
@@ -65,8 +66,8 @@ function rerenderThemedContent() {
   drawBattlemap();
   renderInitiativePanel();   // its rows are edged in the hostility colours too
 
-  // Repaint the details panel in place — NOT via show*Details(), which would
-  // yank the user to the Details tab.
+  // Repaint the details panel in place, not via show*Details(), which would
+  // switch to the Details tab.
   const sel = state.selected;
   if (sel && sel.type === 'instance') {
     const inst = state.instances[sel.id];
@@ -78,6 +79,7 @@ function rerenderThemedContent() {
   }
 }
 
+// Highlight the chosen theme button and describe what the choice means.
 function updateThemePickerUI(pref) {
   document.querySelectorAll('#theme-picker .seg-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.themeChoice === pref);
@@ -85,37 +87,38 @@ function updateThemePickerUI(pref) {
   const hint = document.getElementById('theme-hint');
   if (!hint) return;
   hint.textContent = pref === 'system'
-    ? `Following your device, which is currently ${systemPrefersDark() ? 'dark' : 'light'}.`
+    ? `Following your device, which is currently ${_doesSystemPreferDark() ? 'dark' : 'light'}.`
     : `Always ${pref}, on this browser.`;
 }
 
+// Load the accent and theme, paint them, and wire the theme picker and OS tracking.
 function initTheme() {
-  // The colour has to be loaded before the first applyTheme(), which paints it.
+  // The colour has to be loaded before the first _applyTheme(), which paints it.
   initAppearance();
 
   const pref = getThemePreference();
-  applyTheme(pref, { rerender: false }); // init() renders everything right after
+  _applyTheme(pref, { rerender: false }); // _initApp() renders everything right after
 
   document.querySelectorAll('#theme-picker .seg-btn').forEach(btn => {
-    btn.addEventListener('click', () => setThemePreference(btn.dataset.themeChoice));
+    btn.addEventListener('click', () => _setThemePreference(btn.dataset.themeChoice));
   });
 
   // Track the OS setting while the preference is 'system'
   if (systemDarkQuery) {
     const onSystemChange = () => {
-      if (getThemePreference() === 'system') applyTheme('system');
+      if (getThemePreference() === 'system') _applyTheme('system');
     };
     if (systemDarkQuery.addEventListener) systemDarkQuery.addEventListener('change', onSystemChange);
     else systemDarkQuery.addListener(onSystemChange); // older Safari
   }
 }
 
-function openSettingsModal() {
+function _openSettingsModal() {
   showModal('settings-modal');
 }
 
-document.getElementById('settings-btn').addEventListener('click', openSettingsModal);
-document.getElementById('home-settings-btn').addEventListener('click', openSettingsModal);
+document.getElementById('settings-btn').addEventListener('click', _openSettingsModal);
+document.getElementById('home-settings-btn').addEventListener('click', _openSettingsModal);
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
@@ -124,9 +127,9 @@ document.addEventListener('keydown', e => {
   hideModal('settings-modal');
 });
 
-// The info pages REPLACE the settings modal (a backdrop click closes every open
-// modal). Appearance's button is wired in appearance.js instead — this file's
-// listeners run at load time, before appearance.js is parsed.
+// The info pages replace the settings modal (a backdrop click closes every open
+// modal). Appearance's button is wired in appearance.js instead, because this
+// file's listeners run at load time, before appearance.js is parsed.
 document.getElementById('how-to-btn').addEventListener('click', () => {
   hideModal('settings-modal');
   showModal('how-to-modal');
@@ -135,6 +138,6 @@ document.querySelectorAll('.settings-back-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const modal = btn.closest('.modal');
     if (modal) hideModal(modal.id);
-    openSettingsModal();
+    _openSettingsModal();
   });
 });

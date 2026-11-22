@@ -1,25 +1,18 @@
 // =============================================================================
 // /firebase-env — Serves the Firebase settings from the host's environment
 // =============================================================================
-// A Cloudflare Pages Function. Anything under functions/ is deployed as a
-// Worker automatically — no build step, no build command — and the variables
-// set in Pages → Settings → Variables and Secrets arrive in `context.env`.
-// This file's name is its route: /firebase-env.
-//
-// It exists because the deployed site has no `.env` to read. That file is
-// gitignored, so it never reaches the host, and Cloudflare Pages would not
-// serve it anyway: it skips every path beginning with a dot. Keeping the values
-// in the dashboard rather than in the repo is the point of doing it this way.
-//
-// The response is the same KEY=value text `.env` holds, so firebase-config.js
-// parses one format whichever source answered.
-//
-// This does NOT make the config secret. Any visitor can read this response,
-// just as they can read the config out of the running page — the browser has to
-// receive it to connect at all. Your Realtime Database rules are what guard the
-// data; this only keeps the values out of a public repo.
+'use strict';
 
-const KEYS = [
+// A Cloudflare Pages Function: deployed as a Worker automatically, routed by its
+// file name, with the variables from Pages → Settings → Variables and Secrets in
+// `context.env`. It exists because the deployed site has no `.env` (gitignored,
+// and Cloudflare Pages skips dot-paths anyway). The response is the same
+// KEY=value text `.env` holds, so firebase-config.js parses one format.
+//
+// This does NOT make the config secret: the browser must receive it to connect.
+// Realtime Database rules guard the data; this only keeps the values out of the repo.
+
+const FIREBASE_ENV_KEYS = [
   'FIREBASE_API_KEY',
   'FIREBASE_AUTH_DOMAIN',
   'FIREBASE_DATABASE_URL',
@@ -29,13 +22,15 @@ const KEYS = [
   'FIREBASE_APP_ID',
 ];
 
-const TEXT = { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' };
+const TEXT_HEADERS = { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' };
 
+// GET /firebase-env: the set FIREBASE_* variables as KEY=value lines, or a 404
+// when FIREBASE_DATABASE_URL is missing.
 export function onRequestGet(context) {
   const env = context.env ?? {};
   const lines = [];
 
-  for (const key of KEYS) {
+  for (const key of FIREBASE_ENV_KEYS) {
     const value = String(env[key] ?? '').trim();
     if (value) lines.push(`${key}=${value}`);
   }
@@ -47,9 +42,9 @@ export function onRequestGet(context) {
     return new Response(
       '# FIREBASE_DATABASE_URL is not set for this deployment.\n' +
       '# Add the FIREBASE_* variables under Pages → Settings → Variables and Secrets.\n',
-      { status: 404, headers: TEXT },
+      { status: 404, headers: TEXT_HEADERS },
     );
   }
 
-  return new Response(lines.join('\n') + '\n', { headers: TEXT });
+  return new Response(lines.join('\n') + '\n', { headers: TEXT_HEADERS });
 }

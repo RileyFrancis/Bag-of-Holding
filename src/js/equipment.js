@@ -3,80 +3,98 @@
 // =============================================================================
 'use strict';
 
+// Returns the slot id the instance is equipped in, or null.
 function getEquippedSlot(instanceId) {
   return Object.entries(state.equipped).find(([, id]) => id === instanceId)?.[0] ?? null;
 }
 
+// Equips an instance into a slot, moving it out of any slot it already holds.
 function equipItem(instanceId, slotId) {
-  // Remove from any slot it's already in
   for (const s of Object.keys(state.equipped)) {
     if (state.equipped[s] === instanceId) delete state.equipped[s];
   }
   state.equipped[slotId] = instanceId;
   renderAllItems();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
-function unequipItem(slotId) {
+function _unequipSlot(slotId) {
   delete state.equipped[slotId];
   renderAllItems();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
+// Unequips an instance from whichever slot holds it, if any.
 function unequipInstance(instanceId) {
   const slotId = getEquippedSlot(instanceId);
-  if (slotId) unequipItem(slotId);
+  if (slotId) _unequipSlot(slotId);
 }
 
+// Draws the equipment pane: slot cards, coin purse and the Configure Slots button.
 function renderEquipPanel() {
   // The equipment pane, not the whole left panel — the Shop pane is its sibling.
   const panel = document.getElementById('left-pane-equip');
   if (!panel) return;
   panel.innerHTML = '';
 
+  panel.appendChild(_buildEquipSlotsScroll());
+  panel.appendChild(_buildCoinPurse());
+
+  const footer = document.createElement('div');
+  footer.id = 'equip-panel-footer';
+  const settingsBtn = document.createElement('button');
+  settingsBtn.className = 'btn-sm';
+  setIconLabel(settingsBtn, 'setting', 'Configure Slots');
+  settingsBtn.addEventListener('click', _openEquipSettings);
+  footer.appendChild(settingsBtn);
+  panel.appendChild(footer);
+}
+
+function _buildEquipSlotCard(slot) {
+  const instId = state.equipped[slot.id] ?? null;
+  const inst   = instId ? state.instances[instId] : null;
+  const t      = inst ? state.db[inst.templateId] : null;
+
+  const card = document.createElement('div');
+  card.className = 'eq-card' + (t ? ' filled' : '');
+  card.dataset.slotId = slot.id;
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'eq-card-label';
+  labelEl.textContent = slot.panelLabel || slot.label;
+
+  const itemEl = document.createElement('span');
+  itemEl.className = 'eq-card-item';
+  itemEl.textContent = t ? t.name : '—';
+
+  card.appendChild(labelEl);
+  card.appendChild(itemEl);
+
+  if (t && !isReadOnly()) {
+    const unequipBtn = document.createElement('button');
+    unequipBtn.className = 'eq-card-unequip';
+    unequipBtn.textContent = '×';
+    unequipBtn.title = 'Unequip';
+    unequipBtn.addEventListener('click', e => { e.stopPropagation(); _unequipSlot(slot.id); });
+    card.appendChild(unequipBtn);
+  }
+
+  if (inst) {
+    card.addEventListener('pointerenter', e => startTooltipTimer(inst.id, e.clientX, e.clientY));
+    card.addEventListener('pointerleave', clearTooltip);
+  }
+
+  if (!isReadOnly()) {
+    card.addEventListener('click', () => _openSlotPicker(slot.id));
+  }
+
+  return card;
+}
+
+// Lays the visible slots out in sections; consecutive `inRow` slots share one row.
+function _buildEquipSlotsScroll() {
   const scrollArea = document.createElement('div');
   scrollArea.id = 'equip-slots-scroll';
-
-  function makeSlotCard(slot) {
-    const instId = state.equipped[slot.id] ?? null;
-    const inst   = instId ? state.instances[instId] : null;
-    const t      = inst ? state.db[inst.templateId] : null;
-
-    const card = document.createElement('div');
-    card.className = 'eq-card' + (t ? ' filled' : '');
-    card.dataset.slotId = slot.id;
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'eq-card-label';
-    labelEl.textContent = slot.panelLabel || slot.label;
-
-    const itemEl = document.createElement('span');
-    itemEl.className = 'eq-card-item';
-    itemEl.textContent = t ? t.name : '—';
-
-    card.appendChild(labelEl);
-    card.appendChild(itemEl);
-
-    if (t && !isReadOnly()) {
-      const unequipBtn = document.createElement('button');
-      unequipBtn.className = 'eq-card-unequip';
-      unequipBtn.textContent = '×';
-      unequipBtn.title = 'Unequip';
-      unequipBtn.addEventListener('click', e => { e.stopPropagation(); unequipItem(slot.id); });
-      card.appendChild(unequipBtn);
-    }
-
-    if (inst) {
-      card.addEventListener('pointerenter', e => startTooltipTimer(inst.id, e.clientX, e.clientY));
-      card.addEventListener('pointerleave', clearTooltip);
-    }
-
-    if (!isReadOnly()) {
-      card.addEventListener('click', () => openSlotPicker(slot.id));
-    }
-
-    return card;
-  }
 
   let currentSection = null;
   let rowBuffer = [];
@@ -106,7 +124,7 @@ function renderEquipPanel() {
         currentSection.className = 'eq-section';
         scrollArea.appendChild(currentSection);
       }
-      const card = makeSlotCard(item);
+      const card = _buildEquipSlotCard(item);
       if (item.inRow) {
         rowBuffer.push(card);
       } else {
@@ -117,10 +135,10 @@ function renderEquipPanel() {
   });
 
   flushRowBuffer();
+  return scrollArea;
+}
 
-  panel.appendChild(scrollArea);
-
-  // Coin purse
+function _buildCoinPurse() {
   const coinPurse = document.createElement('div');
   coinPurse.id = 'coin-purse';
   const cpHdr = document.createElement('div');
@@ -135,7 +153,7 @@ function renderEquipPanel() {
     templateId: coinTemplates[denom],   // null if the CSV has no coin of this denomination
     label: denom.toUpperCase(),
     count: counts[denom],
-    color: coinColor(denom),
+    color: getCoinColor(denom),
   }));
   coinDefs.forEach(({ templateId, label, count, color }) => {
     const item = document.createElement('div');
@@ -172,19 +190,32 @@ function renderEquipPanel() {
     cpGrid.appendChild(item);
   });
   coinPurse.appendChild(cpGrid);
-  panel.appendChild(coinPurse);
-
-  const footer = document.createElement('div');
-  footer.id = 'equip-panel-footer';
-  const settingsBtn = document.createElement('button');
-  settingsBtn.className = 'btn-sm';
-  setIconLabel(settingsBtn, 'setting', 'Configure Slots');
-  settingsBtn.addEventListener('click', openEquipSettings);
-  footer.appendChild(settingsBtn);
-  panel.appendChild(footer);
+  return coinPurse;
 }
 
-function openEquipSettings() {
+// A symbol is either a glyph or, prefixed `icon:`, one of the img/icon set.
+function _buildSettingsToggle(title, symbol, getter, setter) {
+  const lbl = document.createElement('label');
+  lbl.className = 'es-toggle';
+  lbl.title = title;
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = getter();
+  cb.addEventListener('change', () => setter(cb.checked));
+  lbl.appendChild(cb);
+  let sym;
+  if (symbol.startsWith('icon:')) {
+    sym = createIconEl(symbol.slice(5));
+  } else {
+    sym = document.createElement('span');
+    sym.textContent = symbol;
+  }
+  lbl.appendChild(sym);
+  return lbl;
+}
+
+// Opens the slot layout editor on a draft copy; Apply saves it to localStorage.
+function _openEquipSettings() {
   let draft = JSON.parse(JSON.stringify(state.equipLayout));
 
   const list = document.getElementById('equip-settings-list');
@@ -223,30 +254,9 @@ function openEquipSettings() {
       row.appendChild(labelInput);
 
       if (item.type === 'slot') {
-        function makeToggle(title, symbol, getter, setter) {
-          const lbl = document.createElement('label');
-          lbl.className = 'es-toggle';
-          lbl.title = title;
-          const cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.checked = getter();
-          cb.addEventListener('change', () => setter(cb.checked));
-          lbl.appendChild(cb);
-          // A symbol is either a glyph or, prefixed `icon:`, one of the
-          // img/icon set — the eye has a drawn icon, the other two do not.
-          let sym;
-          if (symbol.startsWith('icon:')) {
-            sym = iconEl(symbol.slice(5));
-          } else {
-            sym = document.createElement('span');
-            sym.textContent = symbol;
-          }
-          lbl.appendChild(sym);
-          return lbl;
-        }
-        row.appendChild(makeToggle('Show in panel', 'icon:show', () => item.visible !== false, v => { draft[idx].visible = v; }));
-        row.appendChild(makeToggle('Side-by-side', '⇔', () => !!item.inRow, v => { draft[idx].inRow = v; }));
-        row.appendChild(makeToggle('Attunement only', '✦', () => !!item.attuneOnly, v => { draft[idx].attuneOnly = v; }));
+        row.appendChild(_buildSettingsToggle('Show in panel', 'icon:show', () => item.visible !== false, v => { draft[idx].visible = v; }));
+        row.appendChild(_buildSettingsToggle('Side-by-side', '⇔', () => !!item.inRow, v => { draft[idx].inRow = v; }));
+        row.appendChild(_buildSettingsToggle('Attunement only', '✦', () => !!item.attuneOnly, v => { draft[idx].attuneOnly = v; }));
       }
 
       row.appendChild(delBtn);
@@ -315,7 +325,7 @@ function openEquipSettings() {
 
   document.getElementById('equip-settings-apply-btn').onclick = () => {
     state.equipLayout = draft;
-    saveSlotConfig();
+    _saveSlotConfig();
     renderEquipPanel();
     hideModal('equip-settings-modal');
   };
@@ -323,10 +333,11 @@ function openEquipSettings() {
   showModal('equip-settings-modal');
 }
 
-function saveSlotConfig() {
+function _saveSlotConfig() {
   localStorage.setItem('dnd_slot_config', JSON.stringify(state.equipLayout));
 }
 
+// Restores the slot layout from localStorage, falling back to the default layout.
 function loadSlotConfig() {
   if (state.equipLayout.length) return; // already restored by autoLoad
   try {
@@ -336,7 +347,7 @@ function loadSlotConfig() {
       if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type) {
         state.equipLayout = parsed;
       } else if (Array.isArray(parsed)) {
-        // Migrate old format (list of disabled slot ID strings)
+        // Legacy shape: a list of hidden slot ids.
         const layout = getDefaultEquipLayout();
         parsed.forEach(id => {
           const s = layout.find(item => item.type === 'slot' && item.id === id);
@@ -349,11 +360,8 @@ function loadSlotConfig() {
   if (!state.equipLayout.length) state.equipLayout = getDefaultEquipLayout();
 }
 
-let equipModalInstanceId = null;
-
-// Called from context menu "Equip…" — picks a slot for the given item
+// Opens the slot chooser for an item (the context menu's "Equip…").
 function openEquipModal(instanceId) {
-  equipModalInstanceId = instanceId;
   const inst = state.instances[instanceId];
   const t    = inst ? state.db[inst.templateId] : null;
 
@@ -381,8 +389,8 @@ function openEquipModal(instanceId) {
   showModal('equip-modal');
 }
 
-// Called from clicking a slot in the equip panel — picks an item for the given slot
-function openSlotPicker(slotId) {
+// Opens the item chooser for a slot clicked in the equip panel.
+function _openSlotPicker(slotId) {
   clearTooltip();
   const slot = getSlotDef(slotId);
   if (!slot) return;
@@ -392,13 +400,12 @@ function openSlotPicker(slotId) {
   const picker = document.getElementById('equip-slot-picker');
   picker.innerHTML = '';
 
-  // Unequip option when slot is occupied
   const currentId = state.equipped[slotId];
   if (currentId) {
     const unequipBtn = document.createElement('button');
     unequipBtn.className = 'btn-sm equip-slot-pick-btn danger';
     unequipBtn.textContent = 'Unequip';
-    unequipBtn.addEventListener('click', () => { unequipItem(slotId); hideModal('equip-modal'); });
+    unequipBtn.addEventListener('click', () => { _unequipSlot(slotId); hideModal('equip-modal'); });
     picker.appendChild(unequipBtn);
   }
 

@@ -3,11 +3,9 @@
 // =============================================================================
 'use strict';
 
-// The app works signed out, on localStorage. An account only unlocks party play
-// and cloud save. Every gated entry point goes through `requireAuth(reason,
-// action)`; do not gate the inventory itself. Firebase restores a session
-// asynchronously — hence `state.auth.ready`; before it flips, "no user" means
-// "not known yet". See CLAUDE.md § Accounts and cloud save.
+// The app works signed out; an account only unlocks party play and cloud save.
+// Gate entry points with `requireAuth()`, never the inventory itself. Before
+// `state.auth.ready` flips, "no user" means "not known yet".
 
 let firebaseAuth = null;
 
@@ -17,6 +15,7 @@ let pendingAuthAction = null;
 // 'signin' | 'signup' — one modal, two shapes.
 let loginMode = 'signin';
 
+// Starts Firebase Auth and listens for sign-in changes; a no-op without Firebase.
 function initAuth() {
   if (!firebaseDb || typeof firebase === 'undefined' || !firebase.auth) return;
 
@@ -27,14 +26,13 @@ function initAuth() {
     return;
   }
 
-  firebaseAuth.onAuthStateChanged(handleAuthStateChange);
-
-  updateAuthUI();
+  firebaseAuth.onAuthStateChanged(_handleAuthStateChange);
+  _updateAuthUI();
 }
 
 // Every way in lands here — email, Google, a session restored at boot — so this
 // is the only place that has to know what "now signed in" looks like.
-function handleAuthStateChange(user) {
+function _handleAuthStateChange(user) {
   // The first answer is Firebase restoring (or not) a session at boot — the
   // boot already opened the home screen, and the reader may have left it since.
   const restoredAtBoot = !state.auth.ready;
@@ -43,7 +41,7 @@ function handleAuthStateChange(user) {
     : null;
   state.auth.ready = true;
 
-  updateAuthUI();
+  _updateAuthUI();
   renderHomeScreen();                  // the Campaigns section is gated on an account
   renderMissingScreen();               // its Sign in button, likewise
   renderChat();                        // who may speak just changed
@@ -51,8 +49,7 @@ function handleAuthStateChange(user) {
 
   if (!user) return;
 
-  // Unconditionally — a Google sign-in that left the modal up looked like it
-  // had done nothing.
+  // Unconditionally, or a Google sign-in leaves the modal up looking like it did nothing.
   hideModal('login-modal');
 
   // Whatever the sign-in was for — the party modal, or back to Settings.
@@ -68,12 +65,13 @@ function handleAuthStateChange(user) {
   if (!restoredAtBoot) openHomeScreen();
 }
 
+// Whether an account is signed in right now.
 function isSignedIn() {
   return !!state.auth.user;
 }
 
-// The one gate. `reason` is shown at the top of the login modal so the prompt
-// never arrives without saying what asked for it.
+// Runs `action` once signed in, opening the login modal first if needed.
+// `reason` is shown at the top of the modal so the prompt says what asked for it.
 function requireAuth(reason, action) {
   if (!firebaseAuth) {
     // No account is possible here, so say what is actually missing rather than
@@ -81,25 +79,23 @@ function requireAuth(reason, action) {
     alert(firebaseDb
       ? 'Sign-in is unavailable because the Firebase Auth SDK did not load.\n\n' +
         'index.html pulls it from gstatic.com, so it needs a working network connection.'
-      : partyUnavailableMessage());
+      : getPartyUnavailableMessage());
     return;
   }
   if (isSignedIn()) { action(); return; }
-  openLoginModal(reason, action);
+  _openLoginModal(reason, action);
 }
 
-// =============================================================================
-// THE LOGIN MODAL
-// =============================================================================
+// ─── THE LOGIN MODAL ─────────────────────────────────────────────────────────
 // `onSuccess` runs once they are through — always something visible, so signing
 // in never reads as nothing having happened.
-function openLoginModal(reason, onSuccess = null) {
+function _openLoginModal(reason, onSuccess = null) {
   pendingAuthAction = onSuccess;
-  setLoginMode('signin');
+  _setLoginMode('signin');
   document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-name').value = '';
-  showLoginError('');
+  _showLoginError('');
 
   const reasonEl = document.getElementById('login-reason');
   reasonEl.textContent = reason || '';
@@ -109,30 +105,30 @@ function openLoginModal(reason, onSuccess = null) {
   setTimeout(() => document.getElementById('login-email').focus(), 0);
 }
 
-function setLoginMode(mode) {
+function _setLoginMode(mode) {
   loginMode = mode === 'signup' ? 'signup' : 'signin';
-  const signup = loginMode === 'signup';
+  const isSignup = loginMode === 'signup';
 
-  document.getElementById('login-title').textContent = signup ? 'Create Account' : 'Sign In';
-  document.getElementById('login-submit-btn').textContent = signup ? 'Create Account' : 'Sign In';
-  document.getElementById('login-toggle-mode').textContent = signup
+  document.getElementById('login-title').textContent = isSignup ? 'Create Account' : 'Sign In';
+  document.getElementById('login-submit-btn').textContent = isSignup ? 'Create Account' : 'Sign In';
+  document.getElementById('login-toggle-mode').textContent = isSignup
     ? 'I already have an account'
     : 'Create an account';
-  document.getElementById('login-password').autocomplete = signup ? 'new-password' : 'current-password';
+  document.getElementById('login-password').autocomplete = isSignup ? 'new-password' : 'current-password';
 
-  document.querySelectorAll('.auth-signup-only').forEach(el => el.classList.toggle('hidden', !signup));
-  document.getElementById('login-reset-btn').classList.toggle('hidden', signup);
-  showLoginError('');
+  document.querySelectorAll('.auth-signup-only').forEach(el => el.classList.toggle('hidden', !isSignup));
+  document.getElementById('login-reset-btn').classList.toggle('hidden', isSignup);
+  _showLoginError('');
 }
 
-function showLoginError(message, kind = 'error') {
+function _showLoginError(message, kind = 'error') {
   const el = document.getElementById('login-error');
   el.textContent = message;
   el.className = 'auth-error ' + kind + (message ? '' : ' hidden');
 }
 
 // Firebase's codes are precise but unreadable; these are the ones a user can hit.
-function authErrorMessage(err) {
+function _getAuthErrorMessage(err) {
   switch (err && err.code) {
     case 'auth/invalid-email':           return 'That does not look like an email address.';
     case 'auth/missing-password':        return 'Enter your password.';
@@ -157,21 +153,21 @@ function authErrorMessage(err) {
   }
 }
 
-function setLoginBusy(busy) {
-  document.getElementById('login-submit-btn').disabled = busy;
-  document.getElementById('google-signin-btn').disabled = busy;
+function _setLoginBusy(isBusy) {
+  document.getElementById('login-submit-btn').disabled = isBusy;
+  document.getElementById('google-signin-btn').disabled = isBusy;
 }
 
-async function submitLoginForm() {
+async function _submitLoginForm() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const displayName = document.getElementById('login-name').value.trim();
 
-  if (!email)    { showLoginError('Enter your email address.'); return; }
-  if (!password) { showLoginError('Enter your password.'); return; }
+  if (!email)    { _showLoginError('Enter your email address.'); return; }
+  if (!password) { _showLoginError('Enter your password.'); return; }
 
-  setLoginBusy(true);
-  showLoginError('');
+  _setLoginBusy(true);
+  _showLoginError('');
   try {
     if (loginMode === 'signup') {
       const cred = await firebaseAuth.createUserWithEmailAndPassword(email, password);
@@ -179,65 +175,64 @@ async function submitLoginForm() {
         await cred.user.updateProfile({ displayName });
         // onAuthStateChanged has already fired with the profile-less user.
         state.auth.user = { uid: cred.user.uid, email: cred.user.email, displayName };
-        updateAuthUI();
+        _updateAuthUI();
       }
     } else {
       await firebaseAuth.signInWithEmailAndPassword(email, password);
     }
     // onAuthStateChanged closes the modal and runs whatever was pending.
   } catch (err) {
-    showLoginError(authErrorMessage(err));
+    _showLoginError(_getAuthErrorMessage(err));
   } finally {
-    setLoginBusy(false);
+    _setLoginBusy(false);
   }
 }
 
-async function signInWithGoogle() {
-  setLoginBusy(true);
-  showLoginError('');
+async function _signInWithGoogle() {
+  _setLoginBusy(true);
+  _showLoginError('');
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     await firebaseAuth.signInWithPopup(provider);
   } catch (err) {
-    showLoginError(authErrorMessage(err));
+    _showLoginError(_getAuthErrorMessage(err));
   } finally {
-    setLoginBusy(false);
+    _setLoginBusy(false);
   }
 }
 
-async function sendPasswordReset() {
+async function _sendPasswordReset() {
   const email = document.getElementById('login-email').value.trim();
-  if (!email) { showLoginError('Enter your email address first, then ask for a reset.'); return; }
+  if (!email) { _showLoginError('Enter your email address first, then ask for a reset.'); return; }
   try {
     await firebaseAuth.sendPasswordResetEmail(email);
-    showLoginError('Reset email sent to ' + email + '.', 'notice');
+    _showLoginError('Reset email sent to ' + email + '.', 'notice');
   } catch (err) {
-    showLoginError(authErrorMessage(err));
+    _showLoginError(_getAuthErrorMessage(err));
   }
 }
 
 // Leaving the party first: staying in it while signed out would keep writing to
 // a roster you no longer have an identity for.
-async function signOutUser() {
+async function _signOutUser() {
   if (!firebaseAuth) return;
   if (state.party.active) leaveParty();
   try {
     await firebaseAuth.signOut();
   } catch (err) {
-    alert('Sign-out failed: ' + authErrorMessage(err));
+    alert('Sign-out failed: ' + _getAuthErrorMessage(err));
   }
 }
 
-// =============================================================================
-// ACCOUNT UI (in Settings)
-// =============================================================================
-function accountDisplayName() {
-  const u = state.auth.user;
-  if (!u) return '';
-  return u.displayName || (u.email ? u.email.split('@')[0] : 'Signed in');
+// ─── ACCOUNT UI (in Settings) ────────────────────────────────────────────────
+// The signed-in user's name, falling back to their email's local part; '' when signed out.
+function getAccountDisplayName() {
+  const user = state.auth.user;
+  if (!user) return '';
+  return user.displayName || (user.email ? user.email.split('@')[0] : 'Signed in');
 }
 
-function updateAuthUI() {
+function _updateAuthUI() {
   const row = document.getElementById('account-row');
   if (!row) return;
 
@@ -245,31 +240,29 @@ function updateAuthUI() {
   row.classList.toggle('hidden', !firebaseAuth);
   if (!firebaseAuth) return;
 
-  const signedIn = isSignedIn();
-  document.getElementById('account-signed-out').classList.toggle('hidden', signedIn);
-  document.getElementById('account-signed-in').classList.toggle('hidden', !signedIn);
+  const isUserSignedIn = isSignedIn();
+  document.getElementById('account-signed-out').classList.toggle('hidden', isUserSignedIn);
+  document.getElementById('account-signed-in').classList.toggle('hidden', !isUserSignedIn);
 
-  if (signedIn) {
-    document.getElementById('account-name').textContent  = accountDisplayName();
+  if (isUserSignedIn) {
+    document.getElementById('account-name').textContent  = getAccountDisplayName();
     document.getElementById('account-email').textContent = state.auth.user.email || '';
   }
   updateCloudStatusUI();
 }
 
-// =============================================================================
-// EVENT WIRING
-// =============================================================================
-document.getElementById('login-submit-btn').addEventListener('click', submitLoginForm);
-document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
-document.getElementById('login-reset-btn').addEventListener('click', sendPasswordReset);
+// ─── EVENT WIRING ────────────────────────────────────────────────────────────
+document.getElementById('login-submit-btn').addEventListener('click', _submitLoginForm);
+document.getElementById('google-signin-btn').addEventListener('click', _signInWithGoogle);
+document.getElementById('login-reset-btn').addEventListener('click', _sendPasswordReset);
 document.getElementById('login-toggle-mode').addEventListener('click', () => {
-  setLoginMode(loginMode === 'signup' ? 'signin' : 'signup');
+  _setLoginMode(loginMode === 'signup' ? 'signin' : 'signup');
 });
 
 // Enter submits from any of the fields, as a login form should.
 document.querySelectorAll('#login-modal input').forEach(input => {
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); submitLoginForm(); }
+    if (e.key === 'Enter') { e.preventDefault(); _submitLoginForm(); }
   });
 });
 
@@ -279,14 +272,13 @@ document.querySelectorAll('#login-modal .cancel-btn').forEach(btn => {
   btn.addEventListener('click', () => { pendingAuthAction = null; });
 });
 
-// Settings stays closed afterwards — the sign-in is done, so there is nothing
-// left to do there. The no-op (not null) keeps the reader where they were;
-// with nothing pending, handleAuthStateChange() would send them home instead.
+// The no-op (not null) keeps the reader where they were; with nothing pending,
+// _handleAuthStateChange() would send them home instead.
 document.getElementById('account-signin-btn').addEventListener('click', () => {
   hideModal('settings-modal');
-  openLoginModal('Sign in to sync this inventory to your account.', () => {});
+  _openLoginModal('Sign in to sync this inventory to your account.', () => {});
 });
 
 document.getElementById('account-signout-btn').addEventListener('click', () => {
-  if (confirm('Sign out? Your inventory stays in this browser.')) signOutUser();
+  if (confirm('Sign out? Your inventory stays in this browser.')) _signOutUser();
 });

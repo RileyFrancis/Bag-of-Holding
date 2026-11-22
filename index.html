@@ -102,7 +102,7 @@
 
 <!-- Covers the app while the boot-time synchronous loads run (items.csv,
      classes.json, species.json — all blocking XHRs, see items.js /
-     class-features.js / species-traits.js). init() in main.js fades and
+     class-features.js / species-traits.js). _initApp() in main.js fades and
      removes it once the first render is on screen. -->
 <div id="loading-screen" aria-hidden="true">
   <span class="ico ico-d20"></span>
@@ -208,7 +208,7 @@
            showing, opening a column of faces to build a handful from, a Roll
            button, and a modifier. A zero-height row here, so it always hangs
            just under the tabs and banners above, however many are showing.
-           The faces are built from DICE_FACES by buildDiceDock() in
+           The faces are built from DICE_FACES by _buildDiceDock() in
            src/js/dice.js. -->
       <div id="dice-dock">
         <button id="dice-dock-btn" type="button" title="Roll dice" aria-label="Roll dice"
@@ -583,7 +583,7 @@
             </div>
             <!-- Ends the active turn and hands it to the next entry. Shown only
                  while it is the reader's own turn (or, for the GM, a monster
-                 group's) — myInitiativeTurn() in battlemap-initiative.js. -->
+                 group's) — isMyInitiativeTurn() in battlemap-initiative.js. -->
             <button id="init-pass-btn" class="btn-sm hidden" type="button">Pass Turn</button>
           </div>
           <div id="map-empty" class="hidden">
@@ -633,7 +633,7 @@
       <button id="map-btn" class="hidden" title="Battle map"
               aria-label="Battle map"><span class="ico ico-map"></span></button>
 
-      <div id="dice-history" class="hidden"><!-- rendered by renderRollHistory() --></div>
+      <div id="dice-history" class="hidden"><!-- rendered by _renderRollHistory() --></div>
     </div>
 
     <div class="panel-resizer" id="sidebar-resizer" data-side="sidebar"
@@ -643,7 +643,7 @@
     <aside id="sidebar">
       <!-- Browse and Details belong beside a grid of items; Chat belongs
            beside a character sheet; Spellbook takes Chat's place while viewing
-           the Spell Sheet (see `sidebarView()` in modals.js — the two never
+           the Spell Sheet (see `getSidebarView()` in modals.js — the two never
            show together). Party is in all three. Dice are not a tab — they
            are the dock in the middle panel's top right. -->
       <div id="sidebar-tabs">
@@ -750,7 +750,7 @@
       <!-- Spellbook Tab -->
       <!-- Every spell the character's classes currently give access to, not
            just what they've picked — a card's click is the whole toggle
-           (src/js/spells.js's toggleKnownSpell()); the Spell Sheet's own
+           (src/js/spells.js's _toggleKnownSpell()); the Spell Sheet's own
            #spell-list only ever shows what that has already put on the list.
            Takes Chat's place in the tab strip; never shown alongside it. -->
       <div id="tab-spellbook" class="tab-pane">
@@ -770,11 +770,11 @@
           </div>
           <div>
             <span class="spellbook-settings-label">Classes</span>
-            <div id="spellbook-class-filters" class="spellbook-filter-group"><!-- built by renderSpellbookSettings() --></div>
+            <div id="spellbook-class-filters" class="spellbook-filter-group"><!-- built by _renderSpellbookSettings() --></div>
           </div>
           <div>
             <span class="spellbook-settings-label">Schools</span>
-            <div id="spellbook-school-filters" class="spellbook-filter-group"><!-- built by renderSpellbookSettings() --></div>
+            <div id="spellbook-school-filters" class="spellbook-filter-group"><!-- built by _renderSpellbookSettings() --></div>
           </div>
         </div>
         <div id="spellbook-list" class="spell-picker-list"></div>
@@ -958,10 +958,10 @@
      where they sit on a number line. Positioned from --wx / --wy in dice.js. -->
 <!-- The upcast wheel: held on a Spells Known card, one option per slot level
      the spell could be cast with, in a ring around the cursor. Options are
-     built by openCastWheel() in spells.js; the hub caption names the pick. -->
+     built by _openCastWheel() in spells.js; the hub caption names the pick. -->
 <div id="cast-wheel" class="hidden">
   <div class="cast-wheel-anchor">
-    <div class="cast-wheel-caption"><!-- written by paintCastWheel() --></div>
+    <div class="cast-wheel-caption"><!-- written by _paintCastWheel() --></div>
   </div>
 </div>
 
@@ -981,18 +981,18 @@
       <span class="roll-wheel-name">Adv</span>
       <span class="roll-wheel-glyph">&#9650;</span>
     </div>
-    <div class="roll-wheel-caption"><!-- written by paintRollWheel() --></div>
+    <div class="roll-wheel-caption"><!-- written by _paintRollWheel() --></div>
   </div>
 </div>
 
 <!-- The whole working behind one of your own rolls, opened by hovering its chip
-     in the corner. Built by showRollDetail(). -->
+     in the corner. Built by _showRollDetail(). -->
 <div id="roll-detail" class="hidden"></div>
 
 <div id="char-tab-menu" class="hidden">
   <button class="char-view-btn" data-view="sheet">Character Sheet</button>
   <!-- Hidden per tab when that character has turned the spell sheet off —
-       see spellsEnabledForTabKey() in character-tabs.js. -->
+       see isSpellSheetEnabledForTabKey() in character-tabs.js. -->
   <button class="char-view-btn" data-view="spells" id="char-view-spells-btn">Spell Sheet</button>
   <button class="char-view-btn" data-view="inventory">Inventory</button>
 </div>
@@ -1059,7 +1059,7 @@
     </div>
 
     <!-- On by default — a missing `spellsEnabled` reads as true (see
-         spellSheetEnabled() in spells.js), so an older save gains the tab
+         isSpellSheetEnabled() in spells.js), so an older save gains the tab
          rather than losing it. -->
     <label class="sheet-check">
       <input type="checkbox" id="char-spells-input" checked>
@@ -1250,8 +1250,8 @@
 <!-- ===== CHAT MODAL =====
      The same conversation as the sidebar's Chat tab, larger and in the middle
      of the screen — opened by Enter, closed by its ✕ or Escape. It has no log
-     of its own: openChatModal() in src/js/chat.js *moves* the tab's log and
-     composer in here, and closeChatModal() moves them back, so there is one
+     of its own: _openChatModal() in src/js/chat.js *moves* the tab's log and
+     composer in here, and _closeChatModal() moves them back, so there is one
      log to render and one set of listeners. It handles its own backdrop click
      for the same reason — the shared handler would hide it without putting
      them back. -->
@@ -1834,7 +1834,7 @@
 <!-- ===== ITEM TOOLTIP ===== -->
 <div id="item-tooltip" class="hidden"></div>
 <!-- The full spell card for a hovered row of Available Spells — built by
-     showSpellHoverCard() in src/js/spells.js. -->
+     _showSpellHoverCard() in src/js/spells.js. -->
 <div id="spell-hover-card" class="hidden" role="tooltip"></div>
 <!-- The Statuses section's picker — rows built by src/js/statuses.js. -->
 <div id="status-picker" class="hidden" role="menu"></div>

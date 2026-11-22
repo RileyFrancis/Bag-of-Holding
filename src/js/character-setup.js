@@ -8,7 +8,7 @@
 // the classes they have taken levels in — never what the sheet owns (ability
 // scores, which all start at 10). `charModalTargetId` names the roster slot to
 // edit; null means the character on screen, which is not always one of yours (a
-// GM editing a player via the gear). See CLAUDE.md § Multiclassing and Character Setup.
+// GM editing a player via the gear).
 
 let charModalTargetId = null;
 let charModalIsNew = false;
@@ -22,15 +22,14 @@ const charClassRowsEl = document.getElementById('char-class-rows');
 const charLevelFieldEl = document.getElementById('char-level-field');
 const charTotalLevelEl = document.getElementById('char-total-level');
 
-// =============================================================================
-// OPENING AND SAVING
-// =============================================================================
+// ─── OPENING AND SAVING ───
+// Opens Character Setup for a roster slot, the character on screen (null), or a new character.
 function openCharModal(targetId = null, { isNew = false } = {}) {
   charModalIsNew = isNew;
   charModalTargetId = isNew ? null : targetId;
 
   const c = charModalIsNew
-    ? blankCharacterMeta('')
+    ? createBlankCharacterMeta('')
     : (charModalTargetId ? state.characters[charModalTargetId]?.character : null) ?? state.character;
 
   document.getElementById('character-modal-title').textContent =
@@ -40,18 +39,18 @@ function openCharModal(targetId = null, { isNew = false } = {}) {
   document.getElementById('char-background-input').value = c.background ?? '';
   document.getElementById('char-alignment-input').value  = c.alignment ?? '';
   document.getElementById('char-level-input').value      = c.level ?? 1;
-  document.getElementById('char-spells-input').checked   = spellSheetEnabled(c);
+  document.getElementById('char-spells-input').checked   = isSpellSheetEnabled(c);
   document.getElementById('save-char-btn').textContent   = charModalIsNew ? 'Create' : 'Save';
 
   // A copy, not the character's own array — nothing here may reach the model
   // before Save.
-  charModalClasses = classEntriesOf(c).map(e => ({ ...e }));
+  charModalClasses = getClassEntries(c).map(e => ({ ...e }));
 
   // Hints, refreshed on open rather than once at load: custom classes and
   // species will arrive through the registries, and this is where they show up.
-  fillDatalist(document.getElementById('class-options'), allClasses().map(d => d.name));
-  fillDatalist(document.getElementById('species-options'), allSpecies().map(d => d.name));
-  fillDatalist(document.getElementById('background-options'), usableHomebrewOf('background').map(d => d.name));
+  fillDatalist(document.getElementById('class-options'), getAllClasses().map(d => d.name));
+  fillDatalist(document.getElementById('species-options'), getAllSpecies().map(d => d.name));
+  fillDatalist(document.getElementById('background-options'), getUsableHomebrewOfKind('background').map(d => d.name));
   fillDatalist(document.getElementById('alignment-options'), ALIGNMENTS);
 
   renderCharClassRows();
@@ -64,7 +63,7 @@ function openCharModal(targetId = null, { isNew = false } = {}) {
 // Character, `normalizeAbilities()` fills all six with 10). `level` is a mirror
 // of the class sum when there are classes, so it only matters for a classless
 // character — the only time the box is on screen.
-function readCharModalFields(current) {
+function _readCharModalFields(current) {
   const level = parseInt(document.getElementById('char-level-input').value, 10);
   return {
     name: document.getElementById('char-name-input').value.trim() || 'Unnamed Hero',
@@ -80,7 +79,7 @@ function readCharModalFields(current) {
 document.getElementById('save-char-btn').addEventListener('click', () => {
   const current = charModalIsNew ? null
     : (charModalTargetId ? state.characters[charModalTargetId]?.character : state.character);
-  const fields = readCharModalFields(current);
+  const fields = _readCharModalFields(current);
   hideModal('character-modal');
 
   if (charModalIsNew) {
@@ -90,7 +89,7 @@ document.getElementById('save-char-btn').addEventListener('click', () => {
     // After activateCharacter(), which moves the working copy off the placeholder.
     if (canSelectCharacter()) { activateCharacter(id); dropUntouchedSlotsExcept(id); closeHomeScreen(); }
     else { dropUntouchedSlotsExcept(id); renderHomeScreen(); }
-    debouncedSync();
+    scheduleSaveAndSync();
   } else if (charModalTargetId) {
     // A card on the home screen — the slot, which may not be the one on screen.
     updateCharacterMeta(charModalTargetId, fields);
@@ -104,33 +103,33 @@ document.getElementById('save-char-btn').addEventListener('click', () => {
 
 document.getElementById('sheet-setup-btn').addEventListener('click', () => openCharModal());
 
-// =============================================================================
-// THE CLASS ROWS
-// =============================================================================
+// ─── THE CLASS ROWS ───
 // One row per class: name, level, and (once that class's level has unlocked one)
-// subclass. Rows are built once and written into, never rebuilt on a keystroke —
+// subclass. Rows are built once and written into, never rebuilt on a keystroke;
 // only a removal rebuilds the list (every index below the gap shifts).
+
+// Rebuilds every class row from the modal's working copy.
 function renderCharClassRows() {
   charClassRowsEl.textContent = '';
-  charModalClasses.forEach((entry, i) => charClassRowsEl.appendChild(charClassRow(entry, i)));
-  syncCharClassSummary();
+  charModalClasses.forEach((entry, i) => charClassRowsEl.appendChild(_buildCharClassRow(entry, i)));
+  _syncCharClassSummary();
 }
 
-function charClassRow(entry, index) {
+function _buildCharClassRow(entry, index) {
   const row = document.createElement('div');
   row.className = 'class-row';
   row.dataset.index = index;
 
   row.append(
-    charRowField('Class', charTextInput(entry.name, 'class-row-name', {
+    _buildCharRowField('Class', _buildCharTextInput(entry.name, 'class-row-name', {
       list: 'class-options', maxLength: 40, placeholder: 'e.g. Warlock',
     })),
-    charRowField('Level', charLevelInput(entry.level), 'class-row-field-level'),
+    _buildCharRowField('Level', _buildCharLevelInput(entry.level), 'class-row-field-level'),
   );
 
-  // The subclass field is the row's own — `syncCharClassRow()` decides whether
+  // The subclass field is the row's own — `_syncCharClassRow()` decides whether
   // to show it (a Warlock 5 has a patron, the Bard 2 beside them does not).
-  const sub = charRowField('Subclass', charTextInput(entry.subclass, 'class-row-subclass', {
+  const sub = _buildCharRowField('Subclass', _buildCharTextInput(entry.subclass, 'class-row-subclass', {
     maxLength: 40, placeholder: 'Not yet chosen',
   }));
   sub.classList.add('class-row-sub');
@@ -148,11 +147,11 @@ function charClassRow(entry, index) {
   remove.textContent = '×';
   row.appendChild(remove);
 
-  syncCharClassRow(row, entry);
+  _syncCharClassRow(row, entry);
   return row;
 }
 
-function charRowField(label, input, extraClass = '') {
+function _buildCharRowField(label, input, extraClass = '') {
   const field = document.createElement('label');
   field.className = 'field class-row-field' + (extraClass ? ' ' + extraClass : '');
   const span = document.createElement('span');
@@ -161,7 +160,7 @@ function charRowField(label, input, extraClass = '') {
   return field;
 }
 
-function charTextInput(value, className, { list, maxLength, placeholder } = {}) {
+function _buildCharTextInput(value, className, { list, maxLength, placeholder } = {}) {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = className;
@@ -172,7 +171,7 @@ function charTextInput(value, className, { list, maxLength, placeholder } = {}) 
   return input;
 }
 
-function charLevelInput(value) {
+function _buildCharLevelInput(value) {
   const input = document.createElement('input');
   input.type = 'number';
   input.className = 'class-row-level';
@@ -183,11 +182,11 @@ function charLevelInput(value) {
 }
 
 // The subclasses this class offers, and whether to ask for one at all. An
-// unknown class SHOWS the field — `classUnlockKeys()` returns null, and hiding a
+// unknown class SHOWS the field — `getClassUnlockKeys()` returns null, and hiding a
 // box we cannot reason about reads as the app having eaten a field.
-function syncCharClassRow(row, entry) {
+function _syncCharClassRow(row, entry) {
   const def = findClassByName(entry.name);
-  const keys = classUnlockKeys(def, entry.subclass, entry.level);
+  const keys = getClassUnlockKeys(def, entry.subclass, entry.level);
   const sub = row.querySelector('.class-row-sub');
 
   sub.classList.toggle('hidden', !!keys && !keys.has('subclass'));
@@ -197,12 +196,12 @@ function syncCharClassRow(row, entry) {
 
 // The total under the rows is derived (the sum). With no classes there is
 // nothing to sum, so the plain Level box appears instead.
-function syncCharClassSummary() {
+function _syncCharClassSummary() {
   const none = charModalClasses.length === 0;
   charLevelFieldEl.classList.toggle('hidden', !none);
   charTotalLevelEl.textContent = none
     ? ''
-    : `Level ${totalLevelOf(sanitizeClassLevels(charModalClasses), 1)}`;
+    : `Level ${getTotalLevel(sanitizeClassLevels(charModalClasses), 1)}`;
 }
 
 // One listener for the whole list (the list is rebuilt on a removal).
@@ -219,8 +218,8 @@ charClassRowsEl.addEventListener('input', e => {
     entry.level = Number.isFinite(n) ? clampLevel(n) : 1;
   }
 
-  syncCharClassRow(row, entry);
-  syncCharClassSummary();
+  _syncCharClassRow(row, entry);
+  _syncCharClassSummary();
 });
 
 charClassRowsEl.addEventListener('click', e => {
@@ -231,9 +230,9 @@ charClassRowsEl.addEventListener('click', e => {
 });
 
 document.getElementById('char-add-class-btn').addEventListener('click', () => {
-  charModalClasses.push(blankClassEntry());
-  const row = charClassRow(charModalClasses[charModalClasses.length - 1], charModalClasses.length - 1);
+  charModalClasses.push(createBlankClassEntry());
+  const row = _buildCharClassRow(charModalClasses[charModalClasses.length - 1], charModalClasses.length - 1);
   charClassRowsEl.appendChild(row);
-  syncCharClassSummary();
+  _syncCharClassSummary();
   row.querySelector('.class-row-name').focus();
 });

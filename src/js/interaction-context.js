@@ -1,28 +1,28 @@
 // =============================================================================
-// INTERACTION-CONTEXT — Item click handling and the right-click context menu
+// INTERACTION-CONTEXT — The right-click context menu for items and templates
 // =============================================================================
 'use strict';
 
+// Close the context menu on any click
+document.addEventListener('click', () => _hideContextMenu());
+
+const ctxMenu = document.getElementById('context-menu');
+let ctxInstanceId = null; // instance the open menu acts on; null for a template
+
+// Right-click on a placed item: open the instance context menu.
 function onItemContextMenu(e) {
   e.preventDefault();
   e.stopPropagation();
   if (isReadOnly()) return;
   const instanceId = e.currentTarget.dataset.instanceId;
-  showInstanceContextMenu(instanceId, e.clientX, e.clientY);
+  _showInstanceContextMenu(instanceId, e.clientX, e.clientY);
 }
 
-// Close context menu on any click
-document.addEventListener('click', () => hideContextMenu());
-document.addEventListener('contextmenu', () => {});
-
-const ctxMenu = document.getElementById('context-menu');
-let ctxInstanceId = null;
-
-function showInstanceContextMenu(instanceId, x, y) {
+function _showInstanceContextMenu(instanceId, x, y) {
   ctxInstanceId = instanceId;
-  const equipped = !!getEquippedSlot(instanceId);
-  document.getElementById('ctx-equip').style.display     = equipped ? 'none' : '';
-  document.getElementById('ctx-unequip').style.display   = equipped ? '' : 'none';
+  const isEquipped = !!getEquippedSlot(instanceId);
+  document.getElementById('ctx-equip').style.display     = isEquipped ? 'none' : '';
+  document.getElementById('ctx-unequip').style.display   = isEquipped ? '' : 'none';
   document.getElementById('ctx-duplicate').style.display = '';
   document.getElementById('ctx-stash').style.display     = '';
   document.getElementById('ctx-folder').style.display    = 'none'; // templates only
@@ -31,8 +31,9 @@ function showInstanceContextMenu(instanceId, x, y) {
   ctxMenu.classList.remove('hidden');
 }
 
+// Open the context menu for a Browse template at (x, y): edit, move to folder
+// and delete act on the template rather than an instance.
 function showTemplateContextMenu(templateId, x, y) {
-  // Inline: just show edit/delete for templates
   ctxInstanceId = null;
   ctxMenu.style.left = x + 'px';
   ctxMenu.style.top  = y + 'px';
@@ -40,12 +41,12 @@ function showTemplateContextMenu(templateId, x, y) {
   ctxMenu.classList.remove('hidden');
   const folderBtn = document.getElementById('ctx-folder');
   folderBtn.style.display = '';
-  folderBtn.onclick = () => { openMoveToFolderModal(templateId); hideContextMenu(); };
-  document.getElementById('ctx-edit').onclick = () => { openItemModal(templateId); hideContextMenu(); };
-  document.getElementById('ctx-remove').onclick = () => { deleteTemplate(templateId); hideContextMenu(); };
+  folderBtn.onclick = () => { openMoveToFolderModal(templateId); _hideContextMenu(); };
+  document.getElementById('ctx-edit').onclick = () => { openItemModal(templateId); _hideContextMenu(); };
+  document.getElementById('ctx-remove').onclick = () => { deleteTemplate(templateId); _hideContextMenu(); };
 }
 
-function hideContextMenu() {
+function _hideContextMenu() {
   ctxMenu.classList.add('hidden');
   document.getElementById('ctx-rotate').style.display    = '';
   document.getElementById('ctx-equip').style.display     = '';
@@ -57,30 +58,30 @@ function hideContextMenu() {
 
 document.getElementById('ctx-rotate').addEventListener('click', () => {
   if (!ctxInstanceId) return;
-  rotateInstance(ctxInstanceId);
-  hideContextMenu();
+  _rotateInstance(ctxInstanceId);
+  _hideContextMenu();
 });
 document.getElementById('ctx-equip').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   openEquipModal(ctxInstanceId);
-  hideContextMenu();
+  _hideContextMenu();
 });
 document.getElementById('ctx-unequip').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   unequipInstance(ctxInstanceId);
-  hideContextMenu();
+  _hideContextMenu();
 });
 document.getElementById('ctx-edit').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   const inst = state.instances[ctxInstanceId];
   if (inst) openItemModal(inst.templateId);
-  hideContextMenu();
+  _hideContextMenu();
 });
 document.getElementById('ctx-duplicate').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   const inst = state.instances[ctxInstanceId];
   if (inst) startPlacing(inst.templateId);
-  hideContextMenu();
+  _hideContextMenu();
 });
 document.getElementById('ctx-stash').addEventListener('click', () => {
   if (!ctxInstanceId) return;
@@ -92,31 +93,32 @@ document.getElementById('ctx-stash').addEventListener('click', () => {
     inst.col = null;
     renderAllItems();
     updateWeightDisplay();
-    debouncedSync();
+    scheduleSaveAndSync();
   }
-  hideContextMenu();
+  _hideContextMenu();
 });
 document.getElementById('ctx-remove').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   removeInstance(ctxInstanceId);
-  hideContextMenu();
+  _hideContextMenu();
 });
 
-function rotateInstance(instanceId) {
+function _rotateInstance(instanceId) {
   const inst = state.instances[instanceId];
   if (!inst) return;
   const template = state.db[inst.templateId];
-  const newRot = (inst.rotation + 1) % 4;
-  const newShape = getRotatedShape(template.shape, newRot);
+  const newRotation = (inst.rotation + 1) % 4;
+  const newShape = getRotatedShape(template.shape, newRotation);
   if (canPlace(newShape, inst.row, inst.col, instanceId)) {
     removeFromGrid(instanceId);
-    inst.rotation = newRot;
+    inst.rotation = newRotation;
     placeOnGrid(instanceId, newShape, inst.row, inst.col);
     renderAllItems();
-    debouncedSync();
+    scheduleSaveAndSync();
   }
 }
 
+// Delete a placed or stashed instance; a container takes its contents with it.
 function removeInstance(instanceId) {
   const inst = state.instances[instanceId];
   const t = inst ? state.db[inst.templateId] : null;
@@ -136,9 +138,10 @@ function removeInstance(instanceId) {
   renderContainerTabs();
   renderAllItems();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 }
 
+// Delete a template from the item database after confirming; instances stay.
 function deleteTemplate(templateId) {
   if (!confirm(`Delete "${state.db[templateId]?.name}" from the item database? Placed items will remain.`)) return;
   delete state.db[templateId];

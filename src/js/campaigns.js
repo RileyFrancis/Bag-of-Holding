@@ -3,6 +3,15 @@
 // =============================================================================
 'use strict';
 
+const CAMPAIGN_NAME_MAX = 40; // characters
+
+const campaignGridEl = document.getElementById('campaign-card-grid');
+const campaignNoteEl = document.getElementById('campaign-note');
+const campaignMenuEl = document.getElementById('campaign-card-menu');
+
+let openCampaignMenuCode = null;
+let campaignModalMode = 'create'; // 'create' | 'join'
+
 // A campaign is a persistent party: a roster keyed by account uid (not by a
 // per-join session id), so it outlives every session in it. party.js is the live
 // session under it. Two halves, neither a copy of the other:
@@ -18,23 +27,19 @@
 //
 // The bookmark is only what the home screen needs before Firebase answers; it is
 // refreshed from the party once connected, and nothing reads it to decide
-// anything that matters (`enterCampaign()` asks the party who its GM is). It
-// rides the save payload, so it follows the account across browsers for free.
-// See CLAUDE.md § Campaigns.
+// anything that matters (`_enterCampaign()` asks the party who its GM is). It
+// rides the save payload, so it follows the account across browsers.
 
-// =============================================================================
-// THE MODEL
-// =============================================================================
-const CAMPAIGN_NAME_MAX = 40;
+// ─── THE MODEL ───
 
-function normalizeCampaign(raw, code) {
+function _normalizeCampaign(raw, code) {
   const c = raw ?? {};
   return {
     code: String(c.code ?? code ?? '').toUpperCase(),
     name: String(c.name ?? '').slice(0, CAMPAIGN_NAME_MAX),
     role: c.role === 'gm' ? 'gm' : 'player',
     // Which of your characters plays here. Null for a GM, and null for a bookmark
-    // written before the field existed — `enterCampaign()` fills it in.
+    // without the field until `_enterCampaign()` fills it in.
     characterId: c.characterId ?? null,
     gmName: String(c.gmName ?? ''),
     memberCount: Number.isFinite(c.memberCount) ? c.memberCount : 0,
@@ -46,48 +51,49 @@ function normalizeCampaign(raw, code) {
   };
 }
 
+// Cleans the saved `campaigns` map into bookmarks keyed by upper-case code.
 function normalizeCampaigns(raw) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
   Object.entries(raw).forEach(([code, c]) => {
-    const norm = normalizeCampaign(c, code);
+    const norm = _normalizeCampaign(c, code);
     if (norm.code) out[norm.code] = norm;
   });
   return out;
 }
 
 // Most recently played first — a table you left behind sinks on its own.
-function campaignList() {
+function getCampaignList() {
   return Object.values(state.campaigns).sort((a, b) => b.lastPlayed - a.lastPlayed);
 }
 
-// What to call a campaign in a sentence — the code is a good name for a party
-// made before campaigns had names.
-function campaignDisplayName(code) {
+// What to call a campaign in a sentence; the code stands in for a missing name.
+function getCampaignDisplayName(code) {
   const c = state.campaigns[code];
   if (c && c.name) return c.name;
   if (state.party.code === code && state.party.campaignName) return state.party.campaignName;
   return 'campaign ' + code;
 }
 
-function rememberCampaign(patch) {
+function _rememberCampaign(patch) {
   const code = String(patch.code ?? '').toUpperCase();
   if (!code) return;
-  state.campaigns[code] = normalizeCampaign({ ...state.campaigns[code], ...patch, code }, code);
-  debouncedSync();
+  state.campaigns[code] = _normalizeCampaign({ ...state.campaigns[code], ...patch, code }, code);
+  scheduleSaveAndSync();
   renderHomeScreen();
 }
 
+// Drops a campaign bookmark and saves.
 function forgetCampaign(code) {
   if (!code || !state.campaigns[code]) return;
   delete state.campaigns[code];
-  debouncedSync();
+  scheduleSaveAndSync();
   renderHomeScreen();
 }
 
-// The two refreshes, from party.js's subscriptions. No-ops for a campaign we
-// hold no bookmark for. Neither calls `debouncedSync()` — a save per snapshot to
-// cache a head count is a lot of writing for a number nobody is waiting on.
+// Refreshes a bookmark's name and GM from the party's meta snapshot. Like
+// noteCampaignRoster(), a no-op without a bookmark, and deliberately skips
+// `scheduleSaveAndSync()`: a save per snapshot is too much writing for a cached label.
 function noteCampaignMeta(code, meta) {
   const entry = state.campaigns[code];
   if (!entry || !meta) return;
@@ -96,6 +102,7 @@ function noteCampaignMeta(code, meta) {
   renderHomeScreen();
 }
 
+// Refreshes a bookmark's head count from a roster snapshot.
 function noteCampaignRoster(code, players) {
   const entry = state.campaigns[code];
   if (!entry) return;
@@ -105,28 +112,26 @@ function noteCampaignRoster(code, players) {
 
 // A player switching characters while seated at a table changes which character
 // sits in that seat. Called from `activateCharacter()`; the republish is handled
-// by the `debouncedSync()` there.
+// by the `scheduleSaveAndSync()` there.
 function noteActiveCharacterForCampaign() {
   const { active, code, role } = state.party;
   if (!active || role !== 'player' || !state.campaigns[code]) return;
   state.campaigns[code].characterId = state.activeCharacterId;
 }
 
-// =============================================================================
-// ENTERING AND LEAVING
-// =============================================================================
+// ─── ENTERING AND LEAVING ───
 // The one path in, from a card on the home screen. It asks the PARTY what role
 // we hold (`meta.gmUid`) rather than trusting the bookmark — a GM signed in on a
 // new browser must still land in the right chair.
-async function enterCampaign(code) {
+async function _enterCampaign(code) {
   if (!isSignedIn()) {
-    requireAuth('Campaigns need an account, so your table knows who is who.', () => enterCampaign(code));
+    requireAuth('Campaigns need an account, so your table knows who is who.', () => _enterCampaign(code));
     return;
   }
   if (state.party.active) {
     if (state.party.code === code) { closeHomeScreen(); switchTab('party'); return; }
-    if (!confirm('Leave ' + campaignDisplayName(state.party.code) + ' and go to ' +
-                 campaignDisplayName(code) + '?')) return;
+    if (!confirm('Leave ' + getCampaignDisplayName(state.party.code) + ' and go to ' +
+                 getCampaignDisplayName(code) + '?')) return;
     leaveParty();
   }
 
@@ -136,26 +141,26 @@ async function enterCampaign(code) {
     return;
   }
 
-  const uid = ownPlayerId();
-  const asGM = !!meta.gmUid && meta.gmUid === uid;
+  const uid = getOwnPlayerId();
+  const isGM = !!meta.gmUid && meta.gmUid === uid;
 
   // A player brings the character this campaign remembers — switching to them
   // BEFORE the join is what makes the roster entry right the first time.
-  if (!asGM) {
+  if (!isGM) {
     const wanted = state.campaigns[code]?.characterId;
     if (wanted && state.characters[wanted] && wanted !== state.activeCharacterId) activateCharacter(wanted);
   }
 
-  const entered = asGM
+  const hasEntered = isGM
     ? await enterCampaignAsGM(code, meta)
-    : await enterCampaignAsPlayer(code, accountDisplayName() || state.character.name || 'Player', meta);
-  if (!entered) return;
+    : await enterCampaignAsPlayer(code, getAccountDisplayName() || state.character.name || 'Player', meta);
+  if (!hasEntered) return;
 
-  rememberCampaign({
+  _rememberCampaign({
     code,
     name: meta.name ?? '',
-    role: asGM ? 'gm' : 'player',
-    characterId: asGM ? null : state.activeCharacterId,
+    role: isGM ? 'gm' : 'player',
+    characterId: isGM ? null : state.activeCharacterId,
     gmName: meta.gmName ?? '',
     lastPlayed: Date.now(),
   });
@@ -166,17 +171,17 @@ async function enterCampaign(code) {
 // Resigning the seat (as against ending the session). The roster entry goes.
 // A GM's campaign is not theirs to resign from — with nobody running it the
 // record is dead, so their version deletes it outright.
-async function leaveCampaign(code) {
+async function _leaveCampaign(code) {
   const entry = state.campaigns[code];
   if (!entry) return;
   const isGM = entry.role === 'gm';
 
   const warning = isGM
-    ? 'Delete ' + campaignDisplayName(code) + '?\n\n' +
+    ? 'Delete ' + getCampaignDisplayName(code) + '?\n\n' +
       'It is deleted for everyone: the roster, the shops and the code all go, and ' +
       'the players in it are dropped. Their own characters and inventories are ' +
       'untouched. This cannot be undone.'
-    : 'Leave ' + campaignDisplayName(code) + '?\n\n' +
+    : 'Leave ' + getCampaignDisplayName(code) + '?\n\n' +
       'You give up your seat at this table. Your character and everything in your ' +
       'inventory stay yours — rejoining just needs the code again.';
   if (!confirm(warning)) return;
@@ -184,7 +189,7 @@ async function leaveCampaign(code) {
   if (state.party.active && state.party.code === code) leaveParty();
 
   if (firebaseDb) {
-    const path = isGM ? 'parties/' + code : 'parties/' + code + '/players/' + ownPlayerId();
+    const path = isGM ? 'parties/' + code : 'parties/' + code + '/players/' + getOwnPlayerId();
     try {
       await firebaseDb.ref(path).remove();
     } catch (e) {
@@ -196,7 +201,7 @@ async function leaveCampaign(code) {
   forgetCampaign(code);
 }
 
-async function renameCampaign(code, name) {
+async function _renameCampaign(code, name) {
   const entry = state.campaigns[code];
   if (!entry || entry.role !== 'gm' || !firebaseDb) return;
   try {
@@ -205,30 +210,21 @@ async function renameCampaign(code, name) {
     alert('Could not rename the campaign: ' + e.message);
     return;
   }
-  rememberCampaign({ code, name });
+  _rememberCampaign({ code, name });
 }
 
-// =============================================================================
-// THE HOME SCREEN SECTION
-// =============================================================================
-// Above the character roster — which table comes before which character. The two
-// sections are the same kind of thing to look at, so the page reads as one page.
+// ─── THE HOME SCREEN SECTION ───
 
-const campaignGridEl = document.getElementById('campaign-card-grid');
-const campaignNoteEl = document.getElementById('campaign-note');
-const campaignMenuEl = document.getElementById('campaign-card-menu');
-
-let openCampaignMenuCode = null;
-
+// Draws the campaign cards above the character roster on the home screen.
 function renderCampaignSection() {
   if (state.screen !== 'home') return;
 
   // Signed out there is nothing to list. The buttons stay live — `requireAuth()`
   // is how every other gated entry point behaves, and a disabled button would
   // point the note at a door that cannot be opened.
-  const signedIn = isSignedIn();
-  campaignNoteEl.classList.toggle('hidden', signedIn);
-  if (!signedIn) {
+  const isUserSignedIn = isSignedIn();
+  campaignNoteEl.classList.toggle('hidden', isUserSignedIn);
+  if (!isUserSignedIn) {
     campaignNoteEl.textContent = state.auth.ready
       ? 'Sign in to play in a campaign. Your characters are yours either way — an ' +
         'account is only what lets a table tell one player from another.'
@@ -236,10 +232,10 @@ function renderCampaignSection() {
   }
 
   campaignGridEl.innerHTML = '';
-  const list = signedIn ? campaignList() : [];
+  const list = isUserSignedIn ? getCampaignList() : [];
 
   if (!list.length) {
-    if (signedIn) {
+    if (isUserSignedIn) {
       const empty = document.createElement('p');
       empty.className = 'home-empty';
       empty.textContent = 'No campaigns yet. Create one to run a table, or join one with its code.';
@@ -248,10 +244,10 @@ function renderCampaignSection() {
     return;
   }
 
-  list.forEach(c => campaignGridEl.appendChild(campaignCard(c)));
+  list.forEach(c => campaignGridEl.appendChild(_createCampaignCard(c)));
 }
 
-function campaignCard(c) {
+function _createCampaignCard(c) {
   const isCurrent = state.party.active && state.party.code === c.code;
   const isGM = c.role === 'gm';
 
@@ -263,10 +259,10 @@ function campaignCard(c) {
   menuBtn.className = 'char-card-menu-btn';
   menuBtn.title = 'Campaign options';
   menuBtn.setAttribute('aria-label', 'Campaign options');
-  menuBtn.appendChild(iconEl('dots'));
+  menuBtn.appendChild(createIconEl('dots'));
   menuBtn.addEventListener('click', e => {
     e.stopPropagation();
-    toggleCampaignMenu(c.code, menuBtn);
+    _toggleCampaignMenu(c.code, menuBtn);
   });
   card.appendChild(menuBtn);
 
@@ -290,21 +286,21 @@ function campaignCard(c) {
    ['Playing', playing, '']].forEach(([label, value, cls]) => {
     const row = document.createElement('div');
     row.className = 'char-card-row' + (cls ? ' ' + cls : '');
-    const k = document.createElement('span');
-    k.className = 'char-card-key';
-    k.textContent = label;
-    const v = document.createElement('span');
-    v.className = 'char-card-val';
-    v.textContent = value;
-    row.append(k, v);
+    const keyEl = document.createElement('span');
+    keyEl.className = 'char-card-key';
+    keyEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'char-card-val';
+    valueEl.textContent = value;
+    row.append(keyEl, valueEl);
     card.appendChild(row);
   });
 
   const foot = document.createElement('div');
   foot.className = 'char-card-foot';
-  const n = c.memberCount;
-  foot.textContent = n + ' player' + (n === 1 ? '' : 's') +
-                     (c.lastPlayed ? ' · ' + describeLastPlayed(c.lastPlayed) : '');
+  const memberCount = c.memberCount;
+  foot.textContent = memberCount + ' player' + (memberCount === 1 ? '' : 's') +
+                     (c.lastPlayed ? ' · ' + _describeLastPlayed(c.lastPlayed) : '');
   card.appendChild(foot);
 
   if (isCurrent) {
@@ -314,12 +310,12 @@ function campaignCard(c) {
     card.appendChild(badge);
   }
 
-  card.addEventListener('click', () => enterCampaign(c.code));
+  card.addEventListener('click', () => _enterCampaign(c.code));
   return card;
 }
 
 // Coarse on purpose — the list is already ordered by the real number.
-function describeLastPlayed(ms) {
+function _describeLastPlayed(ms) {
   const days = Math.floor((Date.now() - ms) / 86400000);
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
@@ -328,11 +324,9 @@ function describeLastPlayed(ms) {
   return 'over a year ago';
 }
 
-// =============================================================================
-// THE ⋯ MENU
-// =============================================================================
-function toggleCampaignMenu(code, btn) {
-  if (openCampaignMenuCode === code) { closeCampaignMenu(); return; }
+// ─── THE ⋯ MENU ───
+function _toggleCampaignMenu(code, btn) {
+  if (openCampaignMenuCode === code) { _closeCampaignMenu(); return; }
   closeCardMenu(); // the character cards' menu, so only one is ever open
   openCampaignMenuCode = code;
 
@@ -341,27 +335,25 @@ function toggleCampaignMenu(code, btn) {
   document.getElementById('campaign-card-leave').textContent =
     isGM ? 'Delete Campaign' : 'Leave Campaign';
 
-  const r = btn.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
   campaignMenuEl.classList.remove('hidden'); // measurable only once shown
   const width = campaignMenuEl.offsetWidth;
-  campaignMenuEl.style.top  = (r.bottom + 4) + 'px';
-  campaignMenuEl.style.left = Math.max(4, Math.min(r.right - width, window.innerWidth - width - 4)) + 'px';
+  campaignMenuEl.style.top  = (btnRect.bottom + 4) + 'px';
+  campaignMenuEl.style.left = Math.max(4, Math.min(btnRect.right - width, window.innerWidth - width - 4)) + 'px';
 }
 
-function closeCampaignMenu() {
+function _closeCampaignMenu() {
   openCampaignMenuCode = null;
   campaignMenuEl.classList.add('hidden');
 }
 
-// =============================================================================
-// THE CAMPAIGN MODAL
-// =============================================================================
+// ─── THE CAMPAIGN MODAL ───
 // One dialog, two jobs — creating a table and joining one are the same question
 // asked from either side.
-let campaignModalMode = 'create'; // 'create' | 'join'
 
+// Opens the campaign dialog on its 'create' or 'join' tab, cleared.
 function openCampaignModal(mode = 'create') {
-  setCampaignModalMode(mode);
+  _setCampaignModalMode(mode);
   document.getElementById('campaign-name-input').value = '';
   document.getElementById('campaign-code-input').value = '';
   fillCampaignCharacterSelect();
@@ -371,21 +363,21 @@ function openCampaignModal(mode = 'create') {
   }, 0);
 }
 
-function setCampaignModalMode(mode) {
+function _setCampaignModalMode(mode) {
   campaignModalMode = mode === 'join' ? 'join' : 'create';
-  const join = campaignModalMode === 'join';
+  const isJoin = campaignModalMode === 'join';
   document.querySelectorAll('.campaign-mode-btn').forEach(b =>
-    b.classList.toggle('active', (b.dataset.mode === 'join') === join));
-  document.getElementById('campaign-create-fields').classList.toggle('hidden', join);
-  document.getElementById('campaign-join-fields').classList.toggle('hidden', !join);
-  document.getElementById('campaign-confirm-btn').textContent = join ? 'Join Campaign' : 'Create Campaign';
+    b.classList.toggle('active', (b.dataset.mode === 'join') === isJoin));
+  document.getElementById('campaign-create-fields').classList.toggle('hidden', isJoin);
+  document.getElementById('campaign-join-fields').classList.toggle('hidden', !isJoin);
+  document.getElementById('campaign-confirm-btn').textContent = isJoin ? 'Join Campaign' : 'Create Campaign';
 }
 
-// The character who will sit in the seat — join form only.
+// Fills the join form's picker of which character will sit in the seat.
 function fillCampaignCharacterSelect() {
   const sel = document.getElementById('campaign-character-select');
   sel.innerHTML = '';
-  characterList().forEach(slot => {
+  getCharacterSlots().forEach(slot => {
     const opt = document.createElement('option');
     opt.value = slot.character.id;
     opt.textContent = slot.character.name + ' · Level ' + slot.character.level;
@@ -394,18 +386,18 @@ function fillCampaignCharacterSelect() {
   sel.value = state.activeCharacterId ?? '';
 }
 
-async function submitCampaignModal() {
+async function _submitCampaignModal() {
   const btn = document.getElementById('campaign-confirm-btn');
   btn.disabled = true;
   try {
-    if (campaignModalMode === 'create') await submitCampaignCreate();
-    else await submitCampaignJoin();
+    if (campaignModalMode === 'create') await _submitCampaignCreate();
+    else await _submitCampaignJoin();
   } finally {
     btn.disabled = false;
   }
 }
 
-async function submitCampaignCreate() {
+async function _submitCampaignCreate() {
   const name = document.getElementById('campaign-name-input').value.trim().slice(0, CAMPAIGN_NAME_MAX);
   if (!name) { alert('Give the campaign a name — it is what your players will see.'); return; }
 
@@ -413,16 +405,16 @@ async function submitCampaignCreate() {
   const code = await createCampaign(name);
   if (!code) return;
 
-  rememberCampaign({
+  _rememberCampaign({
     code, name, role: 'gm', characterId: null,
-    gmName: accountDisplayName() || 'Game Master',
+    gmName: getAccountDisplayName() || 'Game Master',
     memberCount: 0, lastPlayed: Date.now(),
   });
   closeHomeScreen();
   alert(name + ' is ready.\n\nIts code is ' + code + ' — share that with your players.');
 }
 
-async function submitCampaignJoin() {
+async function _submitCampaignJoin() {
   const code = document.getElementById('campaign-code-input').value.trim().toUpperCase();
   if (code.length !== 6) { alert('A campaign code is 6 characters.'); return; }
 
@@ -432,31 +424,29 @@ async function submitCampaignJoin() {
   const meta = await fetchCampaignMeta(code);
   if (!meta) { alert('No campaign with that code. Check it and try again.'); return; }
 
-  // Bookmark the seat BEFORE entering, so `enterCampaign()` finds the chosen
+  // Bookmark the seat BEFORE entering, so `_enterCampaign()` finds the chosen
   // character where it looks for it.
-  rememberCampaign({
+  _rememberCampaign({
     code,
     name: meta.name ?? '',
-    role: meta.gmUid === ownPlayerId() ? 'gm' : 'player',
+    role: meta.gmUid === getOwnPlayerId() ? 'gm' : 'player',
     characterId: charId,
     gmName: meta.gmName ?? '',
     lastPlayed: Date.now(),
   });
 
   hideModal('campaign-modal');
-  await enterCampaign(code);
+  await _enterCampaign(code);
 }
 
-// =============================================================================
-// WIRING
-// =============================================================================
-function startNewCampaign() {
+// ─── WIRING ───
+function _startNewCampaign() {
   requireAuth('Creating a campaign needs an account, so your table knows who is running it.',
               () => openCampaignModal('create'));
 }
-document.getElementById('campaign-new-btn').addEventListener('click', startNewCampaign);
+document.getElementById('campaign-new-btn').addEventListener('click', _startNewCampaign);
 // The welcome's GM door — the same way in as the Campaigns heading's button.
-document.getElementById('home-welcome-campaign-btn').addEventListener('click', startNewCampaign);
+document.getElementById('home-welcome-campaign-btn').addEventListener('click', _startNewCampaign);
 
 document.getElementById('campaign-join-btn').addEventListener('click', () => {
   requireAuth('Joining a campaign needs an account, so your group can tell who is who.',
@@ -464,45 +454,45 @@ document.getElementById('campaign-join-btn').addEventListener('click', () => {
 });
 
 document.querySelectorAll('.campaign-mode-btn').forEach(btn => {
-  btn.addEventListener('click', () => setCampaignModalMode(btn.dataset.mode));
+  btn.addEventListener('click', () => _setCampaignModalMode(btn.dataset.mode));
 });
 
-document.getElementById('campaign-confirm-btn').addEventListener('click', submitCampaignModal);
+document.getElementById('campaign-confirm-btn').addEventListener('click', _submitCampaignModal);
 
 document.querySelectorAll('#campaign-modal input').forEach(input => {
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); submitCampaignModal(); }
+    if (e.key === 'Enter') { e.preventDefault(); _submitCampaignModal(); }
   });
 });
 
 document.getElementById('campaign-card-rename').addEventListener('click', e => {
   e.stopPropagation();
   const code = openCampaignMenuCode;
-  closeCampaignMenu();
+  _closeCampaignMenu();
   if (!code) return;
   const current = state.campaigns[code]?.name ?? '';
   const name = prompt('Campaign name', current);
   if (name === null) return;
   const trimmed = name.trim().slice(0, CAMPAIGN_NAME_MAX);
-  if (trimmed && trimmed !== current) renameCampaign(code, trimmed);
+  if (trimmed && trimmed !== current) _renameCampaign(code, trimmed);
 });
 
 document.getElementById('campaign-card-copy').addEventListener('click', e => {
   e.stopPropagation();
   const code = openCampaignMenuCode;
-  closeCampaignMenu();
+  _closeCampaignMenu();
   if (code) navigator.clipboard.writeText(code).catch(() => {});
 });
 
 document.getElementById('campaign-card-leave').addEventListener('click', e => {
   e.stopPropagation();
   const code = openCampaignMenuCode;
-  closeCampaignMenu();
-  if (code) leaveCampaign(code);
+  _closeCampaignMenu();
+  if (code) _leaveCampaign(code);
 });
 
 document.addEventListener('click', e => {
   if (openCampaignMenuCode === null) return;
   if (campaignMenuEl.contains(e.target)) return;
-  closeCampaignMenu();
+  _closeCampaignMenu();
 });

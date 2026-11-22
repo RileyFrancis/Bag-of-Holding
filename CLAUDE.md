@@ -46,16 +46,16 @@ state.mode        'idle' | 'placing' | 'dragging'
   whatever no longer fits, or the item stays invisibly clipped and still charged for weight.
 - A Strength edit resizes the grid only on return to the inventory (`markGridSizeDirty()` /
   `rebuildGridIfSizeDirty()`), so a number box passing through 0 doesn't eject the pack.
-- Read stack data through `stackSizeOf`/`isStackable`/`unitWeight` (`helpers.js`), never off the
-  template; they also translate the `stackable`+`weightEach` pair still found in old saves.
+- Read stack data through `getItemStackSize`/`isStackable`/`getItemUnitWeight` (`helpers.js`),
+  never off the template; they also translate the old saves' `stackable`+`weightEach` pair.
 - **A variant is never a top-level Browse entry** (`renderItemList()` filters `variantOf`); a card
-  with variants only expands its fold on click. Filters reach into a family (`familyPasses()`).
+  with variants only expands its fold on click. Filters reach into a family (`_doesFamilyPassFilter()`).
 - Magic items (`magic-items.json`) are crossed with matching items.csv bases at load. A family
   header is an **`abstract` template**: in `state.db` but never placeable, draggable, sellable or
   saved. Guard any new way of placing or selling an item against it.
 - **A default item's id is the slug of its name.** Renaming a row changes it, so add the old id to
   `LEGACY_ITEM_IDS`; never hardcode an id. Every intake of saved instances goes through
-  `migrateInstanceTemplateIds()`/`currentTemplateId()`, and that table is frozen.
+  `migrateInstanceTemplateIds()`/`getCurrentTemplateId()`, and that table is frozen.
 - Edge auto-scroll (`drag-scroll.js`) applies only to held drags, never PLACING mode.
 
 ### Persistence and accounts
@@ -66,7 +66,7 @@ state.mode        'idle' | 'placing' | 'dragging'
 - Cloud save is **one JSON string**, not a tree: RTDB drops nulls and empty objects, so a tree
   write would silently fail to replicate a deletion. The same reason puts shop stock entries and
   party homebrew in JSON string fields.
-- **Never resolve `openCloudConflictModal` on the user's behalf**; it discards one of two saves.
+- **Never resolve `_openCloudConflictModal` on the user's behalf**; it discards one of two saves.
 - The app is fully usable signed out. Gate entry points with `requireAuth()`; **never gate the
   inventory itself**.
 - With no Firebase config, `FIREBASE_CONFIG` is `null` and the app must stay usable offline.
@@ -86,21 +86,21 @@ state.mode        'idle' | 'placing' | 'dragging'
   absolute.
 - A screen change pushes history; Back/Forward, boot and a cloud save swapping characters only
   replace it (`applyingRoute`). An id not in the roster shows the not-found page and
-  `applyCloudSave()` retries the route. **A URL never joins a campaign**; that is
-  `enterCampaign()`, async and signed in.
+  `_applyCloudSave()` retries the route. **A URL never joins a campaign**; that is
+  `_enterCampaign()`, async and signed in.
 
 ### Campaigns and party
 
 - **A roster entry is keyed by the player's account uid**, not a session id, so a rejoin lands on
   the same node. The GM is one node (`parties/<code>/gm`), uid also in `meta.gmUid`.
-- Firebase is authoritative; `state.campaigns[code]` is only a bookmark. `enterCampaign()` always
+- Firebase is authoritative; `state.campaigns[code]` is only a bookmark. `_enterCampaign()` always
   asks the party who the GM is, never the local `role`.
-- Closing the tab keeps the roster entry. `leaveCampaign()` gives up the seat and, **for a GM,
+- Closing the tab keeps the roster entry. `_leaveCampaign()` gives up the seat and, **for a GM,
   deletes the campaign**.
 - Presence: `connected` and `lastSeen` are separate facts. **`onDisconnect` is re-armed from
   `.info/connected` on every reconnect**; RTDB consumes the handler and never re-arms it.
 - Kick just removes the roster entry; the client sees itself gone and leaves. Kick, shop reveal
-  (`shopVisibleToMe()`) and party homebrew are **pacing, not security**.
+  (`_isShopVisibleToMe()`) and party homebrew are **pacing, not security**.
 - **Shop stock is claimed by an RTDB `transaction()` before any coin leaves the purse**, so the
   loser of a race for the last item isn't charged.
 
@@ -113,8 +113,8 @@ spells view       Spells · Party
 ```
 
 `SIDEBAR_TAB_VIEW` values are a view name, an array of names, or `null` (every view);
-`sidebarTabView()` callers must handle all three. **Read `sidebarView()`, not `state.view`**: a GM
-who deselects a player keeps `state.view === 'sheet'` while the panel shows a placeholder.
+`_getSidebarTabView()` callers must handle all three. **Read `getSidebarView()`, not
+`state.view`**: a GM who deselects a player keeps `state.view === 'sheet'` under a placeholder.
 A GM with nobody picked has no character, so Shop is the whole left panel (`syncLeftPanel()`).
 
 ### Chat and dice
@@ -125,7 +125,7 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
   log. It opts out of the shared backdrop close, since any other hide strands the log.
 - **A roll is a chat message** (`kind: 'roll'`); there is no `rolls` node. Rolling works with no
   campaign (`canChat()` drops the audiences) and is not gated by `isReadOnly()`.
-- Read a roll's dice through `rollGroups()`, never `faces`/`count` (those hold only the first
+- Read a roll's dice through `_getRollGroups()`, never `faces`/`count` (those hold only the first
   group). `pool` is sent only when sizes are mixed so older clients still read a plain roll.
   `parts` stays out of the payload.
 - Advantage rolls the whole pool twice and keeps the better total (`dropped` is the loser). A crit
@@ -144,12 +144,12 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
 ### Character sheet and classes
 
 - `classLevels` is authoritative. The mirrors `classes`, `level` (sum, capped 20) and `subclass`
-  are written only by `normalizeCharacterMeta()`. Proficiency bonus uses the **total** level.
+  are written only by `_normalizeCharacterMeta()`. Proficiency bonus uses the **total** level.
 - Every class is read at its **own** level; features and traits are matched by name, not id.
 - Derive what the rules settle (modifiers, prof bonus, passive Perception) as text; only what they
   don't (AC, HP) is an input. Scores run 0–30. Read-only when `isReadOnly()`.
 - Statuses: a stacking status stores **each level as the id repeated** in `character.statuses`.
-  Derived ones (Encumbered) come from `encumbranceLevel()` and are **never stored**. Chips redraw
+  Derived ones (Encumbered) come from `getEncumbranceLevel()` and are **never stored**. Chips redraw
   only on a signature change, or a sync would orphan an open hover card.
 
 ### Spells
@@ -157,24 +157,25 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
 - **Spell slots follow the Multiclass Spellcaster table**: half-casters floored by 2, Eldritch
   Knight/Arcane Trickster by 3, **each class floored before summing**. It reads RAW `classLevels`,
   not the registry-filtered list, because EK/AT have no spell-list data but still add slots.
-- **Pact Magic is never blended into that total** (`pactMagicSlots()`).
+- **Pact Magic is never blended into that total** (`_getPactMagicSlots()`).
 - `character.spellSlotsUsed` stores slots **spent**, never slots left, so a level-up's new slot
-  arrives fresh. It is in `spellSheetSignature()` so a synced cast redraws for viewers.
+  arrives fresh. It is in `_getSpellSheetSignature()` so a synced cast redraws for viewers.
 - A cast is a chat message (`kind: 'cast'`) and is gated by `isReadOnly()` (it writes).
 - The Available pool includes spells tagged only with classes the character lacks, ungated, so a
   feat can grant them. Owned classes are opt-out (`hiddenClasses`), others opt-in
   (`shownExtraClasses`), so empty prefs already mean "only yours checked".
 - **Hiding a class or school never touches `knownSpells`**; Known is computed from the unfiltered
   pool.
-- A prefs change calls `renderSpellSheetContent()` directly, because `renderSpellSheet()`'s gate
+- A prefs change calls `_renderSpellSheetContent()` directly, because `renderSpellSheet()`'s gate
   watches only classes and level.
 
 ### Homebrew
 
 - Custom items are not copied into the homebrew tree; they are collected from every slot's `db` at
   render. Other kinds go through `addHomebrewEntry()`, saved in the shape their data file uses.
-- A folder's enable targets reach everything inside it. `allClasses()`/`allSpecies()`/
-  `allSpells()` signature gates **must include `homebrewUsableKey()`**, or a toggle won't redraw.
+- A folder's enable targets reach everything inside it. `getAllClasses()`/`getAllSpecies()`/
+  `_getAllSpells()` signature gates **must include `getHomebrewUsableKey()`**, or a toggle won't
+  redraw.
 - `getCustomDb()` drops a `_homebrew` item **unless an instance still uses it**.
 - Party nodes count only while their uid is in the roster or is `meta.gmUid`.
 
@@ -182,7 +183,7 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
 
 `state.folderAssign` holds only overrides. Rules run in `DEFAULT_FOLDER_MATCH_ORDER`, not display
 order. Changing the default set means bumping `FOLDER_LAYOUT_VERSION` and teaching
-`upgradeFolderLayout()` the step; it renames only folders still carrying their default name.
+`_upgradeFolderLayout()` the step; it renames only folders still carrying their default name.
 
 ### Markdown
 
@@ -193,6 +194,6 @@ checked after invisible characters are stripped (`java&#9;script:`).
 
 ### Theming
 
-- `critColorSwaps()` re-points `--crit`/`--fumble` when the accent is too close. Never override
+- `_getCritColorSwaps()` re-points `--crit`/`--fumble` when the accent is too close. Never override
   the `-main`/`-alt` tokens; they are what the check reads.
-- **Any render path that inlines a palette colour must re-run from `rerenderThemedContent()`.**
+- **Any render path that inlines a palette colour must re-run from `_rerenderThemedContent()`.**

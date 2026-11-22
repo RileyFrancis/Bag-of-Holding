@@ -3,29 +3,63 @@
 // =============================================================================
 'use strict';
 
-// The GM's Maps pane (a third left-panel pane, GM-only) and the import /
-// creature dialogs. The library is about which maps exist; battlemap-view.js is
-// about the one the party is standing on. There is no player half of this file.
+// The Maps pane is a GM-only left-panel pane about which maps exist;
+// battlemap-view.js is about the one the party is standing on.
 
+// Every piece section's row subtitle for a shape kind.
+const MAP_SHAPE_LABEL = { rect: 'Rectangle', circle: 'Circle', poly: 'Lasso' };
+
+// Everything on the board, one section per kind: model key, heading, the word
+// clearMapPieces() confirms with, the pieces, and a row's name and subtitle.
+const MAP_PIECE_SECTIONS = [
+  { kind: 'tokens', title: 'Creatures', word: 'creature', list: getMapTokens,
+    name: t => t.name || 'Unnamed creature', sub: t => (HOSTILITY[t.hostility] || HOSTILITY.neutral).label },
+  { kind: 'walls', title: 'Walls', word: 'wall', list: getMapWalls,
+    name: (w, i) => 'Wall ' + (i + 1), sub: w => MAP_SHAPE_LABEL[w.kind] || 'Rectangle' },
+  { kind: 'masks', title: 'Fog', word: 'fog edit', list: getMapMasks,
+    name: m => m.mode === 'hide' ? 'Obscure' : 'Reveal', sub: m => MAP_SHAPE_LABEL[m.kind] || 'Rectangle' },
+  { kind: 'elevation', title: 'Elevation', word: 'elevation region', list: getMapElevationZones,
+    name: z => { const h = getElevZoneHeight(z); return (h > 0 ? '+' : '') + h + ' ft'; },
+    sub: z => MAP_SHAPE_LABEL[z.kind] || 'Rectangle' },
+];
+
+// The picture is stored WITH the map as a data URL: a link rots and the app has
+// no file storage. A link the browser refuses to redraw cross-origin is kept as
+// the link (works as a picture, cannot be shrunk).
+const MAP_IMAGE_MAX_DIM = 2400;  // px on the long side after scaling
+const MAP_IMAGE_QUALITY = 0.82;  // JPEG, which is what a photographed map wants
+const MAP_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+
+let mapModalId = null;
+let mapModalImage = null; // { src, w, h }: the pending picture, not yet written
+
+let creatureModalTarget = null; // { mapId, tokenId }; a null tokenId is a new one
+let creatureModalIcon = CREATURE_ICONS[0];
+let creatureModalHostility = 'hostile';
+let creatureModalOwnerUid = ''; // '' = a custom marker of the GM's own; else a player's uid
+let creatureModalPos = null;    // where on the map it was asked for
+
+// ─── THE MAPS PANE ──────────────────────────────────────────────────────────
+
+// Rebuilds the Maps pane: the list, or the open map's settings.
 function renderMapPanel() {
   const pane = document.getElementById('left-pane-map');
   if (!pane) return;
-  // Rebuilt on every map snapshot (a creature dragged, a wall drawn), so keep
-  // the reader's place in a long piece list rather than jumping to the top.
+  // Rebuilt on every map snapshot, so keep the reader's place in a long list.
   const oldBody = pane.querySelector('.shop-body');
   const scroll = oldBody ? oldBody.scrollTop : 0;
   const openId = pane.dataset.openId || '';
   pane.innerHTML = '';
   if (!state.party.active) return;
-  const map = state.mapLibraryOpenId ? mapById(state.mapLibraryOpenId) : null;
-  if (map) renderMapDetail(pane, map);
-  else { renderMapList(pane); setMapHighlight(null); }
+  const map = state.mapLibraryOpenId ? getMapById(state.mapLibraryOpenId) : null;
+  if (map) _renderMapDetail(pane, map);
+  else { _renderMapList(pane); setMapHighlight(null); }
   pane.dataset.openId = map ? map.id : '';
   const body = pane.querySelector('.shop-body');
   if (body && pane.dataset.openId === openId) body.scrollTop = scroll;
 }
 
-function renderMapList(pane) {
+function _renderMapList(pane) {
   const head = document.createElement('div');
   head.className = 'shop-head';
   const title = document.createElement('span');
@@ -37,7 +71,7 @@ function renderMapList(pane) {
   const body = document.createElement('div');
   body.className = 'shop-body';
 
-  const maps = allMaps();
+  const maps = getAllMaps();
   if (!maps.length) {
     const empty = document.createElement('p');
     empty.className = 'shop-empty';
@@ -45,7 +79,7 @@ function renderMapList(pane) {
     body.appendChild(empty);
   }
 
-  maps.forEach(map => body.appendChild(buildMapRow(map)));
+  maps.forEach(map => body.appendChild(_buildMapRow(map)));
   pane.appendChild(body);
 
   const footer = document.createElement('div');
@@ -53,20 +87,21 @@ function renderMapList(pane) {
   const btn = document.createElement('button');
   btn.className = 'btn-primary';
   setIconLabel(btn, 'plus', 'Import Map');
-  btn.addEventListener('click', () => openMapModal(null));
+  btn.addEventListener('click', () => _openMapModal(null));
   footer.appendChild(btn);
   pane.appendChild(footer);
 }
 
-function buildMapRow(map) {
+function _buildMapRow(map) {
+  const isInPlay = map.id === getActiveMapId();
   const row = document.createElement('div');
   row.className = 'map-row'
-    + (map.id === activeMapId() ? ' in-play' : '')
+    + (isInPlay ? ' in-play' : '')
     + (map.revealed ? ' revealed' : '');
 
   const open = document.createElement('button');
   open.className = 'map-row-open';
-  open.title = map.id === activeMapId() ? 'The party is on this map — open its settings' : 'Put the party on this map, and open its settings';
+  open.title = isInPlay ? 'The party is on this map — open its settings' : 'Put the party on this map, and open its settings';
 
   const thumb = document.createElement('span');
   thumb.className = 'map-thumb';
@@ -75,24 +110,22 @@ function buildMapRow(map) {
 
   const info = document.createElement('span');
   info.className = 'map-row-info';
-  const nm = document.createElement('span');
-  nm.className = 'map-row-name';
-  nm.textContent = map.name;
-  const n = mapTokens(map).length;
+  const nameEl = document.createElement('span');
+  nameEl.className = 'map-row-name';
+  nameEl.textContent = map.name;
+  const creatureCount = getMapTokens(map).length;
   const sub = document.createElement('span');
   sub.className = 'map-row-sub';
   sub.textContent = [
-    map.id === activeMapId() ? 'In play' : null,
+    isInPlay ? 'In play' : null,
     map.revealed ? 'Revealed' : 'Hidden',
-    n + ' creature' + (n === 1 ? '' : 's'),
+    creatureCount + ' creature' + (creatureCount === 1 ? '' : 's'),
   ].filter(Boolean).join(' · ');
-  info.appendChild(nm);
+  info.appendChild(nameEl);
   info.appendChild(sub);
   open.appendChild(info);
-  // Clicking a map puts the party on it (what the ▶ button used to do) and
-  // opens its settings in one motion — there is no separate "activate" control
-  // any more, so the row's own accent outline (.in-play) is the one place "is
-  // this the map in play" is answered.
+  // Clicking puts the party on the map and opens its settings in one motion;
+  // the row's .in-play outline is the one place "is this in play" is answered.
   open.addEventListener('click', () => {
     setActiveMap(map.id);
     state.mapLibraryOpenId = map.id;
@@ -100,20 +133,20 @@ function buildMapRow(map) {
   });
   row.appendChild(open);
 
-  // Reveal stays its own button, deliberately separate from activation — a GM
-  // can put the party on a map (lay it out, add creatures) before the players
-  // are allowed to see it, then flip this on when it's time.
+  // Reveal is deliberately separate from activation: a GM can lay out a map
+  // before the players are allowed to see it.
   const eye = document.createElement('button');
   eye.className = 'map-row-btn' + (map.revealed ? ' on' : '');
   eye.title = map.revealed ? 'Hide this map from the players' : 'Show this map to the players';
-  eye.appendChild(iconEl(map.revealed ? 'show' : 'hide'));
+  eye.appendChild(createIconEl(map.revealed ? 'show' : 'hide'));
   eye.addEventListener('click', () => setMapRevealed(map.id, !map.revealed));
 
   row.appendChild(eye);
   return row;
 }
 
-function renderMapDetail(pane, map) {
+function _renderMapDetail(pane, map) {
+  // Header: back, edit, delete
   const head = document.createElement('div');
   head.className = 'shop-head';
   const back = document.createElement('button');
@@ -126,7 +159,7 @@ function renderMapDetail(pane, map) {
   edit.className = 'shop-head-btn';
   edit.title = 'Rename this map or replace its picture';
   edit.textContent = '✎';
-  edit.addEventListener('click', () => openMapModal(map.id));
+  edit.addEventListener('click', () => _openMapModal(map.id));
   const del = document.createElement('button');
   del.className = 'shop-head-btn danger';
   del.title = 'Delete this map';
@@ -136,6 +169,7 @@ function renderMapDetail(pane, map) {
   head.appendChild(del);
   pane.appendChild(head);
 
+  // Title, preview and open button
   const body = document.createElement('div');
   body.className = 'shop-body';
 
@@ -153,12 +187,12 @@ function renderMapDetail(pane, map) {
 
   const openBtn = document.createElement('button');
   openBtn.className = 'btn-primary map-open-btn';
-  setIconLabel(openBtn, 'map', map.id === activeMapId() ? 'Open Map' : 'Play This Map');
+  setIconLabel(openBtn, 'map', map.id === getActiveMapId() ? 'Open Map' : 'Play This Map');
   openBtn.addEventListener('click', () => { setActiveMap(map.id); openBattlemap(map.id); });
   body.appendChild(openBtn);
 
-  // ── Visible to ────────────────────────────────────────────────────────
-  body.appendChild(mapSectionHdr('Visible To'));
+  // Visible to
+  body.appendChild(_buildMapSectionHeader('Visible To'));
   const seg = document.createElement('div');
   seg.className = 'segmented shop-seg';
   [[false, 'Hidden'], [true, 'Everyone']].forEach(pair => {
@@ -171,57 +205,41 @@ function renderMapDetail(pane, map) {
   });
   body.appendChild(seg);
 
-  // ── The grid ──────────────────────────────────────────────────────────
-  body.appendChild(mapSectionHdr('Grid'));
-  body.appendChild(buildGridControls(map));
+  // The grid
+  body.appendChild(_buildMapSectionHeader('Grid'));
+  body.appendChild(_buildGridControls(map));
 
-  // ── What is on the board ──────────────────────────────────────────────
-  MAP_PIECE_SECTIONS.forEach(spec => body.appendChild(buildMapPieceSection(map, spec)));
+  // What is on the board
+  MAP_PIECE_SECTIONS.forEach(spec => body.appendChild(_buildMapPieceSection(map, spec)));
 
   pane.appendChild(body);
 }
 
-function mapSectionHdr(text) {
+function _buildMapSectionHeader(text) {
   const h = document.createElement('div');
   h.className = 'shop-section-hdr';
   h.textContent = text;
   return h;
 }
 
-// Everything on the board, one section per kind: [model key, heading, the
-// word clearMapPieces() confirms with, the pieces, a row's name and subtitle].
-// Listed in the order they were placed (pieceTime()); hovering a row haloes
-// its piece on the map (setMapHighlight() in battlemap-view.js), clicking it
-// removes it, and the bin beside a heading removes the whole kind.
-const MAP_SHAPE_LABEL = { rect: 'Rectangle', circle: 'Circle', poly: 'Lasso' };
-const MAP_PIECE_SECTIONS = [
-  { kind: 'tokens', title: 'Creatures', word: 'creature', list: mapTokens,
-    name: t => t.name || 'Unnamed creature', sub: t => (HOSTILITY[t.hostility] || HOSTILITY.neutral).label },
-  { kind: 'walls', title: 'Walls', word: 'wall', list: mapWalls,
-    name: (w, i) => 'Wall ' + (i + 1), sub: w => MAP_SHAPE_LABEL[w.kind] || 'Rectangle' },
-  { kind: 'masks', title: 'Fog', word: 'fog edit', list: mapMasks,
-    name: m => m.mode === 'hide' ? 'Obscure' : 'Reveal', sub: m => MAP_SHAPE_LABEL[m.kind] || 'Rectangle' },
-  { kind: 'elevation', title: 'Elevation', word: 'elevation region', list: mapElevationZones,
-    name: z => { const h = elevZoneHeight(z); return (h > 0 ? '+' : '') + h + ' ft'; },
-    sub: z => MAP_SHAPE_LABEL[z.kind] || 'Rectangle' },
-];
-
-function buildMapPieceSection(map, spec) {
+// One kind of piece, in the order placed (getPieceTime()). Hovering a row haloes
+// its piece on the map, clicking removes it, and the bin removes the whole kind.
+function _buildMapPieceSection(map, spec) {
   const wrap = document.createElement('div');
-  const pieces = spec.list(map).sort((a, b) => pieceTime(a) - pieceTime(b));
+  const pieces = spec.list(map).sort((a, b) => getPieceTime(a) - getPieceTime(b));
 
-  const hdr = mapSectionHdr(spec.title + ' (' + pieces.length + ')');
+  const hdr = _buildMapSectionHeader(spec.title + ' (' + pieces.length + ')');
   hdr.classList.add('map-piece-hdr');
   const bin = document.createElement('button');
   bin.type = 'button';
   bin.className = 'map-piece-clear';
   bin.title = 'Remove every ' + spec.word + ' from this map';
   bin.disabled = !pieces.length;
-  bin.appendChild(iconEl('trash'));
+  bin.appendChild(createIconEl('trash'));
   bin.addEventListener('click', () => {
     clearMapPieces(map.id, spec.kind, spec.word);
     if (spec.kind === 'tokens') mapSelectedTokenId = null;
-    fogDirty = true;
+    isFogDirty = true;
   });
   hdr.appendChild(bin);
   wrap.appendChild(hdr);
@@ -233,19 +251,19 @@ function buildMapPieceSection(map, spec) {
     row.type = 'button';
     row.className = 'map-piece';
     row.title = 'Remove from the map';
-    row.style.setProperty('--pc', mapPieceColor(spec.kind, p));
+    row.style.setProperty('--pc', getMapPieceColor(spec.kind, p));
     const dot = document.createElement('span');
     dot.className = 'map-piece-dot';
-    const nm = document.createElement('span');
-    nm.className = 'map-piece-name';
-    nm.textContent = spec.name(p, i);
+    const nameEl = document.createElement('span');
+    nameEl.className = 'map-piece-name';
+    nameEl.textContent = spec.name(p, i);
     const sub = document.createElement('span');
     sub.className = 'map-piece-sub';
     sub.textContent = spec.sub(p);
-    const x = document.createElement('span');
-    x.className = 'map-piece-x';
-    x.textContent = '✕';
-    row.append(dot, nm, sub, x);
+    const removeMark = document.createElement('span');
+    removeMark.className = 'map-piece-x';
+    removeMark.textContent = '✕';
+    row.append(dot, nameEl, sub, removeMark);
     row.addEventListener('mouseenter', () => setMapHighlight(spec.kind, p.id));
     row.addEventListener('mouseleave', () => setMapHighlight(null));
     row.addEventListener('click', () => {
@@ -256,7 +274,7 @@ function buildMapPieceSection(map, spec) {
       } else {
         removePiece(map.id, spec.kind, p.id);
       }
-      fogDirty = true;
+      isFogDirty = true;
     });
     list.appendChild(row);
   });
@@ -270,18 +288,15 @@ function buildMapPieceSection(map, spec) {
   return wrap;
 }
 
-// The size and two offsets as number boxes, redrawing the map as they move. The
-// figures are fractional — a cell rounded to a whole pixel drifts up to half a
-// pixel per square, unmissable by the far edge. The steppers still nudge by a
-// whole pixel; only what may be STORED changed. The real answer to sizing is
-// the Grid tool on the map itself (battlemap-view.js); these boxes are where an
-// exact number somebody else worked out gets typed.
-function buildGridControls(map) {
+// The size and two offsets as number boxes, for typing an exact figure someone
+// worked out; the Grid tool on the map is the real way to size. Values are
+// fractional (see roundGridValue()); the steppers nudge by a whole pixel.
+function _buildGridControls(map) {
   const wrap = document.createElement('div');
   wrap.className = 'map-grid-controls';
 
-  const row = (label, key, min, max, hint) => {
-    const g = mapGrid(map);
+  const buildRow = (label, key, min, max, hint) => {
+    const grid = getMapGrid(map);
     const r = document.createElement('div');
     r.className = 'map-grid-row';
     const lbl = document.createElement('span');
@@ -298,27 +313,26 @@ function buildGridControls(map) {
     input.className = 'shop-price-input';
     input.min = min; input.max = max;
     // `any`, or the browser's validation rounds off an exact size a corner drag
-    // worked out — the steppers below are the whole-pixel nudge.
+    // worked out.
     input.step = 'any';
-    input.value = roundGridValue(g[key]);
+    input.value = roundGridValue(grid[key]);
     input.title = hint;
     const inc = document.createElement('button');
     inc.className = 'shop-price-step';
     inc.type = 'button';
     inc.textContent = '+';
 
-    const set = v => {
+    const setValue = v => {
       const clamped = Math.max(min, Math.min(max, roundGridValue(v)));
       input.value = clamped;
       updateMapGrid(map.id, { [key]: clamped });
     };
-    const cur = () => { const v = parseFloat(input.value); return Number.isFinite(v) ? v : 0; };
-    // Nudge by a whole pixel FROM wherever the value is — a dragged 70.42 steps
-    // to 69.42, not 69.
-    dec.addEventListener('click', () => set(cur() - 1));
-    inc.addEventListener('click', () => set(cur() + 1));
+    const getCurrentValue = () => { const v = parseFloat(input.value); return Number.isFinite(v) ? v : 0; };
+    // Nudge FROM wherever the value is: a dragged 70.42 steps to 69.42, not 69.
+    dec.addEventListener('click', () => setValue(getCurrentValue() - 1));
+    inc.addEventListener('click', () => setValue(getCurrentValue() + 1));
     // On change rather than input: every keystroke would be its own write.
-    input.addEventListener('change', () => set(Number.isFinite(parseFloat(input.value)) ? parseFloat(input.value) : min));
+    input.addEventListener('change', () => setValue(Number.isFinite(parseFloat(input.value)) ? parseFloat(input.value) : min));
 
     r.appendChild(lbl);
     r.appendChild(dec);
@@ -327,43 +341,31 @@ function buildGridControls(map) {
     return r;
   };
 
-  wrap.appendChild(row('Cell', 'size', 8, 600, 'How many of the picture’s own pixels one square is — decimals welcome, and usually necessary'));
-  wrap.appendChild(row('Left', 'offsetX', -600, 600, 'Slide the whole grid sideways'));
-  wrap.appendChild(row('Top', 'offsetY', -600, 600, 'Slide the whole grid up and down'));
+  wrap.appendChild(buildRow('Cell', 'size', 8, 600, 'How many of the picture’s own pixels one square is — decimals welcome, and usually necessary'));
+  wrap.appendChild(buildRow('Left', 'offsetX', -600, 600, 'Slide the whole grid sideways'));
+  wrap.appendChild(buildRow('Top', 'offsetY', -600, 600, 'Slide the whole grid up and down'));
 
-  const g = mapGrid(map);
+  const grid = getMapGrid(map);
   const show = document.createElement('label');
   show.className = 'checkbox-label';
   const cb = document.createElement('input');
   cb.type = 'checkbox';
-  cb.checked = g.visible !== false;
+  cb.checked = grid.visible !== false;
   cb.addEventListener('change', () => updateMapGrid(map.id, { visible: cb.checked }));
-  const sp = document.createElement('span');
-  sp.textContent = 'Draw the grid on the map';
+  const labelText = document.createElement('span');
+  labelText.textContent = 'Draw the grid on the map';
   show.appendChild(cb);
-  show.appendChild(sp);
+  show.appendChild(labelText);
   wrap.appendChild(show);
 
   return wrap;
 }
 
-// =============================================================================
-// IMPORTING A MAP
-// =============================================================================
-// The picture is stored WITH the map as a data URL — a link rots and the app
-// has no file storage. An imported file is scaled down first. A link the
-// browser refuses to redraw cross-origin is kept as the link (works as a
-// picture, cannot be shrunk).
-const MAP_IMAGE_MAX_DIM = 2400;  // px on the long side after scaling
-const MAP_IMAGE_QUALITY = 0.82;  // JPEG, which is what a photographed map wants
-const MAP_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+// ─── IMPORTING A MAP ────────────────────────────────────────────────────────
 
-let mapModalId = null;
-let mapModalImage = null; // { src, w, h } — the pending picture, not yet written
-
-function openMapModal(mapId) {
+function _openMapModal(mapId) {
   mapModalId = mapId;
-  const map = mapId ? mapById(mapId) : null;
+  const map = mapId ? getMapById(mapId) : null;
   mapModalImage = map && map.image ? { src: map.image, w: map.w, h: map.h } : null;
 
   document.getElementById('map-modal-title').textContent = map ? 'Edit Map' : 'Import Map';
@@ -371,11 +373,11 @@ function openMapModal(mapId) {
   document.getElementById('map-url-input').value = '';
   document.getElementById('map-file-input').value = '';
   document.getElementById('map-confirm-btn').textContent = map ? 'Save' : 'Import';
-  updateMapModalPreview('');
+  _updateMapModalPreview('');
   showModal('map-modal');
 }
 
-function updateMapModalPreview(status) {
+function _updateMapModalPreview(status) {
   const prev = document.getElementById('map-modal-preview');
   prev.style.backgroundImage = mapModalImage ? 'url("' + mapModalImage.src + '")' : '';
   prev.classList.toggle('empty', !mapModalImage);
@@ -384,9 +386,9 @@ function updateMapModalPreview(status) {
     : 'No picture chosen yet.');
 }
 
-// Loads a picture, scales it down, hands back a data URL with the dimensions
-// that URL actually has — every model coordinate is in THESE pixels.
-function prepareMapImage(src) {
+// Loads a picture, scales it down, and resolves { src, w, h } with the size the
+// data URL actually has: every model coordinate is in THESE pixels.
+function _prepareMapImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous'; // a canvas tainted by the picture cannot be read back
@@ -399,10 +401,10 @@ function prepareMapImage(src) {
         return;
       }
       try {
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve({ src: c.toDataURL('image/jpeg', MAP_IMAGE_QUALITY), w, h });
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve({ src: canvas.toDataURL('image/jpeg', MAP_IMAGE_QUALITY), w, h });
       } catch {
         resolve({ src, w: img.naturalWidth, h: img.naturalHeight });
       }
@@ -415,24 +417,24 @@ function prepareMapImage(src) {
 document.getElementById('map-file-input').addEventListener('change', e => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  updateMapModalPreview('Reading the picture…');
+  _updateMapModalPreview('Reading the picture…');
   const reader = new FileReader();
   reader.onload = () => {
-    prepareMapImage(String(reader.result))
-      .then(img => { mapModalImage = img; updateMapModalPreview(''); })
-      .catch(err => updateMapModalPreview(err.message));
+    _prepareMapImage(String(reader.result))
+      .then(img => { mapModalImage = img; _updateMapModalPreview(''); })
+      .catch(err => _updateMapModalPreview(err.message));
   };
-  reader.onerror = () => updateMapModalPreview('That file could not be read.');
+  reader.onerror = () => _updateMapModalPreview('That file could not be read.');
   reader.readAsDataURL(file);
 });
 
 document.getElementById('map-url-btn').addEventListener('click', () => {
   const url = document.getElementById('map-url-input').value.trim();
   if (!url) return;
-  updateMapModalPreview('Fetching the picture…');
-  prepareMapImage(url)
-    .then(img => { mapModalImage = img; updateMapModalPreview(''); })
-    .catch(err => updateMapModalPreview(err.message));
+  _updateMapModalPreview('Fetching the picture…');
+  _prepareMapImage(url)
+    .then(img => { mapModalImage = img; _updateMapModalPreview(''); })
+    .catch(err => _updateMapModalPreview(err.message));
 });
 
 document.getElementById('map-confirm-btn').addEventListener('click', () => {
@@ -446,13 +448,13 @@ document.getElementById('map-confirm-btn').addEventListener('click', () => {
 
   const patch = { name, image: mapModalImage.src, w: mapModalImage.w, h: mapModalImage.h };
   if (mapModalId) {
-    mapRef(mapModalId).update(patch);
+    getMapRef(mapModalId).update(patch);
   } else {
-    const id = newMapId();
+    const id = createMapId();
     // Opened before the write, so the echo of our own write lands on a panel
     // already showing the new map rather than bouncing back to the list.
     state.mapLibraryOpenId = id;
-    mapRef(id).set({
+    getMapRef(id).set({
       id, name: patch.name, image: patch.image, w: patch.w, h: patch.h,
       revealed: false,
       order: Date.now(),
@@ -463,31 +465,23 @@ document.getElementById('map-confirm-btn').addEventListener('click', () => {
   hideModal('map-modal');
 });
 
-// =============================================================================
-// A CREATURE
-// =============================================================================
-// One dialog for placing and editing a creature. Three things: what it looks
-// like, how big it is, whose side it is on — the third colours it, so the icons
-// repaint as it changes.
-let creatureModalTarget = null; // { mapId, tokenId } — a null tokenId is a new one
-let creatureModalIcon = CREATURE_ICONS[0];
-let creatureModalHostility = 'hostile';
-let creatureModalOwnerUid = ''; // '' = a custom marker of the GM's own; else a player's uid
-let creatureModalPos = null;    // where on the map it was asked for
+// ─── A CREATURE ─────────────────────────────────────────────────────────────
+// One dialog for placing and editing a creature: its look, its size and its
+// side. The side colours it, so the icons repaint as it changes.
 
+// Opens the creature dialog for a new creature (null tokenId, dropped at `pos`)
+// or an existing one.
 function openCreatureModal(mapId, tokenId, pos) {
-  const map = mapById(mapId);
+  const map = getMapById(mapId);
   if (!map) return;
   const token = tokenId ? (map.tokens || {})[tokenId] : null;
 
   creatureModalTarget = { mapId, tokenId: tokenId || null };
   creatureModalPos = pos || null;
   creatureModalIcon = (token && token.icon) || CREATURE_ICONS[0];
-  // A GM reaching for this is nearly always adding a monster; a player is
-  // nearly always adding something of their own.
+  // A GM is nearly always adding a monster; a player something of their own.
   creatureModalHostility = (token && token.hostility) || (isMapGM() ? 'hostile' : 'party');
-  // Preselect the player it already belongs to — an owner outside today's
-  // roster (or none) reads as Custom, the GM's own.
+  // An owner outside today's roster (or none) reads as Custom, the GM's own.
   creatureModalOwnerUid = (token && token.ownerUid && state.party.players?.[token.ownerUid]) ? token.ownerUid : '';
 
   document.getElementById('creature-modal-title').textContent = token ? 'Edit Creature' : 'New Creature';
@@ -512,15 +506,14 @@ function openCreatureModal(mapId, tokenId, pos) {
   showModal('creature-modal');
 }
 
-// The GM's alone — handing a marker straight to a player instead of keeping it
-// as one of their own. Hidden for anyone else: a player's own placements are
-// always their own (addToken() only honours this field from the GM).
+// Draws the GM-only owner picker, for handing a marker straight to a player.
+// Hidden for anyone else (addToken() honours the field only from the GM).
 function renderCreatureOwner() {
   const field = document.getElementById('creature-owner-field');
   const seg = document.getElementById('creature-owner');
-  const gm = isMapGM();
-  field.classList.toggle('hidden', !gm);
-  if (!gm) return;
+  const isGM = isMapGM();
+  field.classList.toggle('hidden', !isGM);
+  if (!isGM) return;
 
   seg.innerHTML = '';
   const options = [{ uid: '', name: 'Custom' }].concat(
@@ -550,6 +543,7 @@ function renderCreatureOwner() {
   });
 }
 
+// Draws the creature dialog's hostility picker.
 function renderCreatureHostility() {
   const seg = document.getElementById('creature-hostility');
   seg.innerHTML = '';
@@ -557,7 +551,7 @@ function renderCreatureHostility() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn hostility-btn' + (key === creatureModalHostility ? ' active' : '');
-    b.style.setProperty('--hc', hostilityColor(key));
+    b.style.setProperty('--hc', getHostilityColor(key));
     const dot = document.createElement('span');
     dot.className = 'hostility-dot';
     b.appendChild(dot);
@@ -571,6 +565,7 @@ function renderCreatureHostility() {
   });
 }
 
+// Draws the creature dialog's icon grid in the chosen hostility's colour.
 function renderCreatureIcons() {
   const grid = document.getElementById('creature-icons');
   grid.innerHTML = '';
@@ -578,7 +573,7 @@ function renderCreatureIcons() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'creature-icon-btn' + (icon === creatureModalIcon ? ' active' : '');
-    b.style.setProperty('--hc', hostilityColor(creatureModalHostility));
+    b.style.setProperty('--hc', getHostilityColor(creatureModalHostility));
     b.textContent = icon;
     b.addEventListener('click', () => { creatureModalIcon = icon; renderCreatureIcons(); });
     grid.appendChild(b);
@@ -589,26 +584,23 @@ document.getElementById('creature-confirm-btn').addEventListener('click', () => 
   if (!creatureModalTarget) return;
   const mapId = creatureModalTarget.mapId;
   const tokenId = creatureModalTarget.tokenId;
-  const map = mapById(mapId);
+  const map = getMapById(mapId);
   if (!map) { hideModal('creature-modal'); return; }
 
   const name = document.getElementById('creature-name-input').value.trim().slice(0, 40);
   const size = parseFloat(document.getElementById('creature-size-select').value) || 1;
   const fields = { name, size, icon: creatureModalIcon, hostility: creatureModalHostility };
-  // Only the GM's picker ever touches this — and always explicitly, so
-  // choosing Custom on a token that used to be a player's actually hands it
-  // back rather than silently leaving the old owner in place.
-  if (isMapGM()) fields.ownerUid = creatureModalOwnerUid || (ownPlayerId() ?? '');
+  // Always written by the GM, so choosing Custom on a player's token hands it
+  // back rather than leaving the old owner in place.
+  if (isMapGM()) fields.ownerUid = creatureModalOwnerUid || (getOwnPlayerId() ?? '');
 
   if (tokenId) {
-    // The footprint may have changed, so it re-snaps: a Large creature centres
-    // on a line where a Medium one centres in a square.
+    // The footprint may have changed, so it re-snaps.
     const token = (map.tokens || {})[tokenId] || { x: 0, y: 0 };
     const snapped = snapToGrid(map, token.x, token.y, size);
     updateToken(mapId, tokenId, Object.assign({}, fields, snapped));
   } else {
-    // Dropped where it was asked for, or in the middle of the map when the
-    // dialog was opened from the toolbar rather than from a spot on the board.
+    // Where it was asked for, or mid-map when opened from the toolbar.
     const at = creatureModalPos || { x: (map.w || 1000) / 2, y: (map.h || 1000) / 2 };
     const snapped = snapToGrid(map, at.x, at.y, size);
     addToken(mapId, Object.assign({}, fields, snapped));

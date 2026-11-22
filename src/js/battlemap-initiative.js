@@ -4,187 +4,189 @@
 'use strict';
 
 // Initiative belongs to the map: it lives at
-// `parties/<code>/battlemap/maps/<mapId>/initiative` with the walls and
-// creatures, rides `subscribeToBattlemap`, and is thrown away with the map.
+// `parties/<code>/battlemap/maps/<mapId>/initiative`, rides
+// `subscribeToBattlemap`, and is thrown away with the map.
 //
 //   initiative
 //     round   1, 2, 3 …
 //     turn    <entryId>   whose turn it is, named rather than numbered
-//     entries { <id>: { id, kind, name, score, at, uid?, tokens?, icon?, hostility? } }
+//     entries { <id>: { id, kind, name, score, at, uid?, tokens?, icon?, hostility?, moveUsed? } }
 //
-// The turn is an entry id, never an index — the order is not a fixed list (late
-// rollers drop in mid-fight; the GM removes groups). `initiativeActiveEntry()`
-// heals a dangling turn by falling back to the top. See CLAUDE.md § Initiative.
+// The turn is an entry id, never an index: late rollers drop in mid-fight and
+// the GM removes groups. `_getInitiativeActiveEntry()` heals a dangling turn.
 
 const INITIATIVE_PC_PREFIX = 'pc_';
 
-function mapInitiative(map) {
-  const i = map?.initiative ?? {};
-  return { round: i.round ?? 1, turn: i.turn ?? null, entries: i.entries ?? {} };
+// The GM's group roll dialog.
+let initiativeModalMapId = null;
+let initiativeModalPicked = new Set();
+
+// The panel's collapsed state, session only.
+let initiativeCollapsed = false;
+
+// What the reader is pointing at, as an ENTRY id. The panel and the board are
+// two views of one list, so one piece of state keeps them from disagreeing.
+let initiativeHoverId = null;
+
+// ─── THE MODEL ──────────────────────────────────────────────────────────────
+
+function _getMapInitiative(map) {
+  const init = map?.initiative ?? {};
+  return { round: init.round ?? 1, turn: init.turn ?? null, entries: init.entries ?? {} };
 }
 
-function initiativeEntries(map) {
-  return Object.values(mapInitiative(map).entries).filter(e => e && e.id);
+function _getInitiativeEntries(map) {
+  return Object.values(_getMapInitiative(map).entries).filter(e => e && e.id);
 }
 
-// Score, then the moment of the roll (arbitrary but STABLE — every client sorts
-// the same list the same way), then the id.
-function initiativeOrder(map) {
-  return initiativeEntries(map).sort((a, b) =>
+// Score, then the moment of the roll (arbitrary but STABLE, so every client
+// sorts the same way), then the id.
+function _getInitiativeOrder(map) {
+  return _getInitiativeEntries(map).sort((a, b) =>
     (b.score ?? 0) - (a.score ?? 0)
     || (a.at ?? 0) - (b.at ?? 0)
     || String(a.id).localeCompare(String(b.id)));
 }
 
-function initiativeRunning(map) {
-  return initiativeEntries(map).length > 0;
+function _isInitiativeRunning(map) {
+  return _getInitiativeEntries(map).length > 0;
 }
 
-// Whose turn it is. Not simply `entries[turn]` — the entry named may have left
-// the fight, and a tracker highlighting nobody looks broken. The top of the
-// order is the honest fallback.
-function initiativeActiveEntry(map) {
-  const order = initiativeOrder(map);
+// Whose turn it is. The entry named may have left the fight, and a tracker
+// highlighting nobody looks broken, so the top of the order is the fallback.
+function _getInitiativeActiveEntry(map) {
+  const order = _getInitiativeOrder(map);
   if (!order.length) return null;
-  const turn = mapInitiative(map).turn;
+  const turn = _getMapInitiative(map).turn;
   return order.find(e => e.id === turn) || order[0];
 }
 
-// Which creatures on the board an entry speaks for. A group says so outright.
-// A player's entry names an account, and the board records which creatures
-// belong to whom (`ownerUid`) — so a player who moves/deletes/re-adds a token is
-// still the same person. The `hostility === 'party'` half is why a GM who also
-// plays a character does not find their entry speaking for the whole ambush.
-function initiativeEntryClaims(entry, token) {
+// Whether an entry speaks for a token. A group lists its tokens; a player's
+// entry matches by `ownerUid`, so a re-added token is still theirs. The
+// `hostility === 'party'` check keeps a GM who also plays from claiming the
+// whole ambush.
+function _doesInitiativeEntryClaimToken(entry, token) {
   if (!entry || !token) return false;
   if (entry.tokens) return !!entry.tokens[token.id];
   return !!entry.uid && entry.uid === token.ownerUid && token.hostility === 'party';
 }
 
-function initiativeTokensOf(map, entry) {
+function _getInitiativeEntryTokens(map, entry) {
   if (!entry) return [];
-  return mapTokens(map).filter(t => initiativeEntryClaims(entry, t));
+  return getMapTokens(map).filter(t => _doesInitiativeEntryClaimToken(entry, t));
 }
 
-function initiativeEntryOfToken(map, tokenId) {
+function _getInitiativeEntryOfToken(map, tokenId) {
   const token = (map?.tokens ?? {})[tokenId];
   if (!token) return null;
-  return initiativeOrder(map).find(e => initiativeEntryClaims(e, token)) || null;
+  return _getInitiativeOrder(map).find(e => _doesInitiativeEntryClaimToken(e, token)) || null;
 }
 
-// =============================================================================
-// WRITING
-// =============================================================================
-function initiativeRef(mapId, rest) {
-  return mapRef(mapId, 'initiative' + (rest ? '/' + rest : ''));
+// ─── WRITING ────────────────────────────────────────────────────────────────
+
+function _getInitiativeRef(mapId, rest) {
+  return getMapRef(mapId, 'initiative' + (rest ? '/' + rest : ''));
 }
 
-// One write, not two — a new entry and the round it starts go up together, or
-// the first roll of a fight lands as an order with nobody's turn in it.
-function addInitiativeEntry(mapId, entry) {
+// One write, not two: a fight's first entry and its round go up together, or
+// the order lands with nobody's turn in it.
+function _addInitiativeEntry(mapId, entry) {
   if (!firebaseDb || !state.party.active) return;
-  const map = mapById(mapId);
+  const map = getMapById(mapId);
   if (!map) return;
   const patch = { ['entries/' + entry.id]: entry };
-  if (!initiativeRunning(map)) { patch.round = 1; patch.turn = entry.id; }
-  initiativeRef(mapId).update(patch);
+  if (!_isInitiativeRunning(map)) { patch.round = 1; patch.turn = entry.id; }
+  _getInitiativeRef(mapId).update(patch);
 }
 
-function removeInitiativeEntry(mapId, entryId) {
+function _removeInitiativeEntry(mapId, entryId) {
   if (!firebaseDb) return;
-  const map = mapById(mapId);
-  const entry = map ? mapInitiative(map).entries[entryId] : null;
+  const map = getMapById(mapId);
+  const entry = map ? _getMapInitiative(map).entries[entryId] : null;
   // The GM runs the fight; a player may still take themselves out of it.
-  if (!canEditMap() && !(entry && entry.uid && entry.uid === ownPlayerId())) return;
-  initiativeRef(mapId, 'entries/' + entryId).remove();
+  if (!canEditMap() && !(entry && entry.uid && entry.uid === getOwnPlayerId())) return;
+  _getInitiativeRef(mapId, 'entries/' + entryId).remove();
 }
 
-function clearInitiative(mapId) {
+function _clearInitiative(mapId) {
   if (!canEditMap() || !firebaseDb) return;
   if (!confirm('End the fight and clear the initiative order?')) return;
-  initiativeRef(mapId).remove();
+  _getInitiativeRef(mapId).remove();
 }
 
-// Wrapping past the end is the next round — the only place `round` ever
-// changes. Shared by the GM's step buttons and Pass Turn; the two differ only
-// in who is allowed to call it.
-function advanceInitiativeTurn(map, dir) {
-  const order = initiativeOrder(map);
+// Wrapping past the end is the next round, the only place `round` changes.
+// Shared by the GM's step buttons and Pass Turn, which differ only in who may call.
+function _advanceInitiativeTurn(map, dir) {
+  const order = _getInitiativeOrder(map);
   if (!order.length) return;
-  const init = mapInitiative(map);
-  const active = initiativeActiveEntry(map);
+  const init = _getMapInitiative(map);
+  const active = _getInitiativeActiveEntry(map);
   const at = order.findIndex(e => e.id === active.id);
   const next = at + dir;
   const wrapped = (next + order.length) % order.length;
   let round = init.round ?? 1;
   if (next >= order.length) round += 1;
   if (next < 0) round = Math.max(1, round - 1);
-  // A fresh turn is a full tank of movement — see the MOVEMENT section below.
-  initiativeRef(map.id).update({
+  // A fresh turn is a full tank of movement (see MOVEMENT).
+  _getInitiativeRef(map.id).update({
     turn: order[wrapped].id,
     round,
     ['entries/' + order[wrapped].id + '/moveUsed']: 0,
   });
 }
 
-// Stepping either way, to any entry, is the GM's — running the fight.
-function stepInitiative(mapId, dir) {
+// Stepping either way is the GM's: running the fight.
+function _stepInitiative(mapId, dir) {
   if (!canEditMap() || !firebaseDb) return;
-  const map = mapById(mapId);
+  const map = getMapById(mapId);
   if (!map) return;
-  advanceInitiativeTurn(map, dir);
+  _advanceInitiativeTurn(map, dir);
 }
 
-// Whoever the active turn belongs to may end it and hand it to the next entry —
-// not gated by canEditMap() the way stepInitiative is, since passing your own
-// turn is not running the fight, only leaving it. See CLAUDE.md § Initiative for
-// why a GM's monster group has no uid to match: the GM speaks for it instead.
-function myInitiativeTurn(map) {
-  if (!map || !initiativeRunning(map)) return false;
-  const active = initiativeActiveEntry(map);
+// Whether the active turn is this reader's to end. Not gated by canEditMap():
+// passing your own turn is leaving the fight, not running it. A GM speaks for
+// every non-player entry, since a monster group has no uid.
+function isMyInitiativeTurn(map) {
+  if (!map || !_isInitiativeRunning(map)) return false;
+  const active = _getInitiativeActiveEntry(map);
   if (!active) return false;
   if (canEditMap()) return active.kind !== 'pc';
-  return active.kind === 'pc' && !!active.uid && active.uid === ownPlayerId();
+  return active.kind === 'pc' && !!active.uid && active.uid === getOwnPlayerId();
 }
 
-function passInitiativeTurn(mapId) {
+function _passInitiativeTurn(mapId) {
   if (!firebaseDb) return;
-  const map = mapById(mapId);
-  if (!map || !myInitiativeTurn(map)) return;
-  advanceInitiativeTurn(map, 1);
+  const map = getMapById(mapId);
+  if (!map || !isMyInitiativeTurn(map)) return;
+  _advanceInitiativeTurn(map, 1);
 }
 
-// The sitewide glow (see initiative.css). Driven off the same question as Pass
-// Turn's visibility, but against the party's actual map (mapForViewer()) rather
-// than whichever one a GM happens to have open — a player who has wandered off
-// to their sheet must still be told it is their move.
+// Toggles the sitewide my-turn glow. Checked against the party's actual map
+// (getMapForViewer()), not whichever one a GM has open, so a player on their sheet
+// is still told it is their move.
 function syncMyTurnBorder() {
-  document.body.classList.toggle('my-turn', myInitiativeTurn(mapForViewer()));
+  document.body.classList.toggle('my-turn', isMyInitiativeTurn(getMapForViewer()));
 }
 
-// =============================================================================
-// A ROLL THAT JOINS THE ORDER
-// =============================================================================
-// Called from `performRoll()` for every roll, interested in exactly one. The
-// sheet's Initiative row is an ordinary roll; joining the order is the extra
-// thing it does when the party is on a map. Only your own first roll counts:
-//   - your own, because a GM reading a player's sheet rolls as the GM
-//     (`liveStateIsOwnCharacter()`, the same guard the save file uses)
-//   - first, because rolling twice must not let anyone pick the better number
+// ─── A ROLL THAT JOINS THE ORDER ────────────────────────────────────────────
+
+// Called from `performRoll()` for every roll; joins the order on the reader's
+// own first Initiative roll. Own, because a GM reading a player's sheet rolls as
+// the GM; first, so rolling twice can't pick the better number.
 function noteRollForInitiative(roll) {
   if (!roll || roll.kind !== 'initiative') return;
   if (!state.party.active || typeof isSignedIn !== 'function' || !isSignedIn()) return;
-  if (typeof liveStateIsOwnCharacter === 'function' && !liveStateIsOwnCharacter()) return;
+  if (typeof isLiveStateOwnCharacter === 'function' && !isLiveStateOwnCharacter()) return;
 
-  const map = mapForViewer();
+  const map = getMapForViewer();
   if (!map) return;
-  const uid = ownPlayerId();
+  const uid = getOwnPlayerId();
   if (!uid) return;
 
   const id = INITIATIVE_PC_PREFIX + uid;
-  if (mapInitiative(map).entries[id]) return;
+  if (_getMapInitiative(map).entries[id]) return;
 
-  addInitiativeEntry(map.id, {
+  _addInitiativeEntry(map.id, {
     id, kind: 'pc', uid,
     name: (state.character && state.character.name) || 'Adventurer',
     score: roll.total,
@@ -193,29 +195,23 @@ function noteRollForInitiative(roll) {
   });
 }
 
-// =============================================================================
-// THE GM'S GROUP ROLL
-// =============================================================================
+// ─── THE GM'S GROUP ROLL ────────────────────────────────────────────────────
 // Any number of creatures ticked, one d20 for the lot, one shared place in the
-// order. The modifier is typed here — this app has no monster stats. Goes
-// through `performRoll()` like every other roll.
-let initiativeModalMapId = null;
-let initiativeModalPicked = new Set();
+// order. The modifier is typed here: this app has no monster stats.
 
-function initiativeCandidates(map) {
-  // Creatures not already in the order — a creature has one place in the turn order.
-  return mapTokens(map).filter(t => !initiativeEntryOfToken(map, t.id));
+// Creatures not already in the order; a creature has one place in it.
+function _getInitiativeCandidates(map) {
+  return getMapTokens(map).filter(t => !_getInitiativeEntryOfToken(map, t.id));
 }
 
-function openInitiativeModal(mapId) {
-  const map = mapById(mapId);
+function _openInitiativeModal(mapId) {
+  const map = getMapById(mapId);
   if (!map || !canEditMap()) return;
   initiativeModalMapId = mapId;
   initiativeModalPicked = new Set();
 
-  // Whatever the GM already had selected on the board; failing that, the hostile
-  // creatures (the ones a GM reaches for this dialog to roll).
-  const candidates = initiativeCandidates(map);
+  // Preselect the creature selected on the board, or else the hostile ones.
+  const candidates = _getInitiativeCandidates(map);
   const selected = candidates.find(t => t.id === mapSelectedTokenId);
   if (selected) initiativeModalPicked.add(selected.id);
   else candidates.filter(t => t.hostility === 'hostile').forEach(t => initiativeModalPicked.add(t.id));
@@ -225,15 +221,16 @@ function openInitiativeModal(mapId) {
   showModal('initiative-modal');
 }
 
+// Rebuilds the group roll dialog's creature checklist.
 function renderInitiativeModal() {
-  const map = mapById(initiativeModalMapId);
+  const map = getMapById(initiativeModalMapId);
   const list = document.getElementById('init-creature-list');
   const nameInput = document.getElementById('init-group-name');
   const rollBtn = document.getElementById('init-roll-btn');
   list.innerHTML = '';
   if (!map) return;
 
-  const candidates = initiativeCandidates(map);
+  const candidates = _getInitiativeCandidates(map);
   if (!candidates.length) {
     const note = document.createElement('p');
     note.className = 'modal-note';
@@ -244,14 +241,14 @@ function renderInitiativeModal() {
   candidates.forEach(t => {
     const row = document.createElement('label');
     row.className = 'init-pick';
-    row.style.setProperty('--hc', hostilityColor(t.hostility));
+    row.style.setProperty('--hc', getHostilityColor(t.hostility));
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = initiativeModalPicked.has(t.id);
     cb.addEventListener('change', () => {
       if (cb.checked) initiativeModalPicked.add(t.id); else initiativeModalPicked.delete(t.id);
-      syncInitiativeModalName();
+      _syncInitiativeModalName();
     });
 
     const dot = document.createElement('span');
@@ -273,35 +270,35 @@ function renderInitiativeModal() {
   // The name is a suggestion, rewritten only while the GM has not typed one.
   nameInput.dataset.touched = '';
   nameInput.value = '';
-  nameInput.placeholder = suggestedGroupName(map);
+  nameInput.placeholder = _getSuggestedGroupName(map);
   rollBtn.disabled = !initiativeModalPicked.size;
 }
 
-function syncInitiativeModalName() {
-  const map = mapById(initiativeModalMapId);
+function _syncInitiativeModalName() {
+  const map = getMapById(initiativeModalMapId);
   const nameInput = document.getElementById('init-group-name');
-  if (map && !nameInput.dataset.touched) nameInput.placeholder = suggestedGroupName(map);
+  if (map && !nameInput.dataset.touched) nameInput.placeholder = _getSuggestedGroupName(map);
   document.getElementById('init-roll-btn').disabled = !initiativeModalPicked.size;
 }
 
-// Creatures that share a name are that name; a mixed handful gets the plainest
-// true word. The count is NOT in the name — the row draws it as a badge.
-function suggestedGroupName(map) {
-  const picked = mapTokens(map).filter(t => initiativeModalPicked.has(t.id));
+// Creatures sharing a name are that name; a mixed handful gets the plainest
+// true word. The count is NOT in the name: the row draws it as a badge.
+function _getSuggestedGroupName(map) {
+  const picked = getMapTokens(map).filter(t => initiativeModalPicked.has(t.id));
   if (!picked.length) return 'Enemies';
   const names = [...new Set(picked.map(t => (t.name || '').trim()).filter(Boolean))];
   if (names.length === 1) return names[0];
   return picked.every(t => t.hostility === 'hostile') ? 'Enemies' : 'Creatures';
 }
 
-function confirmInitiativeRoll() {
-  const map = mapById(initiativeModalMapId);
+function _confirmInitiativeRoll() {
+  const map = getMapById(initiativeModalMapId);
   if (!map || !canEditMap() || !initiativeModalPicked.size) return;
 
   const nameInput = document.getElementById('init-group-name');
-  const name = (nameInput.value || '').trim() || suggestedGroupName(map);
+  const name = (nameInput.value || '').trim() || _getSuggestedGroupName(map);
   const mod = Math.max(-30, Math.min(30, parseInt(document.getElementById('init-group-mod').value, 10) || 0));
-  const picked = mapTokens(map).filter(t => initiativeModalPicked.has(t.id));
+  const picked = getMapTokens(map).filter(t => initiativeModalPicked.has(t.id));
 
   const roll = performRoll({
     label: 'Initiative · ' + name,
@@ -312,8 +309,8 @@ function confirmInitiativeRoll() {
 
   const tokens = {};
   picked.forEach(t => { tokens[t.id] = true; });
-  addInitiativeEntry(map.id, {
-    id: newPieceId('init'),
+  _addInitiativeEntry(map.id, {
+    id: createPieceId('init'),
     kind: 'group',
     name,
     score: roll.total,
@@ -328,86 +325,76 @@ function confirmInitiativeRoll() {
   hideModal('initiative-modal');
 }
 
-// =============================================================================
-// THE PANEL
-// =============================================================================
-// Top left of the board. Collapsed it says only whose turn it is; expanded it is
-// the whole order. Both are the same list (collapsing hides inactive rows in
-// CSS). Collapsed-ness is session only.
-let initiativeCollapsed = false;
+// ─── THE PANEL ──────────────────────────────────────────────────────────────
+// Top left of the board. Collapsed it shows only whose turn it is (CSS hides
+// the inactive rows); expanded it is the whole order.
 
-// What the reader is pointing at, as an ENTRY id — the panel and board are two
-// views of one list, so hovering either lights the other. One piece of state,
-// so they cannot disagree.
-let initiativeHoverId = null;
-
+// Redraws the initiative panel, or hides it off the map view.
 function renderInitiativePanel() {
   const panel = document.getElementById('map-initiative');
   if (!panel) return;
-  // The panel is part of the board — before there is an order it is how one is
-  // started (the GM's + and the player's Roll Initiative both live in it).
-  const map = typeof mapViewIsShowing === 'function' && mapViewIsShowing() ? viewedMap() : null;
+  // Shown even before there is an order: it is how one is started.
+  const map = typeof isMapViewShowing === 'function' && isMapViewShowing() ? getViewedMap() : null;
   panel.classList.toggle('hidden', !map);
-  document.getElementById('init-pass-btn').classList.toggle('hidden', !map || !myInitiativeTurn(map));
+  document.getElementById('init-pass-btn').classList.toggle('hidden', !map || !isMyInitiativeTurn(map));
   if (!map) return;
 
-  const running = initiativeRunning(map);
-  const active = initiativeActiveEntry(map);
-  panel.classList.toggle('collapsed', initiativeCollapsed && running);
-  panel.classList.toggle('empty', !running);
+  const isRunning = _isInitiativeRunning(map);
+  const active = _getInitiativeActiveEntry(map);
+  panel.classList.toggle('collapsed', initiativeCollapsed && isRunning);
+  panel.classList.toggle('empty', !isRunning);
 
-  document.getElementById('init-round').textContent = running ? 'Round ' + (mapInitiative(map).round ?? 1) : 'No fight yet';
+  document.getElementById('init-round').textContent = isRunning ? 'Round ' + (_getMapInitiative(map).round ?? 1) : 'No fight yet';
   const toggle = document.getElementById('init-toggle');
   toggle.textContent = initiativeCollapsed ? '▸' : '▾';
   toggle.title = initiativeCollapsed ? 'Show the whole order' : 'Show only whose turn it is';
   toggle.setAttribute('aria-expanded', String(!initiativeCollapsed));
-  toggle.classList.toggle('hidden', !running);
+  toggle.classList.toggle('hidden', !isRunning);
 
-  renderInitiativeActions(map, running);
-  renderInitiativeOwnRoll(map);
-  renderInitiativeRows(map, active);
+  _renderInitiativeActions(map, isRunning);
+  _renderInitiativeOwnRoll(map);
+  _renderInitiativeRows(map, active);
 }
 
-// The player's own roll, on the board — the same roll the sheet makes (same
-// `data-roll`, same dice.js listeners). Offered exactly when pressing it would
-// do something: not to a GM, not while reading someone else's sheet, not once
-// you are in the order.
-function renderInitiativeOwnRoll(map) {
+// The player's own roll on the board (same `data-roll` and dice.js listeners as
+// the sheet's). Offered only when it would do something: not to a GM, not on
+// someone else's sheet, not once you are in the order.
+function _renderInitiativeOwnRoll(map) {
   const footer = document.getElementById('init-footer');
-  const uid = ownPlayerId();
-  const own = typeof liveStateIsOwnCharacter !== 'function' || liveStateIsOwnCharacter();
-  const rolled = !!uid && !!mapInitiative(map).entries[INITIATIVE_PC_PREFIX + uid];
-  footer.classList.toggle('hidden', canEditMap() || !uid || !own || rolled);
+  const uid = getOwnPlayerId();
+  const isOwnCharacter = typeof isLiveStateOwnCharacter !== 'function' || isLiveStateOwnCharacter();
+  const hasRolled = !!uid && !!_getMapInitiative(map).entries[INITIATIVE_PC_PREFIX + uid];
+  footer.classList.toggle('hidden', canEditMap() || !uid || !isOwnCharacter || hasRolled);
 }
 
-function renderInitiativeActions(map, running) {
+function _renderInitiativeActions(map, isRunning) {
   const acts = document.getElementById('init-actions');
   acts.innerHTML = '';
   if (!canEditMap()) return;
 
-  const btn = (label, title, fn, cls) => {
+  const addButton = (label, title, onClick, cls) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'init-btn' + (cls ? ' ' + cls : '');
     b.textContent = label;
     b.title = title;
-    b.addEventListener('click', fn);
+    b.addEventListener('click', onClick);
     acts.appendChild(b);
     return b;
   };
 
-  if (running) {
-    btn('‹', 'Back a turn', () => stepInitiative(map.id, -1));
-    btn('›', 'Next turn', () => stepInitiative(map.id, 1));
+  if (isRunning) {
+    addButton('‹', 'Back a turn', () => _stepInitiative(map.id, -1));
+    addButton('›', 'Next turn', () => _stepInitiative(map.id, 1));
   }
-  btn('+', 'Roll for creatures on the board', () => openInitiativeModal(map.id));
-  if (running) btn('✕', 'End the fight and clear the order', () => clearInitiative(map.id), 'danger');
+  addButton('+', 'Roll for creatures on the board', () => _openInitiativeModal(map.id));
+  if (isRunning) addButton('✕', 'End the fight and clear the order', () => _clearInitiative(map.id), 'danger');
 }
 
-function renderInitiativeRows(map, active) {
+function _renderInitiativeRows(map, active) {
   const list = document.getElementById('init-list');
   list.innerHTML = '';
-  const order = initiativeOrder(map);
+  const order = _getInitiativeOrder(map);
 
   if (!order.length) {
     const empty = document.createElement('li');
@@ -425,13 +412,12 @@ function renderInitiativeRows(map, active) {
     row.dataset.entry = entry.id;
     if (active && entry.id === active.id) row.classList.add('active');
     if (entry.id === initiativeHoverId) row.classList.add('hover');
-    row.style.setProperty('--hc', hostilityColor(entry.hostility || 'party'));
+    row.style.setProperty('--hc', getHostilityColor(entry.hostility || 'party'));
 
-    // The creature's own glyph, read off the live token — a player never told us
-    // what their token looks like, they placed it. The stored icon is the
-    // fallback for a group whose creatures have left the map, the shield for a
+    // The live token's glyph first (a player never chose an icon, they placed a
+    // token); the stored icon for a group whose creatures left, a shield for a
     // player with no token down.
-    const tokens = initiativeTokensOf(map, entry);
+    const tokens = _getInitiativeEntryTokens(map, entry);
     const icon = document.createElement('span');
     icon.className = 'init-icon';
     icon.textContent = (tokens[0] && tokens[0].icon) || entry.icon || (entry.kind === 'pc' ? '🛡️' : '•');
@@ -442,10 +428,10 @@ function renderInitiativeRows(map, active) {
 
     const count = tokens.length;
     if (entry.kind === 'group' && count > 1) {
-      const n = document.createElement('span');
-      n.className = 'init-count';
-      n.textContent = '×' + count;
-      name.appendChild(n);
+      const badge = document.createElement('span');
+      badge.className = 'init-count';
+      badge.textContent = '×' + count;
+      name.appendChild(badge);
     }
 
     const score = document.createElement('span');
@@ -457,13 +443,13 @@ function renderInitiativeRows(map, active) {
     row.appendChild(score);
 
     // Only the GM, or the owner of an entry, can take it out.
-    if (canEditMap() || (entry.uid && entry.uid === ownPlayerId())) {
+    if (canEditMap() || (entry.uid && entry.uid === getOwnPlayerId())) {
       const rm = document.createElement('button');
       rm.type = 'button';
       rm.className = 'init-remove';
       rm.textContent = '✕';
       rm.title = 'Take out of the order';
-      rm.addEventListener('click', e => { e.stopPropagation(); removeInitiativeEntry(map.id, entry.id); });
+      rm.addEventListener('click', e => { e.stopPropagation(); _removeInitiativeEntry(map.id, entry.id); });
       row.appendChild(rm);
     }
 
@@ -473,106 +459,99 @@ function renderInitiativeRows(map, active) {
   });
 }
 
-// =============================================================================
-// HOVER, BOTH WAYS
-// =============================================================================
-// One piece of state serves both directions: the panel writes it on hover, the
-// map writes it from whatever creature is under the cursor. Each redraws the
-// other side.
+// ─── HOVER, BOTH WAYS ───────────────────────────────────────────────────────
+// The panel writes the hover on pointer enter, the map from the creature under
+// the cursor; each redraws the other side.
+
+// Sets the hovered entry id (or null) and redraws the panel rows and the board.
 function setInitiativeHover(entryId) {
   if (initiativeHoverId === entryId) return;
   initiativeHoverId = entryId;
-  syncInitiativeHoverRows();
+  _syncInitiativeHoverRows();
   drawBattlemap();
 }
 
-// Re-marked in place, not rebuilt — this fires on every pointermove across the
-// board, and throwing rows away would take the cursor off the button it was over.
-function syncInitiativeHoverRows() {
+// Re-marked in place, not rebuilt: this fires on every pointermove, and
+// rebuilding would take the cursor off the button it was over.
+function _syncInitiativeHoverRows() {
   document.querySelectorAll('#init-list .init-row').forEach(row => {
     row.classList.toggle('hover', row.dataset.entry === initiativeHoverId);
   });
 }
 
-// The board's half: the creature under the cursor, named as its entry. A
-// creature not in the fight has no entry — clear the highlight.
+// The board's half: hovers the entry of the creature under the cursor, or
+// clears the hover for a creature not in the fight.
 function noteMapTokenHover(map, tokenId) {
-  if (!map || !initiativeRunning(map)) { setInitiativeHover(null); return; }
-  const entry = tokenId ? initiativeEntryOfToken(map, tokenId) : null;
+  if (!map || !_isInitiativeRunning(map)) { setInitiativeHover(null); return; }
+  const entry = tokenId ? _getInitiativeEntryOfToken(map, tokenId) : null;
   setInitiativeHover(entry ? entry.id : null);
 }
 
-// What the board draws on each creature, worked out once per frame. Hover beats
-// the turn marker on the same creature.
-function initiativeMarks(map) {
+// A Map of token id → 'active' | 'hover' for the board to draw, once per frame.
+// Hover beats the turn marker on the same creature.
+function getInitiativeMarks(map) {
   const marks = new Map();
-  if (!map || !initiativeRunning(map)) return marks;
-  const active = initiativeActiveEntry(map);
-  if (active) initiativeTokensOf(map, active).forEach(t => marks.set(t.id, 'active'));
-  const hovered = initiativeHoverId ? mapInitiative(map).entries[initiativeHoverId] : null;
-  if (hovered) initiativeTokensOf(map, hovered).forEach(t => marks.set(t.id, 'hover'));
+  if (!map || !_isInitiativeRunning(map)) return marks;
+  const active = _getInitiativeActiveEntry(map);
+  if (active) _getInitiativeEntryTokens(map, active).forEach(t => marks.set(t.id, 'active'));
+  const hovered = initiativeHoverId ? _getMapInitiative(map).entries[initiativeHoverId] : null;
+  if (hovered) _getInitiativeEntryTokens(map, hovered).forEach(t => marks.set(t.id, 'hover'));
   return marks;
 }
 
-// =============================================================================
-// MOVEMENT — a party token's remaining speed for the turn it is tracked against
-// =============================================================================
-// Only a player's own marker has a speed to spend: this app keeps no monster
-// stat blocks (see CLAUDE.md § Initiative), so a GM's creatures sit outside
-// this entirely. The budget lives on the token's own initiative entry
-// (`moveUsed`, in feet) — the same entry that already speaks for the token in
-// the turn order (initiativeEntryOfToken), so "whose turn resets this" and
-// "whose budget this is" can never disagree. Reset happens in
-// advanceInitiativeTurn(), above. With no entry yet (not rolled into the order)
-// there is nothing to spend against, so movement runs free until there is.
+// ─── MOVEMENT ───────────────────────────────────────────────────────────────
+// Only a player's own marker has a speed to spend; the app keeps no monster
+// stats. The budget (`moveUsed`, feet) lives on the token's own initiative
+// entry, so "whose turn resets this" and "whose budget this is" never disagree.
+// _advanceInitiativeTurn() resets it. With no entry yet, movement runs free.
 
-function tokenSpeed(token) {
+// A party token's Speed in feet, or null for a token with no character behind it.
+function getTokenSpeed(token) {
   if (!token || token.hostility !== 'party' || !token.ownerUid) return null;
-  const c = characterForUid(token.ownerUid);
-  if (!c) return null;
-  return Number.isFinite(c.speed) ? c.speed : 30;
+  const character = getCharacterForUid(token.ownerUid);
+  if (!character) return null;
+  return Number.isFinite(character.speed) ? character.speed : 30;
 }
 
-function tokenMoveEntry(map, token) {
-  return tokenSpeed(token) === null ? null : initiativeEntryOfToken(map, token.id);
+// The initiative entry a token's movement is tracked against, or null.
+function getTokenMoveEntry(map, token) {
+  return getTokenSpeed(token) === null ? null : _getInitiativeEntryOfToken(map, token.id);
 }
 
-// null means "not tracked" (no speed, or not in the order) — battlemap-view.js
-// reads that as leave it alone, rather than a budget of zero.
-function tokenMoveRemaining(map, token) {
-  const entry = tokenMoveEntry(map, token);
+// Feet of movement left this turn. null means "not tracked" (no speed, or not
+// in the order), which battlemap-view.js leaves alone rather than reading as zero.
+function getTokenMoveRemaining(map, token) {
+  const entry = getTokenMoveEntry(map, token);
   if (!entry) return null;
-  return Math.max(0, tokenSpeed(token) - (entry.moveUsed || 0));
+  return Math.max(0, getTokenSpeed(token) - (entry.moveUsed || 0));
 }
 
-// Called once a drag settles (onMapPointerUp in battlemap-view.js) — added to
-// whatever the entry had already spent this turn.
+// Adds `feet` to what a token's entry has spent this turn; call once a drag settles.
 function spendTokenMovement(map, token, feet) {
-  const entry = tokenMoveEntry(map, token);
+  const entry = getTokenMoveEntry(map, token);
   if (!entry || !(feet > 0) || !firebaseDb) return;
-  initiativeRef(map.id, 'entries/' + entry.id + '/moveUsed').set((entry.moveUsed || 0) + feet);
+  _getInitiativeRef(map.id, 'entries/' + entry.id + '/moveUsed').set((entry.moveUsed || 0) + feet);
 }
 
-// =============================================================================
-// WIRING
-// =============================================================================
+// ─── WIRING ─────────────────────────────────────────────────────────────────
+
 document.getElementById('init-toggle').addEventListener('click', () => {
   initiativeCollapsed = !initiativeCollapsed;
   renderInitiativePanel();
 });
 
-document.getElementById('init-roll-btn').addEventListener('click', confirmInitiativeRoll);
+document.getElementById('init-roll-btn').addEventListener('click', _confirmInitiativeRoll);
 
 document.getElementById('init-pass-btn').addEventListener('click', () => {
-  const map = viewedMap();
-  if (map) passInitiativeTurn(map.id);
+  const map = getViewedMap();
+  if (map) _passInitiativeTurn(map.id);
 });
 
-// The board's Roll Initiative, wired the way the sheet's roll targets are:
-// dice.js owns the gesture, this only says which roll it is.
+// The board's Roll Initiative, wired like the sheet's roll targets: dice.js owns
+// the gesture, this only says which roll it is.
 const initOwnRollEl = document.getElementById('init-roll-own');
-initOwnRollEl.addEventListener('pointerdown', e => beginRollGesture(e, initOwnRollEl, () => sheetRollSpec('initiative')));
-initOwnRollEl.addEventListener('click', () => rollFromClick(() => sheetRollSpec('initiative')));
+initOwnRollEl.addEventListener('pointerdown', e => beginRollGesture(e, initOwnRollEl, () => getSheetRollSpec('initiative')));
+initOwnRollEl.addEventListener('click', () => rollFromClick(() => getSheetRollSpec('initiative')));
 document.getElementById('init-group-name').addEventListener('input', e => {
   e.target.dataset.touched = e.target.value ? '1' : '';
 });

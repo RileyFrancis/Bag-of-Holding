@@ -3,7 +3,10 @@
 // =============================================================================
 'use strict';
 
-const SAVE_KEY = 'dnd_inventory_v1';
+const SAVE_KEY = 'dnd_inventory_v1'; // localStorage key of the account save
+// Older saves lack `campaigns` (added in v3) and `homebrew` (v4); both read back as
+// empty defaults, so neither bump needs a migration.
+const SAVE_VERSION = 4;
 
 document.getElementById('stash-all-btn').addEventListener('click', stashAllItems);
 document.getElementById('stash-delete-all-btn').addEventListener('click', () => {
@@ -15,19 +18,13 @@ document.getElementById('stash-delete-all-btn').addEventListener('click', () => 
   unplaced.forEach(inst => { delete state.instances[inst.id]; });
   renderStash();
   updateWeightDisplay();
-  debouncedSync();
+  scheduleSaveAndSync();
 });
 
-// Account state (not browser state): the roster, which character is in play, and
-// the campaign bookmarks. One builder, so the localStorage and cloud copies
-// cannot drift — cloud-save.js stores the JSON of exactly this. The character on
-// screen is flushed back to its slot first (`commitActiveCharacter()` declines
-// for someone else's sheet or the GM placeholder). Version 3 adds `campaigns`
-// (an account fact — it follows you across machines); v2 simply has none, so the
-// bump needs no migration. Version 4 adds `homebrew` the same way — an older
-// save just has none yet (normalizeHomebrew() hands back an empty tree).
-const SAVE_VERSION = 4;
-
+// Builds the account save: roster, active character, campaign bookmarks, homebrew.
+// One builder, so the localStorage and cloud copies cannot drift (cloud-save.js
+// stores exactly this). Flushes the character on screen to its slot first;
+// `commitActiveCharacter()` declines for someone else's sheet or the GM placeholder.
 function buildSavePayload() {
   commitActiveCharacter();
   return {
@@ -39,8 +36,8 @@ function buildSavePayload() {
   };
 }
 
-// The inverse. `normalizeSavePayload` in characters.js reads every shape (a v1
-// save is a single character at the top level). Renders are the caller's job.
+// Loads a save payload into state, the inverse of buildSavePayload(). Renders are
+// the caller's job. `normalizeSavePayload` reads every shape (v1 is a single character).
 function applySavePayload(data) {
   if (!data) return;
   const norm = normalizeSavePayload(data);
@@ -53,14 +50,17 @@ function applySavePayload(data) {
   loadActiveCharacterIntoLive();
 }
 
+// Writes the account save to localStorage.
 function autoSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(buildSavePayload()));
 }
 
+// Whether this browser holds an account save.
 function hasLocalSave() {
   return !!localStorage.getItem(SAVE_KEY);
 }
 
+// Loads the localStorage save into state, if there is one; a corrupt save is ignored.
 function autoLoad() {
   const raw = localStorage.getItem(SAVE_KEY);
   if (!raw) return;
@@ -69,8 +69,9 @@ function autoLoad() {
   } catch {}
 }
 
+// Shows `text` on a button for 1.5 s, then restores its label.
 function flashButton(btn, text) {
-  const orig = btn.textContent;
+  const originalText = btn.textContent;
   btn.textContent = text;
-  setTimeout(() => btn.textContent = orig, 1500);
+  setTimeout(() => btn.textContent = originalText, 1500);
 }

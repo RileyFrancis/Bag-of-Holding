@@ -1,8 +1,9 @@
 # Architecture
 
-How the code is arranged and why. This is the map; [CLAUDE.md](CLAUDE.md) is the
-detailed rationale — the reasoning behind each subsystem, and which parts are
-load-bearing. Read this first, then that file for whatever you're about to touch.
+How the code is arranged and why: each functional part, how the parts connect,
+and the reasoning behind ambiguous design decisions. [CLAUDE.md](CLAUDE.md) lists
+the invariants that would cause a silent bug if broken, and [STYLE.md](STYLE.md)
+the code style rules.
 
 ## The shape of it
 
@@ -168,6 +169,33 @@ Shapes are 2D arrays of `0`/`1`, and weight is the count of `1`s — 1 lb per
 cell. Stackable items always use `[[1]]` and carry a `stackSize`: how many units
 fit in that one cell, so each unit weighs `1 / stackSize`.
 
+## Interaction modes
+
+```
+IDLE
+  click sidebar card  → PLACING (ghost follows cursor, snaps to grid)
+  pointerdown on item → DRAGGING (item removed from grid, ghost appears)
+
+PLACING
+  mousemove  → moveGhost + highlightCells
+  R key      → increment rotation, rebuild ghost in place
+  click grid → finalizePlacement (stays in PLACING for rapid multi-drop)
+  right-click / Escape → cancelPlacing → IDLE
+
+DRAGGING
+  pointermove → moveGhost + highlightCells
+  pointerup   → place at new position / equip slot, or restore → IDLE
+  Escape      → restore original position/rotation → IDLE
+```
+
+## The character sheet
+
+Each sheet section is a widget, placed in a tree of row/col splits
+(`sheet-layout.js`) the reader drags to rearrange. A split's `size` lives on its
+node so it travels with a moved section. The identity block sits outside
+`#sheet-layout` in `index.html`, because whose sheet this is should never be
+draggable away.
+
 ## Persistence
 
 Four kinds of state, kept deliberately apart:
@@ -184,13 +212,11 @@ the app* stays out of the save file, because a GM paging through the party must
 keep their own arrangement rather than adopting each player's.
 
 The save file's shape is version 4 —
-`{ version, activeCharacterId, characters, campaigns, homebrew }`. Version 3 was
-the same without `homebrew`, and version 2 without `campaigns` either (no
-migration needed for either). Version 1 was a single character at
-the top level, and `normalizeSavePayload()` folds one into a one-character
-roster; it is the only place that knows there were ever earlier shapes. Only
-custom items are saved, since the defaults are re-hydrated from `data/items.csv`
-on every boot.
+`{ version, activeCharacterId, characters, campaigns, homebrew }`, under the same
+`dnd_inventory_v1` key. `normalizeSavePayload()` folds a single-character save
+into a one-character roster; a missing `campaigns` or `homebrew` is filled in by
+`normalizeCampaigns()`/`normalizeHomebrew()`, so neither needs a migration. Only custom items are saved, since
+the defaults are re-hydrated from `data/items.csv` on every boot.
 
 Cloud save stores the whole save as **one JSON string**, not a tree: RTDB drops
 nulls and empty objects, and the save file is full of both, so a tree write would
@@ -201,9 +227,9 @@ silently fail to replicate a deletion.
 `data/items.csv` is the default item database — one row per mundane item. **An
 item's `id` is the slug of its name** (`itemSlug()`: `War Pick` → `war-pick`), so
 rows can be inserted or reordered freely, but renaming one changes its id — add
-the old id to `LEGACY_ITEM_IDS` in `items.js` when you do. Ids used to be row
-numbers; that table translates them wherever saved instances arrive. Never write
-an id into the code.
+the old id to `LEGACY_ITEM_IDS` in `items.js` when you do. That table also maps
+the numeric row ids found in old saves, and is applied wherever saved instances
+arrive. Never write an id into the code.
 
 | Column | Notes |
 |--------|-------|
@@ -270,8 +296,8 @@ place, and falls back to a download otherwise.
 
 `data/statuses.json` is `{ id, name, description, derived?, maxLevel? }` per
 status (`maxLevel` > 1 stacks: each level is the id repeated in the saved list) —
-`description` Markdown, same rules again. A status with `derived` (today
-`encumbered` / `heavilyEncumbered`) is worked out from the inventory by
+`description` Markdown, same rules again. A status with `derived` (`encumbered` /
+`heavilyEncumbered`) is worked out from the inventory by
 `encumbranceLevel()` and never offered in the picker or saved; every other one
 is picked by the player into `character.statuses`, an id list.
 

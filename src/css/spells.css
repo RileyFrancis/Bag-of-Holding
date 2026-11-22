@@ -493,15 +493,43 @@
   color: var(--text-dim);
 }
 
+#spellbook-search-row {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+#spellbook-search { width: 100%; }
+
+/* A dot on the settings button while any filter is off its default — the
+   panel folds away, and a list quietly narrowed by it would read as missing
+   spells. */
+#spellbook-settings-btn { position: relative; }
+#spellbook-settings-btn.filtered::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Six groups of boxes can outgrow a short sidebar; the panel scrolls on its
+   own so the list under it keeps some room. */
 #spellbook-settings {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 55%;
+  overflow-y: auto;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--field);
 }
+#spellbook-facet-filters { display: flex; flex-direction: column; gap: 10px; }
+#spellbook-reset-filters { align-self: flex-start; }
 .spellbook-settings-label {
   display: block;
   margin-bottom: 4px;
@@ -587,6 +615,10 @@
 }
 .spell-pick-meta:empty { display: none; }
 .spell-pick-card .ico-school { width: 16px; height: 16px; }
+/* A search's name match that the filters leave out — listed, still pickable,
+   but plainly not what the boxes asked for. */
+.spell-pick-card.outside { opacity: 0.5; filter: grayscale(1); }
+.spell-pick-card.outside:hover:not(:disabled) { opacity: 0.8; }
 
 /* ─── HOVER CARD (AVAILABLE SPELLS) ───────────────────────── */
 /* A row's full card, floated beside the sidebar (showSpellHoverCard() in

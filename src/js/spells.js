@@ -265,18 +265,155 @@ function toggleKnownSpell(spellId) {
 const SPELLBOOK_PREFS_KEY = 'dnd_inventory_spellbook';
 const SPELLBOOK_SORT_MODES = ['class', 'school', 'all'];
 
+// =============================================================================
+// FILTER FACETS — every axis but class, read off a spell's own text
+// =============================================================================
+// data/spells.json keeps these as the free text the rules print ("Reaction,
+// which you take when…", "Concentration, up to 1 minute", "120 feet (Square)"),
+// so each facet boils a spell down to one or more short tags, and orders its
+// tags the way a reader thinks of them (Action before 1 minute before 1 hour)
+// rather than alphabetically. `all: true` means a spell must carry EVERY
+// checked tag (Components: tick M to find the spells that need one); the rest
+// match on ANY checked tag.
+const TIME_UNIT_MINUTES = { round: 0.1, minute: 1, hour: 60, day: 1440 };
+
+// "10 minutes" → 10, "1 day" → 1440; null for anything that isn't a span of time.
+function timeSpanMinutes(text) {
+  const m = /^(\d+)\s+(round|minute|hour|day)s?$/i.exec(text);
+  return m ? parseInt(m[1], 10) * TIME_UNIT_MINUTES[m[2].toLowerCase()] : null;
+}
+
+// "1 Minute" and "1 minute" are one tag; "Until Dispelled" and "Until
+// dispelled" too. Sentence case, which every tag in the data reads well in —
+// except the action types, which the rules capitalise and are left alone.
+function sentenceCase(text) {
+  const t = String(text ?? '').trim();
+  return t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '';
+}
+
+// What's left of a field once its parenthetical and any trailing ", which you
+// take when…" clause are cut away.
+function leadingPhrase(text) {
+  return String(text ?? '').split(/\s*[(,]/)[0].trim();
+}
+
+const ACTION_TAGS = ['Action', 'Bonus Action', 'Reaction'];
+
+function spellCastingTimeTags(spell) {
+  const text = String(spell.castingTime ?? '');
+  const lead = leadingPhrase(text);
+  const action = ACTION_TAGS.find(a => a.toLowerCase() === lead.toLowerCase());
+  const tags = [action ?? sentenceCase(lead)].filter(Boolean);
+  if (/\(ritual\)/i.test(text)) tags.push('Ritual');
+  return tags;
+}
+
+function castingTimeRank(tag) {
+  const action = ACTION_TAGS.indexOf(tag);
+  if (action !== -1) return action;
+  if (tag === 'Ritual') return 1e9;
+  const minutes = timeSpanMinutes(tag);
+  return minutes === null ? 1e8 : 10 + minutes;
+}
+
+function spellComponentTags(spell) {
+  const letters = leadingPhrase(String(spell.components ?? '').replace(/,/g, ' '));
+  return ['V', 'S', 'M'].filter(c => new RegExp('\\b' + c + '\\b').test(letters));
+}
+
+function spellRangeTags(spell) {
+  const tag = sentenceCase(leadingPhrase(spell.range));
+  return tag ? [tag] : [];
+}
+
+function rangeRank(tag) {
+  if (tag === 'Self') return 0;
+  if (tag === 'Touch') return 1;
+  const m = /^(\d+)\s+(feet|foot|miles?)$/i.exec(tag);
+  if (m) return 10 + parseInt(m[1], 10) * (/^mile/i.test(m[2]) ? 5280 : 1);
+  if (tag === 'Sight') return 1e8;
+  if (tag === 'Unlimited') return 1e8 + 1;
+  return 1e9; // Special, and anything homebrew writes in
+}
+
+// Concentration is its own tag alongside the span it lasts, so "1 minute"
+// finds a minute-long spell whether or not it needs concentration, and
+// "Concentration" finds every one that does.
+function spellDurationTags(spell) {
+  const text = String(spell.duration ?? '').trim();
+  const concentration = /^concentration/i.test(text);
+  const span = text.replace(/^concentration,?\s*/i, '').replace(/^up to\s*/i, '');
+  const tags = span ? [sentenceCase(span)] : [];
+  if (concentration) tags.push('Concentration');
+  return tags;
+}
+
+function durationRank(tag) {
+  if (tag === 'Instantaneous') return 0;
+  if (tag === 'Concentration') return 1e9;
+  const minutes = timeSpanMinutes(tag);
+  if (minutes !== null) return 1 + minutes;
+  if (/^until dispelled/i.test(tag)) return 1e7 + tag.length;
+  return 1e8;
+}
+
+const SPELLBOOK_FACETS = [
+  { key: 'schools', label: 'Schools', tags: s => [s.school || 'Other'], rank: () => 0 },
+  { key: 'castingTimes', label: 'Casting Time', tags: spellCastingTimeTags, rank: castingTimeRank },
+  { key: 'components', label: 'Components', tags: spellComponentTags, rank: t => 'VSM'.indexOf(t), all: true,
+    titles: { V: 'Verbal', S: 'Somatic', M: 'Material' } },
+  { key: 'ranges', label: 'Range', tags: spellRangeTags, rank: rangeRank },
+  { key: 'durations', label: 'Duration', tags: spellDurationTags, rank: durationRank },
+];
+
+// Whether a spell survives one facet's checked tags.
+function spellPassesFacet(spell, facet, checked) {
+  if (!checked.length) return true;
+  const tags = facet.tags(spell);
+  return facet.all ? checked.every(t => tags.includes(t)) : checked.some(t => tags.includes(t));
+}
+
+// The options a facet offers: every tag in the pool, plus any tag still
+// checked that the pool no longer has (a class unchecked, a level lost) —
+// otherwise it would keep filtering with no box left to untick.
+function spellbookFacetOptions(facet, available, checked) {
+  const tags = new Set(checked);
+  available.forEach(spell => facet.tags(spell).forEach(t => tags.add(t)));
+  return [...tags].sort((a, b) => facet.rank(a) - facet.rank(b) || a.localeCompare(b));
+}
+
+function spellbookFiltersAreDefault(prefs) {
+  return !prefs.hiddenClasses.length && !prefs.shownExtraClasses.length &&
+    SPELLBOOK_FACETS.every(f => !prefs[f.key].length);
+}
+
+// Session-only, like Browse's own search box — what's typed is a moment's
+// question, not a preference worth keeping.
+let spellbookQuery = '';
+
+function spellNameMatches(spell, query) {
+  return !query || spell.name.toLowerCase().includes(query);
+}
+
+// Every facet list is opt-IN — empty means "no filter on this axis" — so the
+// defaults are just empty lists, and Reset is a matter of emptying them. The
+// class lists are the exception (see `spellbookClassChecked()`): their
+// default is the character's own classes checked, which empty lists already
+// mean. An older `hiddenSchools` (opt-out) is simply dropped.
+function defaultSpellbookFilters() {
+  const prefs = { hiddenClasses: [], shownExtraClasses: [] };
+  SPELLBOOK_FACETS.forEach(f => { prefs[f.key] = []; });
+  return prefs;
+}
+
 function loadSpellbookPrefs() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SPELLBOOK_PREFS_KEY));
-    return {
-      sortMode: SPELLBOOK_SORT_MODES.includes(raw?.sortMode) ? raw.sortMode : 'class',
-      hiddenClasses: Array.isArray(raw?.hiddenClasses) ? raw.hiddenClasses.filter(x => typeof x === 'string') : [],
-      shownExtraClasses: Array.isArray(raw?.shownExtraClasses) ? raw.shownExtraClasses.filter(x => typeof x === 'string') : [],
-      hiddenSchools: Array.isArray(raw?.hiddenSchools) ? raw.hiddenSchools.filter(x => typeof x === 'string') : [],
-    };
-  } catch (e) {
-    return { sortMode: 'class', hiddenClasses: [], shownExtraClasses: [], hiddenSchools: [] };
-  }
+  const strings = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : []);
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(SPELLBOOK_PREFS_KEY)); } catch (e) { /* private mode */ }
+  const prefs = defaultSpellbookFilters();
+  Object.keys(prefs).forEach(key => { prefs[key] = strings(raw?.[key]); });
+  prefs.sortMode = SPELLBOOK_SORT_MODES.includes(raw?.sortMode) ? raw.sortMode : 'class';
+  return prefs;
 }
 
 let spellbookPrefs = loadSpellbookPrefs();
@@ -306,8 +443,8 @@ function spellbookClassRows(entries) {
     .concat(extra.map(name => ({ name, own: false, entry: null })));
 }
 
-// An owned class defaults to shown — `hiddenClasses` is an opt-OUT list, same
-// as `hiddenSchools`. Any other class defaults to hidden — `shownExtraClasses`
+// An owned class defaults to shown — `hiddenClasses` is an opt-OUT list. Any
+// other class defaults to hidden — `shownExtraClasses`
 // is an opt-IN list — so "every class is an option, but only your own are
 // checked to start" needs no first-run bookkeeping: an empty prefs object
 // already means exactly that.
@@ -361,26 +498,30 @@ function spellbookAvailableSpells(classRows) {
     .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 }
 
-function spellbookAvailableSchools(available) {
-  const schools = new Set(available.map(s => s.school || 'Other'));
-  return [...schools].sort((a, b) => a.localeCompare(b));
+// Every facet's checked tags. Class is not one of them — in Class mode it
+// decides which group a spell is listed under, not just whether it is.
+function spellPassesFacets(spell, prefs) {
+  return SPELLBOOK_FACETS.every(f => spellPassesFacet(spell, f, prefs[f.key]));
+}
+
+// The whole filter: granted by a checked class, and through every facet. What
+// a search shows in full; anything else it matches is greyed below.
+function spellPassesFilters(spell, classRows, prefs) {
+  const enabledNames = new Set(classRows.filter(spellbookClassChecked).map(r => r.name));
+  return spellPassesFacets(spell, prefs) &&
+    spellGrantingClasses(spell, classRows).some(c => enabledNames.has(c));
 }
 
 // Groups `available` for the panel per `prefs`: by class (checked classes, in
 // `classRows` order), by school (alphabetical), or `all` (one flat list) —
-// sorted by level then name within every group either way. An unchecked class
-// or school drops its spells from view entirely (never from `knownSpells`
-// itself — see `renderSpellSheetContent()`). A spell surviving via more than
-// one checked class is listed once per class group, but only once for
-// school/all (a spell has one school, and `all` has no groups to repeat it
-// into).
+// sorted by level then name within every group either way. A spell filtered
+// out drops from view entirely (never from `knownSpells` itself — see
+// `renderSpellSheetContent()`). A spell surviving via more than one checked
+// class is listed once per class group, but only once for school/all (a spell
+// has one school, and `all` has no groups to repeat it into).
 function spellbookSections(available, classRows, prefs) {
   const byLevelThenName = (a, b) => a.level - b.level || a.name.localeCompare(b.name);
-  const enabledNames = new Set(classRows.filter(spellbookClassChecked).map(r => r.name));
-  const isVisible = spell => {
-    if (prefs.hiddenSchools.includes(spell.school || 'Other')) return false;
-    return spellGrantingClasses(spell, classRows).some(c => enabledNames.has(c));
-  };
+  const isVisible = spell => spellPassesFilters(spell, classRows, prefs);
 
   if (prefs.sortMode === 'all') {
     const spells = available.filter(isVisible).sort(byLevelThenName);
@@ -403,7 +544,7 @@ function spellbookSections(available, classRows, prefs) {
   const byClass = new Map();
   classRows.forEach(row => { if (spellbookClassChecked(row)) byClass.set(row.name, []); });
   available.forEach(spell => {
-    if (prefs.hiddenSchools.includes(spell.school || 'Other')) return;
+    if (!spellPassesFacets(spell, prefs)) return;
     spellGrantingClasses(spell, classRows).forEach(cls => {
       if (byClass.has(cls)) byClass.get(cls).push(spell);
     });
@@ -427,8 +568,8 @@ function spellPickerMeta(spell, classRows, prefs) {
 
 function renderSpellbookSettings(classRows, available) {
   const classBox = document.getElementById('spellbook-class-filters');
-  const schoolBox = document.getElementById('spellbook-school-filters');
-  if (!classBox || !schoolBox) return;
+  const facetBox = document.getElementById('spellbook-facet-filters');
+  if (!classBox || !facetBox) return;
 
   classBox.textContent = '';
   classRows.forEach(row => {
@@ -437,16 +578,34 @@ function renderSpellbookSettings(classRows, available) {
       checked => setSpellbookClassChecked(row, checked)));
   });
 
-  schoolBox.textContent = '';
-  spellbookAvailableSchools(available).forEach(school => {
-    schoolBox.appendChild(spellbookFilterCheckbox(
-      school, !spellbookPrefs.hiddenSchools.includes(school),
-      checked => setSpellbookFilter('hiddenSchools', school, !checked)));
+  facetBox.textContent = '';
+  SPELLBOOK_FACETS.forEach(facet => {
+    const checked = spellbookPrefs[facet.key];
+    const options = spellbookFacetOptions(facet, available, checked);
+    if (!options.length) return;
+    const section = document.createElement('div');
+    const label = document.createElement('span');
+    label.className = 'spellbook-settings-label';
+    label.textContent = facet.label;
+    const group = document.createElement('div');
+    group.className = 'spellbook-filter-group';
+    options.forEach(tag => {
+      const box = spellbookFilterCheckbox(tag, checked.includes(tag),
+        on => setSpellbookFilter(facet.key, tag, on));
+      if (facet.titles?.[tag]) box.title = facet.titles[tag];
+      group.appendChild(box);
+    });
+    section.append(label, group);
+    facetBox.appendChild(section);
   });
 
   document.querySelectorAll('#spellbook-sort input[name="spellbook-sort"]').forEach(radio => {
     radio.checked = radio.value === spellbookPrefs.sortMode;
   });
+  // The panel folds away, so the button says when something in it is narrowing the list.
+  const filtered = !spellbookFiltersAreDefault(spellbookPrefs);
+  document.getElementById('spellbook-settings-btn').classList.toggle('filtered', filtered);
+  document.getElementById('spellbook-reset-filters').disabled = !filtered;
 }
 
 function spellbookFilterCheckbox(label, checked, onChange) {
@@ -459,14 +618,30 @@ function spellbookFilterCheckbox(label, checked, onChange) {
   return wrap;
 }
 
-function setSpellbookFilter(prefKey, name, hidden) {
+function setSpellbookFilter(prefKey, name, checked) {
   const list = spellbookPrefs[prefKey];
   const at = list.indexOf(name);
-  if (hidden && at === -1) list.push(name);
-  else if (!hidden && at !== -1) list.splice(at, 1);
+  if (checked && at === -1) list.push(name);
+  else if (!checked && at !== -1) list.splice(at, 1);
   saveSpellbookPrefs();
   renderSpellSheetContent();
 }
+
+// Every facet unticked and the class boxes back to the character's own —
+// the sort mode and the search box are not filters, and are left alone.
+function resetSpellbookFilters() {
+  spellbookPrefs = { ...defaultSpellbookFilters(), sortMode: spellbookPrefs.sortMode };
+  saveSpellbookPrefs();
+  renderSpellSheetContent();
+}
+
+document.getElementById('spellbook-reset-filters').addEventListener('click', resetSpellbookFilters);
+
+document.getElementById('spellbook-search').addEventListener('input', e => {
+  spellbookQuery = e.target.value.trim().toLowerCase();
+  renderSpellSheetContent();
+  document.getElementById('spellbook-list').scrollTop = 0;
+});
 
 document.getElementById('spellbook-settings-btn').addEventListener('click', () => {
   document.getElementById('spellbook-settings').classList.toggle('hidden');
@@ -578,10 +753,18 @@ function renderSpellSheetContent() {
     });
   }
 
-  const sections = spellbookSections(available, classRows, spellbookPrefs);
+  // A search looks inside the filters first; whatever else it matches by name
+  // is listed after, greyed — still a click to pick, just plainly outside
+  // what the boxes ask for.
+  const query = spellbookQuery;
+  const named = available.filter(s => spellNameMatches(s, query));
+  const sections = spellbookSections(named, classRows, spellbookPrefs);
+  const outside = query ? named.filter(s => !spellPassesFilters(s, classRows, spellbookPrefs)) : [];
   if (!sections.length) {
-    pickerBox.appendChild(spellNote('Nothing matches the current filters.'));
-    return;
+    pickerBox.appendChild(spellNote(
+      !query ? 'Nothing matches the current filters.'
+      : outside.length ? 'Nothing within the current filters.'
+      : `No spell called “${document.getElementById('spellbook-search').value.trim()}”.`));
   }
   sections.forEach(({ heading, spells }) => {
     if (heading) pickerBox.appendChild(spellbookGroupHeading(heading));
@@ -596,6 +779,16 @@ function renderSpellSheetContent() {
         spellPickerMeta(spell, classRows, spellbookPrefs)));
     });
   });
+  if (outside.length) {
+    pickerBox.appendChild(spellbookGroupHeading('Outside your filters'));
+    outside.forEach(spell => {
+      const card = spellPickerCard(spell, isSpellKnown(character, spell.id), readOnly,
+        [spell.level === 0 ? 'Cantrip' : spellLevelLabel(spell.level).replace(' Level', ''),
+          spellGrantingClasses(spell, classRows).join(', ')].filter(Boolean).join(' · '));
+      card.classList.add('outside');
+      pickerBox.appendChild(card);
+    });
+  }
 }
 
 function spellbookGroupHeading(text) {

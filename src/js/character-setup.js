@@ -103,6 +103,19 @@ document.getElementById('save-char-btn').addEventListener('click', () => {
 
 document.getElementById('sheet-setup-btn').addEventListener('click', () => openCharModal());
 
+// The header name opens the same dialog from any view, gated like the sheet's gear.
+const charNameDisplayEl = document.getElementById('char-name-display');
+function _openCharModalFromHeader() {
+  if (isReadOnly()) return;
+  openCharModal();
+}
+charNameDisplayEl.addEventListener('click', _openCharModalFromHeader);
+charNameDisplayEl.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  _openCharModalFromHeader();
+});
+
 // ─── THE CLASS ROWS ───
 // One row per class: name, level, and (once that class's level has unlocked one)
 // subclass. Rows are built once and written into, never rebuilt on a keystroke;

@@ -46,6 +46,10 @@
   color: var(--accent);
   text-shadow: 0 1px 0 var(--emboss-hi);
 }
+/* Opens Character Setup, except on a sheet you can't edit. */
+body:not(.party-readonly) #char-name-display { cursor: pointer; }
+body:not(.party-readonly) #char-name-display:hover { text-decoration: underline; }
+body.party-readonly #char-name-display { pointer-events: none; }
 /* ─── WEIGHT READOUT ─────────────────────────────────────── */
 /* Bottom left of the inventory view: a zero-height row just above the stash,
    the readout hanging up out of it — the dice dock's trick, upside down. */

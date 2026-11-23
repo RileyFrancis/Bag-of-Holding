@@ -114,8 +114,18 @@ function _sanitizeSpellSlotClasses(raw) {
     const name = String(c?.name ?? '').trim();
     if (!name) return null;
     const slotsByLevel = _sanitizeSlotsByLevel(c?.slotsByLevel);
-    return Object.keys(slotsByLevel).length ? { name, slotsByLevel } : null;
+    return Object.keys(slotsByLevel).length
+      ? { name, slotsByLevel,
+          cantripsByLevel: _sanitizeCountsByLevel(c?.cantripsByLevel),
+          preparedByLevel: _sanitizeCountsByLevel(c?.preparedByLevel) }
+      : null;
   }).filter(Boolean);
+}
+
+// Twenty counts indexed by class level − 1, or null when the table lacks the column.
+function _sanitizeCountsByLevel(raw) {
+  if (!Array.isArray(raw)) return null;
+  return Array.from({ length: 20 }, (_, i) => Math.max(0, parseInt(raw[i], 10) || 0));
 }
 
 // Cleans a raw spell list into the app's spell shape, dropping entries with no
@@ -243,6 +253,40 @@ function isSpellSheetEnabled(character) {
 // question (`_getSpellbookAvailableSpells()`).
 function _isSpellKnown(character, spellId) {
   return Array.isArray(character?.knownSpells) && character.knownSpells.includes(spellId);
+}
+
+// How many more cantrips and levelled spells the character may still pick: the
+// class tables' Cantrips and Prepared Spells columns, summed across classes,
+// less what `knownSpells` already holds. Never negative.
+function getSpellChoiceShortfall(character) {
+  let cantripLimit = 0;
+  let spellLimit = 0;
+  getClassEntries(character).forEach(e => {
+    const def = _findSpellSlotClass(e.name);
+    if (!def) return;
+    const i = Math.max(1, Math.min(20, parseInt(e.level, 10) || 1)) - 1;
+    cantripLimit += def.cantripsByLevel?.[i] ?? 0;
+    spellLimit += def.preparedByLevel?.[i] ?? 0;
+  });
+  if (!cantripLimit && !spellLimit) return { cantrips: 0, spells: 0 };
+
+  // Ids whose spell is gone (homebrew switched off) count for nothing.
+  const levelById = new Map(_getAllSpells().map(s => [s.id, s.level]));
+  let cantrips = 0;
+  let spells = 0;
+  (Array.isArray(character?.knownSpells) ? character.knownSpells : []).forEach(id => {
+    if (!levelById.has(id)) return;
+    if (levelById.get(id) === 0) cantrips++; else spells++;
+  });
+  return { cantrips: Math.max(0, cantripLimit - cantrips), spells: Math.max(0, spellLimit - spells) };
+}
+
+// "Choose 2 more cantrips and 1 more spell", or '' when nothing is owed.
+function _getSpellShortfallText(shortfall) {
+  const parts = [];
+  if (shortfall.cantrips) parts.push(`${shortfall.cantrips} more cantrip${shortfall.cantrips === 1 ? '' : 's'}`);
+  if (shortfall.spells) parts.push(`${shortfall.spells} more spell${shortfall.spells === 1 ? '' : 's'}`);
+  return parts.length ? `Choose ${parts.join(' and ')}.` : '';
 }
 
 // The only write to `knownSpells`. Guarded by `isReadOnly()` itself, because a
@@ -671,6 +715,14 @@ function _renderSpellSheetContent() {
   const classRows = _getSpellbookClassRows(entries);
   const available = _getSpellbookAvailableSpells(classRows);
   _renderSpellbookSettings(classRows, available);
+
+  // Says what the reminder glow on this panel is asking for (pending-choices.js).
+  const shortfallText = _getSpellShortfallText(getSpellChoiceShortfall(character));
+  if (shortfallText && !readOnly) {
+    const note = _createSpellNote(shortfallText);
+    note.classList.add('spell-pending-note');
+    pickerBox.appendChild(note);
+  }
 
   if (!available.length) {
     listBox.appendChild(_createSpellNote('No spells known at this level yet.'));

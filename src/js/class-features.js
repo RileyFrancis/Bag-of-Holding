@@ -96,7 +96,15 @@ function sanitizeFeature(f) {
     level: Math.max(1, Math.min(20, level)),
     description: normalizeDescription(f?.description),
     unlocks: normalizeUnlocks(f?.unlocks),
+    options: normalizeFeatureOptions(f?.options),
   };
+}
+
+// The explicit picks a feature or trait offers (`"options": [...]`), trimmed and
+// de-duplicated; empty when the data names none.
+function normalizeFeatureOptions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map(o => String(o ?? '').trim()).filter(Boolean))];
 }
 
 // One key or several, always read back as an array.
@@ -200,6 +208,11 @@ function _getClassFeatureRows(character) {
   return rows;
 }
 
+// The class and subclass features the character has reached, in section order.
+function getOwnedClassFeatureRows(character) {
+  return _getClassFeatureRows(character).filter(r => r.owned);
+}
+
 // Names typed that this app has never heard of. Not an error — the section says so.
 function _getUnknownClassNames(character) {
   return getClassEntries(character).map(e => e.name).filter(n => !findClassByName(n));
@@ -239,6 +252,14 @@ function getClassUnlockKeys(classDef, subclassName, level) {
   return keys;
 }
 
+// Whether one class entry has reached its subclass feature with no subclass typed.
+// An unknown class is never pending: there is nothing to say it has one.
+function isSubclassChoicePending(entry) {
+  if (String(entry?.subclass ?? '').trim()) return false;
+  const keys = getClassUnlockKeys(findClassByName(entry?.name), '', entry?.level ?? 1);
+  return !!keys && keys.has('subclass');
+}
+
 // Class and species unlocks share one key space; species-traits.js supplies its
 // half. Authoritative only when both halves are: if either cannot be reasoned
 // about, a hidden box might be one the character should have.
@@ -261,7 +282,8 @@ function _applyFeatureUnlocks() {
 
 // ─── THE SECTION ───
 
-function _getFeatureKey(row, scope) {
+// The key a card is folded and its choice saved under: 'class:<id>' or 'species:<id>'.
+function getFeatureCardKey(row, scope) {
   return `${scope}:${row.id}`;
 }
 
@@ -281,6 +303,7 @@ function _getClassFeaturesSignature() {
     c.level ?? '', c.race || '',
     showLockedFeatures ? '1' : '0',
     getHomebrewUsableKey(), // a homebrew class enabled or edited under the sheet
+    getFeatureChoicesSignature(c), // a pick made here or synced in redraws its card
   ].join('‖');
 }
 
@@ -350,7 +373,7 @@ function _renderFeatureDescription(el, src) {
 // drops the level badge, `opts.scope` keys the fold state (default 'class').
 function buildFeatureCard(row, opts = {}) {
   const hasBadge = opts.badge !== false;
-  const key = _getFeatureKey(row, opts.scope ?? 'class');
+  const key = getFeatureCardKey(row, opts.scope ?? 'class');
   const isExpanded = !collapsedFeatures.has(key);
 
   const card = document.createElement('article');
@@ -401,6 +424,10 @@ function buildFeatureCard(row, opts = {}) {
   const text = document.createElement('div');
   text.className = 'feature-text';
   text.append(name, desc);
+
+  // A feature that asks the player to pick something carries its picker.
+  const choice = row.owned ? buildFeatureChoiceBlock(row, key) : null;
+  if (choice) text.appendChild(choice);
 
   if (hasBadge) card.append(level, text);
   else card.append(text);
@@ -479,7 +506,7 @@ function _onFeatureCardClick(e) {
   if (!card) return;
 
   // A description may hold a link, and the section's controls sit in the title.
-  if (e.target.closest('a, input, textarea, select, label')) return;
+  if (e.target.closest('a, input, textarea, select, label, .feature-choice')) return;
   if (e.target.closest('button') && !e.target.closest('.feature-name-btn')) return;
 
   // A click that ends a drag-select is a reader highlighting a passage to copy.

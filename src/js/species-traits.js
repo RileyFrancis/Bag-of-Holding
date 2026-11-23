@@ -59,6 +59,7 @@ function sanitizeTrait(t) {
     level: Number.isFinite(level) ? Math.max(1, Math.min(20, level)) : 1,
     description: normalizeDescription(t?.description), // shared with class-features.js
     unlocks: normalizeUnlocks(t?.unlocks),              // shared with class-features.js
+    options: normalizeFeatureOptions(t?.options),       // shared with class-features.js
   };
 }
 
@@ -94,6 +95,11 @@ function _getSpeciesTraitRows(character) {
     .sort((a, b) => a.level - b.level || a.order - b.order);
 }
 
+// The species traits the character has reached.
+function getOwnedSpeciesTraitRows(character) {
+  return _getSpeciesTraitRows(character).filter(r => r.owned);
+}
+
 // The name typed that this app has never heard of, or '' when blank or known.
 function _getUnknownSpeciesName(character) {
   const typed = String(character?.race ?? '').trim();
@@ -126,7 +132,8 @@ function areSpeciesUnlocksAuthoritative(character) {
 // `renderCharacterSheet()` calls it on every keystroke; this gates the rebuild.
 function _getSpeciesTraitsSignature() {
   const c = state.character || {};
-  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0', getHomebrewUsableKey()].join('‖');
+  return [c.race || '', c.level ?? '', showLockedTraits ? '1' : '0', getHomebrewUsableKey(),
+    getFeatureChoicesSignature(c)].join('‖');
 }
 
 // Draws the species traits section of the sheet.

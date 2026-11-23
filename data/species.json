@@ -4,7 +4,9 @@
     "src/js/species-traits.js, which is the only file that may touch this.",
     "",
     "A species is { id, name, traits[] }; a trait is",
-    "{ id, level, name, description, unlocks? }.",
+    "{ id, level, name, description, unlocks?, options? }. `options` lists the",
+    "picks a trait asks for in prose (\"Choose Drow, High Elf or Wood Elf\"); the",
+    "sheet offers them as buttons and reminds the player until one is chosen.",
     "",
     "  id          stable, and never derived from position. A default item's id",
     "              is its CSV row number and that has bitten this project before",
@@ -71,6 +73,7 @@
       "traits": [
         {
           "id": "dragonborn-draconic-ancestry",
+          "options": ["Black", "Blue", "Brass", "Bronze", "Copper", "Gold", "Green", "Red", "Silver", "White"],
           "name": "Draconic Ancestry",
           "description": "Choose a kind of dragon. That choice sets the damage type of your Breath Weapon and your resistance."
         },
@@ -134,6 +137,7 @@
         },
         {
           "id": "elf-elven-lineage",
+          "options": ["Drow", "High Elf", "Wood Elf"],
           "name": "Elven Lineage",
           "description": "Choose Drow, High Elf or Wood Elf. Each grants a cantrip now and a spell at 3rd and 5th level, and Drow widens your Darkvision to 120 feet while Wood Elf raises your speed to 35."
         },
@@ -170,6 +174,7 @@
         },
         {
           "id": "gnome-gnomish-lineage",
+          "options": ["Forest Gnome", "Rock Gnome"],
           "name": "Gnomish Lineage",
           "description": "Choose Forest Gnome for Minor Illusion and Speak with Animals, or Rock Gnome for Mending, Prestidigitation and a small clockwork device you can build."
         }
@@ -181,6 +186,7 @@
       "traits": [
         {
           "id": "goliath-giant-ancestry",
+          "options": ["Cloud", "Fire", "Frost", "Hill", "Stone", "Storm"],
           "name": "Giant Ancestry",
           "description": "Choose a supernatural boon from your giant forebears - Cloud, Fire, Frost, Hill, Stone or Storm. Uses equal to your proficiency bonus per long rest."
         },
@@ -276,6 +282,7 @@
         },
         {
           "id": "tiefling-fiendish-legacy",
+          "options": ["Abyssal", "Chthonic", "Infernal"],
           "name": "Fiendish Legacy",
           "description": "Choose Abyssal, Chthonic or Infernal. Each grants a damage resistance and a cantrip now, and a spell at 3rd and 5th level."
         },

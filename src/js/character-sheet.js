@@ -36,6 +36,8 @@ function getDefaultSheetFields() {
     // Slots SPENT per spell level (index 0 = 1st), never slots left — see spells.js's casting.
     spellSlotsUsed: { slots: [], pact: [] },
     statuses: [],    // ids from data/statuses.json the player has picked — see statuses.js
+    // Picks made on feature cards, keyed by card key ('class:<id>' / 'species:<id>') — see feature-choices.js.
+    featureChoices: {},
   };
 }
 

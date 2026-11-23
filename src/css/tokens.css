@@ -163,6 +163,14 @@
   --crit:   var(--crit-main);
   --fumble: var(--fumble-main);
 
+  /* The glow on anything still waiting for the player to choose it. Same
+     arrangement as the dice: `--pending` follows the main red unless a custom
+     accent or panel colour lands too close to it, and then appearance.js points
+     it at the alternate (`_getPendingColorSwaps()`). */
+  --pending-main: #d0241b;
+  --pending-alt:  #0b8a8f;
+  --pending: var(--pending-main);
+
   /* Rarity — deepened so they hold contrast on parchment */
   --rarity-common:    #6d6355;
   --rarity-uncommon:  #2c7d34;
@@ -266,6 +274,8 @@
   --crit-alt:    #4fb8e0;
   --fumble-main: var(--danger);
   --fumble-alt:  #d067d6;
+  --pending-main: #ff4b3e;
+  --pending-alt:  #3fd6dc;
 
   --rarity-common:    #b3a894;
   --rarity-uncommon:  #56d95f;

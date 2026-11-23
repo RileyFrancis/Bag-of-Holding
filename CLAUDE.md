@@ -40,8 +40,7 @@ state.mode        'idle' | 'placing' | 'dragging'
 
 ### Grid and items
 
-- `state.grid` is authoritative; placed-item `<div>`s are only visual, rebuilt by
-  `renderAllItems()`.
+- `state.grid` is authoritative; placed-item `<div>`s are only visual, rebuilt by `renderAllItems()`.
 - **The grid can shrink under its items.** `rebuildGrid()` must unplace (clear `row`/`col`)
   whatever no longer fits, or the item stays invisibly clipped and still charged for weight.
 - A Strength edit resizes the grid only on return to the inventory (`markGridSizeDirty()` /
@@ -148,9 +147,10 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
 - Every class is read at its **own** level; features and traits are matched by name, not id.
 - Derive what the rules settle (modifiers, prof bonus, passive Perception) as text; only what they
   don't (AC, HP) is an input. Scores run 0–30. Read-only when `isReadOnly()`.
-- Statuses: a stacking status stores **each level as the id repeated** in `character.statuses`.
-  Derived ones (Encumbered) come from `getEncumbranceLevel()` and are **never stored**. Chips redraw
-  only on a signature change, or a sync would orphan an open hover card.
+- Statuses: a stacking status stores **each level as the id repeated**; derived ones (Encumbered)
+  are **never stored**. Chips redraw only on a signature change, or a sync orphans a hover card.
+- Feature picks live in `featureChoices` by card key; both feature sections' signatures **must
+  include `getFeatureChoicesSignature()`**. An ASI writes into `abilities`; Undo subtracts its picks.
 
 ### Spells
 
@@ -194,6 +194,6 @@ checked after invisible characters are stripped (`java&#9;script:`).
 
 ### Theming
 
-- `_getCritColorSwaps()` re-points `--crit`/`--fumble` when the accent is too close. Never override
-  the `-main`/`-alt` tokens; they are what the check reads.
+- `_getCritColorSwaps()`/`_getPendingColorSwaps()` re-point `--crit`/`--fumble`/`--pending` when a
+  custom colour is too close. Never override the `-main`/`-alt` tokens; they are what the check reads.
 - **Any render path that inlines a palette colour must re-run from `_rerenderThemedContent()`.**

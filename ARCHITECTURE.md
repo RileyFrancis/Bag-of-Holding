@@ -66,6 +66,7 @@ In load order.
 | `items.js` | CSV parsing into `DEFAULT_ITEMS` |
 | `constants.js` | Constants read by more than one file: grid geometry, rarities, sheet abilities/skills, folder and homebrew kinds, battle-map defaults, the default equip layout |
 | `state.js` | The `state` object and convenience accessors |
+| `pending-choices.js` | The reminder glow on unmade choices, the route to them, and the edge indicators |
 | `folders.js` | Browse-list folders: model, persistence, folder modals |
 | `item-sort.js` | The Browse list's sort order: the modes, their persistence, the menu |
 | `shapes.js` | Rotation, shape cell and bounding-box math |
@@ -99,6 +100,7 @@ In load order.
 | `character-sheet.js` | Page one of the 2024 sheet: abilities, skills, combat stats |
 | `class-features.js` | The class registry, and the sheet's Class Features section |
 | `species-traits.js` | The species registry, and the sheet's Species Traits section |
+| `feature-choices.js` | Picks a feature or trait asks for (options, Ability Score Improvement), and their picker on the card |
 | `markdown.js` | Markdown to HTML for the written sections, and the sanitizer |
 | `sheet-prose.js` | Backstory & Appearance: the editor/preview swap |
 | `statuses.js` | The status registry, and the sheet's Statuses section and its picker |
@@ -132,7 +134,7 @@ that owns the element wins.
 | `character.css` | The character tabs, and page one of the 2024 sheet |
 | `character-setup.css` | The sheet's gear button, and the class rows and option picker in the setup modal |
 | `sheet-layout.css` | The sheet's split containers, resize seams, drop feedback |
-| `class-features.css` | The feature cards and badges — Class Features and Species Traits both |
+| `class-features.css` | The feature cards and badges — Class Features and Species Traits both — and a card's picker |
 | `sheet-prose.css` | The written sections: the bar, the editor, and the rendered prose |
 | `statuses.css` | The Statuses section's chips, and the picker that adds them |
 | `party.css` | Party header badge, sidebar Party tab, party modal, kick |
@@ -140,6 +142,7 @@ that owns the element wins.
 | `homebrew.css` | The home screen's Homebrew section, its file tree, and the New Homebrew panel |
 | `chat.css` | The sidebar's Chat pane, its messages and composer, and a roll said in it |
 | `dice.css` | The flying number, the corner stack, the wheel, the hover card, the dice dock |
+| `pending.css` | The pulsing reminder glow and the scroller edge indicators |
 | `battlemap.css` | The map button, the map view, and the GM's library pane |
 | `initiative.css` | The turn order panel over the board, and its group-roll dialog |
 | `equipment.css` | The equip rack, the left-panel tabs, the layout editor |
@@ -195,6 +198,15 @@ Each sheet section is a widget, placed in a tree of row/col splits
 node so it travels with a moved section. The identity block sits outside
 `#sheet-layout` in `index.html`, because whose sheet this is should never be
 draggable away.
+
+**Pending choices.** `pending-choices.js` recomputes, one frame after any input
+event or view change, what the player's own character still has to choose: a
+subclass, a feature's pick, or spells the class tables still owe. Each glows
+where it is made; on another page, the clicks that lead there glow instead (the
+header name for a subclass, the own tab and its menu entry for the sheet or
+spell sheet). It is deliberately polled from events rather than called by each
+editor, so no edit path can forget it. A GM, having no character, is never
+reminded.
 
 ## Persistence
 
@@ -283,12 +295,25 @@ character's one free-text `subclass` field is matched against them and a match
 folds that subclass's features into the Class Features list. `source` is a
 short book label shown as a caption above the cards.
 
+A feature or trait that asks the player to pick something is recognised three
+ways (`getFeatureChoice()`): an explicit `options: [...]` list (the species
+traits whose prose names their picks inline), a description that says "gain /
+choose one of the following" followed by **bold-named** paragraphs, or the name
+"Ability Score Improvement". A "one of the following" sentence that also says
+"each time", "whenever" or "when you" is a choice made at the table, not one to
+save. Picks live in `character.featureChoices`, keyed by card key
+(`class:<id>` / `species:<id>`). An Ability Score Improvement writes its +1s
+straight into `abilities` and records them, so Undo can take them back off.
+
 `data/spells.json` is `{ id, name, level, school, castingTime, range, components,
 duration, classes: [...], description }` per spell — `description` is Markdown
 too, same rules as `classes.json`/`species.json`, but always a single string
 here rather than an array. `classes` names entries in `data/spell-slots.json`'s
 own class list, matched by name the same case-insensitive way `class-features.js`
-matches a character's `classLevels`. `tools/spell-editor.html` is a form for
+matches a character's `classLevels`. Each class there also carries
+`cantripsByLevel` / `preparedByLevel` (the class table's columns, indexed by its
+own level − 1); `getSpellChoiceShortfall()` sums them across classes against
+`knownSpells` to say how many picks are still owed. `tools/spell-editor.html` is a form for
 adding or editing entries in this file without hand-writing JSON, with a live
 preview rendered through the real `markdown.js`; it writes the file directly via
 the File System Access API when the browser supports picking a file to save in
@@ -322,6 +347,10 @@ be wrong in one of the two themes. The single exception is the hue wheel in
 - The accent colour is separately customisable per browser. What the user picks
   is a **hue and a saturation, never a lightness** — each theme supplies its own
   lightness, which is what keeps a custom colour readable on either ground.
+- `--crit`, `--fumble` and `--pending` (the reminder glow) are aliases that
+  appearance.js re-points at their `-alt` colour when a custom colour crowds the
+  main one: the dice against the accent, the glow against the accent, secondary
+  and panel colours.
 - Rarity and coin colours differ per theme and are read out of CSS by JS. Any
   render path that bakes a palette colour into an inline style must be re-run
   from `_rerenderThemedContent()` on a theme switch.

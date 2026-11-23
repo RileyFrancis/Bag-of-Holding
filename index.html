@@ -97,6 +97,7 @@
   <link rel="stylesheet" href="src/css/homebrew.css">
   <link rel="stylesheet" href="src/css/battlemap.css">
   <link rel="stylesheet" href="src/css/initiative.css">
+  <link rel="stylesheet" href="src/css/pending.css">
 </head>
 <body>
 
@@ -781,10 +782,14 @@
             <span class="spellbook-settings-label">Classes</span>
             <div id="spellbook-class-filters" class="spellbook-filter-group"><!-- built by _renderSpellbookSettings() --></div>
           </div>
-          <div>
-            <span class="spellbook-settings-label">Schools</span>
-            <div id="spellbook-school-filters" class="spellbook-filter-group"><!-- built by _renderSpellbookSettings() --></div>
-          </div>
+          <!-- School, casting time, components, range, duration: one group per
+               SPELLBOOK_FACETS entry, built by _renderSpellbookSettings(). -->
+          <div id="spellbook-facet-filters"></div>
+          <button id="spellbook-reset-filters" class="btn-sm" type="button">Reset filters</button>
+        </div>
+        <div id="spellbook-search-row">
+          <input type="search" id="spellbook-search" placeholder="Search spells…"
+                 autocomplete="off" aria-label="Search spells">
         </div>
         <div id="spellbook-list" class="spell-picker-list"></div>
       </div>
@@ -1866,6 +1871,8 @@
 
 <script src="src/js/constants.js"></script>
 <script src="src/js/state.js"></script>
+<!-- Early on purpose: syncCharacterViewUI() calls into it from load-time code. -->
+<script src="src/js/pending-choices.js"></script>
 <script src="src/js/folders.js"></script>
 <script src="src/js/item-sort.js"></script>
 <script src="src/js/shapes.js"></script>
@@ -1917,6 +1924,7 @@
      normalizeDescription() while parsing data/species.json, which happens at
      load time, not at render. -->
 <script src="src/js/species-traits.js"></script>
+<script src="src/js/feature-choices.js"></script>
 <!-- A third small registry, same shape as the two above: spell slots per class
      level, and the spells each class can cast. Its own view of a character,
      alongside the inventory and the sheet — see character-tabs.js. -->

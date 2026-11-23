@@ -252,6 +252,16 @@ function _getDuplicateCharClassIndexes() {
 
 function _hasDuplicateCharClass() { return _getDuplicateCharClassIndexes().size > 0; }
 
+// The subclass boxes in the open dialog whose class level has reached a subclass
+// that is still blank; empty while the dialog is closed. Read by pending-choices.js.
+function getCharModalPendingSubclassInputs() {
+  if (document.getElementById('character-modal').classList.contains('hidden')) return [];
+  return [...charClassRowsEl.querySelectorAll('.class-row')].filter(row => {
+    const entry = charModalClasses[parseInt(row.dataset.index, 10)];
+    return entry && isSubclassChoicePending(entry);
+  }).map(row => row.querySelector('.class-row-subclass'));
+}
+
 // Marks repeated classes and disables Save while any remain.
 function _syncCharClassDuplicates() {
   const duplicates = _getDuplicateCharClassIndexes();

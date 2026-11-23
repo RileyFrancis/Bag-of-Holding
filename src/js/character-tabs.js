@@ -123,6 +123,9 @@ function _closeCharacterTabMenu() {
   charTabMenuEl.classList.add('hidden');
 }
 
+// The key of the tab whose view menu is open, or null.
+function getOpenCharacterTabMenuKey() { return openTabMenuKey; }
+
 // The tick marks the view you are already on, which only means anything on the
 // tab of the character currently being shown.
 function _updateCharacterTabMenuState() {
@@ -224,6 +227,7 @@ function syncCharacterViewUI() {
   renderCharacterTabs();
   syncSidebarTabs(); // the sidebar's tabs answer the same question
   syncLeftPanel();   // and so does the left panel's
+  schedulePendingChoicesSync(); // the way to an unmade choice depends on what is showing
 }
 
 // ─── KEYBOARD SHORTCUTS ───

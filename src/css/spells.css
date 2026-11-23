@@ -646,3 +646,11 @@
   color: var(--text-dim);
 }
 .spell-card.has-school-icon .spell-hover-level { padding-right: 50px; }
+
+/* What the reminder glow on the Available Spells list is asking for (pending.css). */
+.spell-pending-note {
+  margin: 2px 0 8px;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text);
+}

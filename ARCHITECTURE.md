@@ -103,7 +103,7 @@ In load order.
 | `sheet-prose.js` | Backstory & Appearance: the editor/preview swap |
 | `statuses.js` | The status registry, and the sheet's Statuses section and its picker |
 | `sheet-layout.js` | The sheet's sections as widgets: the split tree, drag-to-tile |
-| `character-setup.js` | The Character Setup modal: name, species, background, class rows |
+| `character-setup.js` | The Character Setup modal: name, species, background, class rows, and the parchment option picker beside it |
 | `equipment.js` | Equip slots, layout editor, equip/unequip |
 | `shop.js` | The left panel's tabs, GM shop editor, player shopfront, paying |
 | `chat.js` | The campaign's chat log, and the sidebar's Chat pane |
@@ -130,7 +130,7 @@ that owns the element wins.
 | `sidebar.css` | The right panel: browse list, folders, details, menus |
 | `modals.css` | Modal chrome, the item form's shape preview, and the shape painter |
 | `character.css` | The character tabs, and page one of the 2024 sheet |
-| `character-setup.css` | The sheet's gear button, and the class rows in the setup modal |
+| `character-setup.css` | The sheet's gear button, and the class rows and option picker in the setup modal |
 | `sheet-layout.css` | The sheet's split containers, resize seams, drop feedback |
 | `class-features.css` | The feature cards and badges — Class Features and Species Traits both |
 | `sheet-prose.css` | The written sections: the bar, the editor, and the rendered prose |

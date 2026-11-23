@@ -146,6 +146,14 @@
       <feDisplacementMap in="SourceGraphic" in2="fray-noise" scale="34"
                          xChannelSelector="R" yChannelSelector="G"/>
     </filter>
+    <!-- The same tear at the scale of a small slip (the option picker). -->
+    <filter id="paper-fray-small" x="-6%" y="-6%" width="112%" height="112%"
+            color-interpolation-filters="sRGB" filterUnits="objectBoundingBox">
+      <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="4"
+                    seed="9" result="fray-noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="fray-noise" scale="9"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
   </defs>
 </svg>
 
@@ -1023,20 +1031,20 @@
     <label class="field">
       <span>Species</span>
       <input type="text" id="char-race-input" maxlength="30" placeholder="e.g. Half-Elf"
-             list="species-options">
+             data-options="species-options" autocomplete="off">
       <datalist id="species-options"><!-- filled by fillDatalist() --></datalist>
     </label>
     <div class="form-two-col">
       <label class="field">
         <span>Background</span>
         <input type="text" id="char-background-input" maxlength="40" placeholder="e.g. Soldier"
-               list="background-options">
+               data-options="background-options" autocomplete="off">
         <datalist id="background-options"><!-- usable homebrew backgrounds, fillDatalist() --></datalist>
       </label>
       <label class="field">
         <span>Alignment</span>
         <input type="text" id="char-alignment-input" maxlength="30" placeholder="e.g. Chaotic Good"
-               list="alignment-options">
+               data-options="alignment-options" autocomplete="off">
         <datalist id="alignment-options"><!-- filled by fillDatalist() --></datalist>
       </label>
     </div>
@@ -1044,7 +1052,8 @@
     <!-- Class rows. `#char-class-rows` is filled by renderCharClassRows(); the
          one class datalist is shared by every row, since every row offers the
          same list of classes. Each row mints its own subclass datalist, because
-         those differ by class. -->
+         those differ by class. The datalists are never linked with `list=`:
+         an input's `data-options` names the one #char-picker reads. -->
     <div class="class-editor">
       <div class="class-editor-head">
         <span class="class-editor-title">Classes</span>
@@ -1072,6 +1081,13 @@
       <button id="save-char-btn" class="btn-primary">Save</button>
       <button class="cancel-btn btn-sm">Cancel</button>
     </div>
+  </div>
+
+  <!-- The option picker: a parchment slip beside the dialog, listing the options
+       of whichever `data-options` field has focus. After the box so it paints
+       over it when the screen is too narrow to sit beside it. -->
+  <div id="char-picker" class="char-picker" aria-hidden="true">
+    <div id="char-picker-list" class="char-picker-list" role="listbox" aria-label="Options"></div>
   </div>
 </div>
 

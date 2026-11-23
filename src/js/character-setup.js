@@ -23,10 +23,25 @@ const charLevelFieldEl = document.getElementById('char-level-field');
 const charTotalLevelEl = document.getElementById('char-total-level');
 const charClassDuplicateMsgEl = document.getElementById('char-class-duplicate-msg');
 const saveCharBtnEl = document.getElementById('save-char-btn');
+const charModalBoxEl = document.querySelector('#character-modal .modal-box');
+const charPickerEl = document.getElementById('char-picker');
+const charPickerListEl = document.getElementById('char-picker-list');
+
+const CHAR_PICKER_WIDTH = 200;  // px, matches .char-picker in character-setup.css
+const CHAR_PICKER_GAP = 14;     // px between the picker and the dialog
+const CHAR_PICKER_MARGIN = 8;   // px kept clear of the viewport edge
+const CHAR_PICKER_FADE = 32;    // px of fade at an edge options have scrolled past
+
+// The `data-options` field the picker serves (null when closed), the highlighted
+// row (-1 for none), and whether a pick is writing to the field right now.
+let charPickerInput = null;
+let charPickerActiveIndex = -1;
+let isCharPickerSelecting = false;
 
 // ─── OPENING AND SAVING ───
 // Opens Character Setup for a roster slot, the character on screen (null), or a new character.
 function openCharModal(targetId = null, { isNew = false } = {}) {
+  _closeCharPicker();
   charModalIsNew = isNew;
   charModalTargetId = isNew ? null : targetId;
 
@@ -83,6 +98,7 @@ saveCharBtnEl.addEventListener('click', () => {
   const current = charModalIsNew ? null
     : (charModalTargetId ? state.characters[charModalTargetId]?.character : state.character);
   const fields = _readCharModalFields(current);
+  _closeCharPicker();
   hideModal('character-modal');
 
   if (charModalIsNew) {
@@ -138,7 +154,7 @@ function _buildCharClassRow(entry, index) {
 
   row.append(
     _buildCharRowField('Class', _buildCharTextInput(entry.name, 'class-row-name', {
-      list: 'class-options', maxLength: 40, placeholder: 'e.g. Warlock',
+      options: 'class-options', maxLength: 40, placeholder: 'e.g. Warlock',
     })),
     _buildCharRowField('Level', _buildCharLevelInput(entry.level), 'class-row-field-level'),
   );
@@ -151,7 +167,7 @@ function _buildCharClassRow(entry, index) {
   sub.classList.add('class-row-sub');
   const dl = document.createElement('datalist');
   dl.id = `subclass-options-${index}`;
-  sub.querySelector('input').setAttribute('list', dl.id);
+  sub.querySelector('input').dataset.options = dl.id;
   sub.appendChild(dl);
   row.appendChild(sub);
 
@@ -176,12 +192,12 @@ function _buildCharRowField(label, input, extraClass = '') {
   return field;
 }
 
-function _buildCharTextInput(value, className, { list, maxLength, placeholder } = {}) {
+function _buildCharTextInput(value, className, { options, maxLength, placeholder } = {}) {
   const input = document.createElement('input');
   input.type = 'text';
   input.className = className;
   input.value = value ?? '';
-  if (list) input.setAttribute('list', list);
+  if (options) { input.dataset.options = options; input.autocomplete = 'off'; }
   if (maxLength) input.maxLength = maxLength;
   if (placeholder) input.placeholder = placeholder;
   return input;
@@ -285,3 +301,177 @@ document.getElementById('char-add-class-btn').addEventListener('click', () => {
   _syncCharClassSummary();
   row.querySelector('.class-row-name').focus();
 });
+
+// ─── THE OPTION PICKER ───
+// Every `data-options` field gets its suggestions from one parchment slip beside
+// the dialog. The field stays free text (homebrew names need not be listed); the
+// datalist named by `data-options` is only where the options are read from.
+
+function _getCharPickerNames(input, showAll) {
+  const dl = document.getElementById(input.dataset.options);
+  const names = dl ? [...dl.options].map(o => o.value) : [];
+  const query = input.value.trim().toLowerCase();
+  if (showAll || !query) return names;
+  return names.filter(n => n.toLowerCase().includes(query));
+}
+
+// Fills the list for the current field. `showAll` ignores what is typed, so a
+// field opened on a chosen value still offers the rest. Returns the row count.
+function _renderCharPicker(showAll) {
+  const current = charPickerInput.value.trim().toLowerCase();
+  charPickerListEl.textContent = '';
+  charPickerActiveIndex = -1;
+  charPickerInput.removeAttribute('aria-activedescendant');
+
+  _getCharPickerNames(charPickerInput, showAll).forEach((name, i) => {
+    const opt = document.createElement('div');
+    opt.className = 'char-picker-option';
+    opt.id = `char-picker-opt-${i}`;
+    opt.setAttribute('role', 'option');
+    opt.dataset.value = name;
+    opt.textContent = name;
+    const isSelected = name.toLowerCase() === current;
+    opt.classList.toggle('selected', isSelected);
+    opt.setAttribute('aria-selected', String(isSelected));
+    charPickerListEl.appendChild(opt);
+  });
+
+  charPickerListEl.scrollTop = 0;
+  const selected = charPickerListEl.querySelector('.selected');
+  if (selected) {
+    charPickerListEl.scrollTop = selected.offsetTop - (charPickerListEl.clientHeight - selected.offsetHeight) / 2;
+  }
+  _syncCharPickerFades();
+  return charPickerListEl.children.length;
+}
+
+function _setCharPickerVisible(isVisible) {
+  charPickerEl.classList.toggle('open', isVisible);
+  charPickerEl.setAttribute('aria-hidden', String(!isVisible));
+  charPickerInput?.setAttribute('aria-expanded', String(isVisible));
+}
+
+function _isCharPickerVisible() { return charPickerEl.classList.contains('open'); }
+
+function _openCharPicker(input) {
+  charPickerInput = input;
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-controls', charPickerListEl.id);
+  if (!_renderCharPicker(true)) { _setCharPickerVisible(false); return; }
+  _positionCharPicker();
+  _setCharPickerVisible(true);
+}
+
+// Fades the picker out and slides the dialog back to where it sat.
+function _closeCharPicker() {
+  _setCharPickerVisible(false);
+  charPickerInput?.removeAttribute('aria-activedescendant');
+  charPickerInput = null;
+  charPickerActiveIndex = -1;
+  charModalBoxEl.style.transform = '';
+}
+
+// Sits the picker left of the dialog, beside the field. The dialog moves right
+// only by what the left side lacks, and only as far as the right side has room;
+// past that the picker overlaps the dialog's edge.
+function _positionCharPicker() {
+  if (!charPickerInput) return;
+  // Measured mid-slide, so the box's current offset is taken back out first.
+  const currentShift = new DOMMatrixReadOnly(getComputedStyle(charModalBoxEl).transform).m41;
+  const box = charModalBoxEl.getBoundingClientRect();
+  const baseLeft = box.left - currentShift;
+  const baseRight = box.right - currentShift;
+
+  const needed = CHAR_PICKER_WIDTH + CHAR_PICKER_GAP + CHAR_PICKER_MARGIN - baseLeft;
+  const room = window.innerWidth - CHAR_PICKER_MARGIN - baseRight;
+  const shift = Math.max(0, Math.min(needed, room));
+  charModalBoxEl.style.transform = shift ? `translateX(${shift}px)` : '';
+
+  const left = Math.max(CHAR_PICKER_MARGIN, baseLeft + shift - CHAR_PICKER_GAP - CHAR_PICKER_WIDTH);
+  const field = charPickerInput.getBoundingClientRect();
+  const height = charPickerEl.offsetHeight;
+  const centred = field.top + field.height / 2 - height / 2;
+  const top = Math.max(CHAR_PICKER_MARGIN,
+    Math.min(centred, window.innerHeight - CHAR_PICKER_MARGIN - height));
+  charPickerEl.style.left = `${left}px`;
+  charPickerEl.style.top = `${top}px`;
+}
+
+// Fades only the edges an option can scroll past, so a short list has none.
+function _syncCharPickerFades() {
+  const list = charPickerListEl;
+  const below = list.scrollHeight - list.clientHeight - list.scrollTop;
+  list.style.setProperty('--fade-top', list.scrollTop > 1 ? `${CHAR_PICKER_FADE}px` : '0px');
+  list.style.setProperty('--fade-bottom', below > 1 ? `${CHAR_PICKER_FADE}px` : '0px');
+}
+
+function _setCharPickerActive(index) {
+  const options = charPickerListEl.children;
+  if (!options.length) return;
+  charPickerActiveIndex = (index + options.length) % options.length;
+  [...options].forEach((opt, i) => opt.classList.toggle('active', i === charPickerActiveIndex));
+  const active = options[charPickerActiveIndex];
+  active.scrollIntoView({ block: 'nearest' });
+  charPickerInput.setAttribute('aria-activedescendant', active.id);
+}
+
+// Writes the pick into the field (through an `input` event, so the class rows
+// hear it) and fades the picker out, leaving focus where it was.
+function _selectCharPickerOption(name) {
+  if (!charPickerInput) return;
+  isCharPickerSelecting = true;
+  charPickerInput.value = name;
+  charPickerInput.dispatchEvent(new Event('input', { bubbles: true }));
+  isCharPickerSelecting = false;
+  _setCharPickerVisible(false);
+}
+
+charModalBoxEl.addEventListener('focusin', e => {
+  if (e.target.dataset?.options) _openCharPicker(e.target);
+});
+
+charModalBoxEl.addEventListener('focusout', e => {
+  if (e.target === charPickerInput) _closeCharPicker();
+});
+
+// A field still focused after a pick reopens on a second click.
+charModalBoxEl.addEventListener('click', e => {
+  if (e.target === charPickerInput && !_isCharPickerVisible()) _openCharPicker(e.target);
+});
+
+// Typing narrows the list; nothing matching fades it out until something does.
+charModalBoxEl.addEventListener('input', e => {
+  if (e.target !== charPickerInput || isCharPickerSelecting) return;
+  const count = _renderCharPicker(false);
+  if (count) _positionCharPicker();
+  _setCharPickerVisible(count > 0);
+});
+
+charModalBoxEl.addEventListener('keydown', e => {
+  if (e.target !== charPickerInput) return;
+  const isVisible = _isCharPickerVisible();
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!isVisible) { _openCharPicker(charPickerInput); return; }
+    _setCharPickerActive(charPickerActiveIndex + (e.key === 'ArrowDown' ? 1 : -1));
+  } else if (e.key === 'Enter' && isVisible && charPickerActiveIndex >= 0) {
+    e.preventDefault();
+    _selectCharPickerOption(charPickerListEl.children[charPickerActiveIndex].dataset.value);
+  } else if (e.key === 'Escape' && isVisible) {
+    e.preventDefault();
+    e.stopPropagation(); // closes the picker, not whatever else listens for Escape
+    _setCharPickerVisible(false);
+  }
+});
+
+// A press on the slip must not blur the field, or focusout closes it mid-pick.
+charPickerEl.addEventListener('mousedown', e => e.preventDefault());
+charPickerListEl.addEventListener('click', e => {
+  const opt = e.target.closest('.char-picker-option');
+  if (opt) _selectCharPickerOption(opt.dataset.value);
+});
+charPickerListEl.addEventListener('scroll', _syncCharPickerFades, { passive: true });
+
+charModalBoxEl.addEventListener('scroll', _positionCharPicker, { passive: true });
+window.addEventListener('resize', _positionCharPicker);

@@ -21,6 +21,8 @@ let charModalClasses = [];
 const charClassRowsEl = document.getElementById('char-class-rows');
 const charLevelFieldEl = document.getElementById('char-level-field');
 const charTotalLevelEl = document.getElementById('char-total-level');
+const charClassDuplicateMsgEl = document.getElementById('char-class-duplicate-msg');
+const saveCharBtnEl = document.getElementById('save-char-btn');
 
 // ─── OPENING AND SAVING ───
 // Opens Character Setup for a roster slot, the character on screen (null), or a new character.
@@ -76,7 +78,8 @@ function _readCharModalFields(current) {
   };
 }
 
-document.getElementById('save-char-btn').addEventListener('click', () => {
+saveCharBtnEl.addEventListener('click', () => {
+  if (_hasDuplicateCharClass()) return;
   const current = charModalIsNew ? null
     : (charModalTargetId ? state.characters[charModalTargetId]?.character : state.character);
   const fields = _readCharModalFields(current);
@@ -215,6 +218,39 @@ function _syncCharClassSummary() {
   charTotalLevelEl.textContent = none
     ? ''
     : `Level ${getTotalLevel(sanitizeClassLevels(charModalClasses), 1)}`;
+  _syncCharClassDuplicates();
+}
+
+// Indexes of rows naming a class an earlier row already has.
+function _getDuplicateCharClassIndexes() {
+  const seen = new Set();
+  const duplicates = new Set();
+  charModalClasses.forEach((entry, i) => {
+    const key = getClassNameKey(entry.name);
+    if (!key) return;
+    if (seen.has(key)) duplicates.add(i);
+    else seen.add(key);
+  });
+  return duplicates;
+}
+
+function _hasDuplicateCharClass() { return _getDuplicateCharClassIndexes().size > 0; }
+
+// Marks repeated classes and disables Save while any remain.
+function _syncCharClassDuplicates() {
+  const duplicates = _getDuplicateCharClassIndexes();
+  charClassRowsEl.querySelectorAll('.class-row').forEach(row => {
+    const isDuplicate = duplicates.has(parseInt(row.dataset.index, 10));
+    row.classList.toggle('duplicate', isDuplicate);
+    row.querySelector('.class-row-name').setAttribute('aria-invalid', String(isDuplicate));
+  });
+
+  const firstName = duplicates.size ? charModalClasses[[...duplicates][0]].name.trim() : '';
+  charClassDuplicateMsgEl.textContent = firstName
+    ? `${firstName} is already on this character. Raise that row's level instead.`
+    : '';
+  charClassDuplicateMsgEl.classList.toggle('hidden', !firstName);
+  saveCharBtnEl.disabled = duplicates.size > 0;
 }
 
 // One listener for the whole list (the list is rebuilt on a removal).

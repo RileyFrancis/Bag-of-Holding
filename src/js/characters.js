@@ -69,9 +69,9 @@ function _normalizeClassLevels(m) {
 }
 
 // Cleans a classLevels list: string entries become objects, levels are clamped,
-// nameless entries are dropped.
+// nameless entries are dropped, and a repeated class folds into its first row.
 function sanitizeClassLevels(raw) {
-  return raw
+  const entries = raw
     .map(e => (typeof e === 'string' ? { name: e } : (e ?? {})))
     .map(e => ({
       name: String(e.name ?? '').trim(),
@@ -79,7 +79,23 @@ function sanitizeClassLevels(raw) {
       subclass: String(e.subclass ?? '').trim(),
     }))
     .filter(e => e.name);
+  return _mergeDuplicateClassEntries(entries);
 }
+
+// A class taken twice is one class at the summed level, so the total is kept.
+function _mergeDuplicateClassEntries(entries) {
+  const byKey = new Map();
+  entries.forEach(e => {
+    const first = byKey.get(getClassNameKey(e.name));
+    if (!first) { byKey.set(getClassNameKey(e.name), e); return; }
+    first.level = clampLevel(first.level + e.level);
+    if (!first.subclass) first.subclass = e.subclass;
+  });
+  return [...byKey.values()];
+}
+
+// The key two class names are compared by, so "fighter" and "Fighter " are one class.
+function getClassNameKey(name) { return String(name ?? '').trim().toLowerCase(); }
 
 // Clamps a character or class level to 1..MAX_LEVEL.
 function clampLevel(n) { return Math.max(1, Math.min(MAX_LEVEL, n)); }

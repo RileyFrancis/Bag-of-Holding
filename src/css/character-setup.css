@@ -101,6 +101,14 @@
 }
 .class-row-remove:hover { color: var(--danger); }
 
+/* A class already taken on an earlier row; Save stays disabled until it is fixed. */
+.class-row.duplicate .class-row-name { border-color: var(--danger); }
+.class-editor-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
 #char-add-class-btn { margin-top: 2px; }
 
 /* The plain Level box, for a character with no class for the total to be the

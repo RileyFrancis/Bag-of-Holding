@@ -668,6 +668,16 @@ function renderSpellSheet() {
 // The draw itself, outside the signature gate, so a known-spell toggle or prefs
 // change (neither in the signature) can force a repaint.
 function _renderSpellSheetContent() {
+  // Emptying the lists collapses both scrollers to the top; put them back after the rebuild.
+  const scrollers = ['spell-sheet', 'spellbook-list']
+    .map(id => document.getElementById(id))
+    .filter(Boolean)
+    .map(el => ({ el, top: el.scrollTop }));
+  _drawSpellSheetContent();
+  scrollers.forEach(({ el, top }) => { el.scrollTop = top; });
+}
+
+function _drawSpellSheetContent() {
   const slotsBox = document.getElementById('spell-slots');
   const listBox = document.getElementById('spell-list');
   const pickerBox = document.getElementById('spellbook-list');

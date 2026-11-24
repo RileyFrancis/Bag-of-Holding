@@ -351,6 +351,7 @@ function _startPresenceSweep() {
     if (sig === lastPresenceSignature) return;
     lastPresenceSignature = sig;
     _updatePartyPanel();
+    renderRestUI();
   }, PRESENCE_SWEEP_MS);
 }
 
@@ -385,6 +386,7 @@ function _subscribeToParty(code) {
   subscribeToChat(code);      // and so does its conversation
   subscribeToBattlemap(code); // and the board they are standing on
   subscribeToHomebrew(code);  // and whatever homebrew the table has been handed
+  subscribeToRest(code);      // and how rested they are
 
   // The campaign's own record — a GM renaming it, or a first join that had only
   // the code, both arrive here, and the home-screen bookmark is refreshed from it.
@@ -433,6 +435,7 @@ function _subscribeToParty(code) {
     noteCampaignRoster(state.party.code, players);
     lastPresenceSignature = _getPresenceSignature(); // the sweep only chases changes
     _updatePartyPanel();
+    renderRestUI(); // who a long rest vote is waiting on follows the roster
   });
 }
 
@@ -446,6 +449,7 @@ function leaveParty() {
   unsubscribeFromChat();
   unsubscribeFromBattlemap();
   unsubscribeFromHomebrew();
+  unsubscribeFromRest();
 
   // Marks us offline, then cancels the onDisconnect; cancelling alone would leave a lit dot.
   _endPresence();
@@ -471,6 +475,7 @@ function leaveParty() {
   }
 
   _updatePartyUI();
+  renderRestUI(); // back to solo rests
   switchTab('browse');
   renderHomeScreen(); // the campaign card is a Resume again
   syncRoute();        // off the table: campaign#<code> becomes character#<id>

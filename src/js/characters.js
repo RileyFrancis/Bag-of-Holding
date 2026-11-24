@@ -602,6 +602,7 @@ window.addEventListener('keydown', e => {
     && !isChatModalOpen()
     && !isStatusPickerOpen()
     && !isDiceDockOpen()
+    && !isShortRestTrayOpen()
     && !isItemDetailsOpen()
     && !rollGesture
     && !castGesture

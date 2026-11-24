@@ -84,6 +84,7 @@
   <link rel="stylesheet" href="src/css/party.css">
   <link rel="stylesheet" href="src/css/chat.css">
   <link rel="stylesheet" href="src/css/dice.css">
+  <link rel="stylesheet" href="src/css/rest.css">
   <link rel="stylesheet" href="src/css/equipment.css">
   <link rel="stylesheet" href="src/css/shop.css">
   <link rel="stylesheet" href="src/css/tooltip.css">
@@ -216,15 +217,29 @@
         <button id="return-to-own-btn" class="btn-sm">Return to Your Inventory</button>
       </div>
       <!-- The dice dock: a button in the top right of whatever this panel is
-           showing, opening a column of faces to build a handful from, a Roll
-           button, and a modifier. A zero-height row here, so it always hangs
+           showing, opening a column of faces (beside it, to the left of the
+           rest buttons) to build a handful from, a Roll button, and a modifier. A zero-height row here, so it always hangs
            just under the tabs and banners above, however many are showing.
            The faces are built from DICE_FACES by _buildDiceDock() in
            src/js/dice.js. -->
       <div id="dice-dock">
         <button id="dice-dock-btn" type="button" title="Roll dice" aria-label="Roll dice"
                 aria-expanded="false" aria-controls="dice-dock-panel"><span class="ico ico-dice"></span></button>
-        <div id="dice-dock-panel" class="hidden">
+        <!-- Short and long rest, stacked under the dice button. Wired by
+             src/js/rest.js; the short rest's tray of remaining rests slides
+             out to the left of its button. -->
+        <div id="rest-dock">
+          <div id="short-rest-tray" aria-hidden="true">
+            <span id="short-rest-pips"></span>
+            <span id="short-rest-count"></span>
+          </div>
+          <button id="short-rest-btn" class="rest-dock-btn" type="button"
+                  title="Short rest" aria-label="Short rest" aria-expanded="false"
+                  aria-controls="short-rest-tray">S</button>
+          <button id="long-rest-btn" class="rest-dock-btn" type="button"
+                  title="Long rest" aria-label="Long rest">L</button>
+        </div>
+        <div id="dice-dock-panel" aria-hidden="true">
           <div id="dice-dock-faces"></div>
           <button id="dice-dock-roll" class="btn-primary hidden" type="button"
                   title="Roll — hold and slide for advantage or disadvantage">Roll</button>
@@ -922,6 +937,16 @@
 <!-- Where a roll lands before it flies to the corner, and where a chat line or
      another player's roll pops over their tab. Both are fixed layers over the app and
      under the modals, and neither takes a pointer event. See src/js/dice.js. -->
+<!-- The long rest prompt: a player's vote on a party long rest, the GM's
+     accept/decline once everyone has answered, or a solo confirmation. A card,
+     not a modal, so the table can keep playing around it. Filled by
+     _renderRestPrompt() in src/js/rest.js. -->
+<div id="rest-prompt" class="hidden" role="dialog" aria-live="polite" aria-labelledby="rest-prompt-title">
+  <div id="rest-prompt-title" class="rest-prompt-title"></div>
+  <div id="rest-prompt-text" class="rest-prompt-text"></div>
+  <div id="rest-prompt-lists" class="rest-prompt-lists"></div>
+  <div id="rest-prompt-actions" class="rest-prompt-actions"></div>
+</div>
 <div id="dice-stage" class="hidden"><!-- fliers, one per roll in flight --></div>
 <div id="dice-tab-bubbles"><!-- rendered by renderTabBubbles() --></div>
 
@@ -1943,6 +1968,7 @@
      arrives through that same subscription. After character-sheet.js too — the
      sheet's rows are what a skill or a save is rolled from. -->
 <script src="src/js/dice.js"></script>
+<script src="src/js/rest.js"></script>
 <script src="src/js/tooltip.js"></script>
 
 <script src="src/js/main.js"></script>

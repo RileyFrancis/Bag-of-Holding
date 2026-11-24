@@ -214,5 +214,7 @@ body.party-readonly #char-name-display { pointer-events: none; }
 #app.sidebar-collapsed #container-tabs,
 #app.sidebar-collapsed #viewing-banner { padding-right: 42px; }
 #app.sidebar-collapsed #dice-dock-btn   { right: 46px; }
-#app.sidebar-collapsed #dice-dock-panel { right: 41px; }
+#app.sidebar-collapsed .rest-dock-btn   { right: 49px; }
+#app.sidebar-collapsed #dice-dock-panel { right: 96px; }
+#app.sidebar-collapsed #short-rest-tray { right: 67px; }
 

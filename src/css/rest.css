@@ -1,0 +1,184 @@
+/* =============================================================================
+   REST — the short and long rest buttons under the dice button, the short
+   rest's tray, and the long rest prompt card
+   ============================================================================= */
+
+/* ─── THE REST BUTTONS ───────────────────────────────────── */
+/* Children of #dice-dock, so they share its zero-height row, its z-index and
+   its absence on the battle map. A little smaller than the dice button and
+   centred under it. */
+.rest-dock-btn {
+  position: absolute;
+  right: 15px;
+  z-index: 1; /* over the short rest tray that slides out from behind */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s, border-color 0.15s, color 0.15s, background 0.15s;
+}
+#short-rest-btn { top: 60px; }
+#long-rest-btn  { top: 102px; }
+
+.rest-dock-btn:hover,
+#rest-dock.short-open #short-rest-btn,
+#long-rest-btn.pending {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.rest-dock-btn:hover { transform: translateY(-2px); }
+.rest-dock-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.rest-dock-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+/* A long rest is waiting on someone: a dot on the button. */
+#long-rest-btn.pending::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--pending);
+  border: 1px solid var(--panel);
+}
+
+/* ─── THE SHORT REST TRAY ────────────────────────────────── */
+/* Starts behind the button's centre and slides out to the left, so it reads
+   as pulled from the button. Laid out while closed so it can animate back. */
+#short-rest-tray {
+  position: absolute;
+  top: 60px;
+  right: 33px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 26px 0 14px;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  clip-path: inset(0 0 0 100% round 18px);
+  transition: clip-path 0.22s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.16s ease,
+              visibility 0s linear 0.22s;
+}
+#rest-dock.short-open #short-rest-tray {
+  opacity: 1;
+  visibility: visible;
+  clip-path: inset(0 0 0 0 round 18px);
+  transition: clip-path 0.26s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.12s ease,
+              visibility 0s;
+}
+
+#short-rest-pips {
+  display: flex;
+  gap: 4px;
+}
+.short-rest-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+}
+.short-rest-pip.left { background: var(--accent); }
+
+#short-rest-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+#short-rest-tray.empty #short-rest-count { color: var(--text-dim); }
+
+/* ─── THE LONG REST PROMPT ───────────────────────────────── */
+/* Top centre of the window, over everything but modals. */
+#rest-prompt {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 450; /* under the modal backdrop (500) */
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px 12px;
+  background: var(--panel);
+  border: 1px solid var(--accent-soft);
+  border-radius: 10px;
+  box-shadow: var(--shadow-deep);
+  transform: translateX(-50%);
+  animation: rest-prompt-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes rest-prompt-in {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.rest-prompt-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.rest-prompt-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.rest-prompt-text:empty { display: none; }
+
+.rest-prompt-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rest-prompt-lists:empty { display: none; }
+.rest-prompt-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.rest-prompt-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rest-prompt-name {
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.rest-prompt-group.resting .rest-prompt-name { border-color: var(--accent-soft); }
+.rest-prompt-group.waiting .rest-prompt-name { color: var(--text-dim); font-style: italic; }
+
+.rest-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.rest-prompt-actions:empty { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  #short-rest-tray, #rest-dock.short-open #short-rest-tray { clip-path: none; }
+  #rest-prompt { animation: none; }
+}

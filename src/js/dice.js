@@ -1080,18 +1080,25 @@ function _clearDock() {
   _renderDiceDock();
 }
 
-function _setDiceDockOpen(isOpen) {
-  diceDockPanel.classList.toggle('hidden', !isOpen);
+// The column stays in the layout while closed so it can animate; `inert` keeps
+// its faces out of the tab order and away from the pointer meanwhile.
+function setDiceDockOpen(isOpen) {
   diceDockEl.classList.toggle('open', isOpen);
+  diceDockPanel.inert = !isOpen;
+  diceDockPanel.setAttribute('aria-hidden', String(!isOpen));
   diceDockBtn.setAttribute('aria-expanded', String(isOpen));
 }
 
 // Whether the dice dock's column of faces is showing.
 function isDiceDockOpen() {
-  return !diceDockPanel.classList.contains('hidden');
+  return diceDockEl.classList.contains('open');
 }
 
-diceDockBtn.addEventListener('click', () => _setDiceDockOpen(!isDiceDockOpen()));
+diceDockBtn.addEventListener('click', () => {
+  const willOpen = !isDiceDockOpen();
+  if (willOpen) closeShortRestTray(); // the two trays share the corner
+  setDiceDockOpen(willOpen);
+});
 
 diceDockFaces.addEventListener('click', e => {
   const btn = e.target.closest('.die-btn');
@@ -1115,13 +1122,17 @@ diceDockPanel.querySelectorAll('[data-mod-step]').forEach(b => {
 });
 
 // A click anywhere else folds the column away; the handful stays for next time.
+// The rest buttons share #dice-dock, so it is the button and column that count.
 document.addEventListener('pointerdown', e => {
-  if (isDiceDockOpen() && !diceDockEl.contains(e.target)) _setDiceDockOpen(false);
+  if (!isDiceDockOpen()) return;
+  if (diceDockBtn.contains(e.target) || diceDockPanel.contains(e.target)) return;
+  setDiceDockOpen(false);
 });
 // Capture, so this runs before the gesture's own Escape clears `rollGesture`:
 // an Escape backing out of a held Roll should not also fold the column.
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && isDiceDockOpen() && !rollGesture) _setDiceDockOpen(false);
+  if (e.key === 'Escape' && isDiceDockOpen() && !rollGesture) setDiceDockOpen(false);
 }, { capture: true });
 
 _buildDiceDock();
+setDiceDockOpen(false);

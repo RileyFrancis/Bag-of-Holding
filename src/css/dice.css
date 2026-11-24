@@ -753,13 +753,15 @@
 #dice-dock-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 #dice-dock-btn .ico { width: 1.05em; height: 1.05em; }
 
-/* The column, dropped straight down from the button and centred under it. The
-   panel clips overflow, so a short window scrolls the column rather than
-   losing the Roll button off the bottom. */
+/* The column, hung beside the button's left so the rest buttons below stay
+   clear. It unrolls downward from the top when opened and rolls back up when
+   closed; it stays laid out while closed so both ways can animate. The panel
+   clips overflow, so a short window scrolls the column rather than losing the
+   Roll button off the bottom. */
 #dice-dock-panel {
   position: absolute;
-  top: 60px;
-  right: 7px;
+  top: 5px;
+  right: 62px;
   width: 52px;
   max-height: calc(100vh - 170px);
   overflow-y: auto;
@@ -773,6 +775,21 @@
   border: 1px solid var(--border2);
   border-radius: 26px;
   box-shadow: var(--shadow-soft);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(10px) scale(0.96);
+  transform-origin: top right;
+  clip-path: inset(0 0 100% 0 round 26px);
+  transition: clip-path 0.24s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.18s ease,
+              transform 0.24s cubic-bezier(0.4, 0, 0.6, 1), visibility 0s linear 0.24s;
+}
+#dice-dock.open #dice-dock-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  clip-path: inset(0 0 0 0 round 26px);
+  transition: clip-path 0.28s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.14s ease,
+              transform 0.28s cubic-bezier(0.2, 0.8, 0.3, 1), visibility 0s;
 }
 #dice-dock-panel::-webkit-scrollbar { display: none; }
 
@@ -895,5 +912,6 @@
   }
   .roll-chip { transition: opacity 0.15s linear; }
   .tab-bubble { animation-name: bubble-fade, bubble-out; }
+  #dice-dock-panel, #dice-dock.open #dice-dock-panel { transform: none; clip-path: none; }
   @keyframes bubble-fade { from { opacity: 0; } to { opacity: 1; } }
 }

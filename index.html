@@ -667,7 +667,8 @@
       <!-- Browse Tab -->
       <div id="tab-browse" class="tab-pane active">
         <div id="browser-controls">
-          <input type="text" id="item-search" placeholder="Search items…" autocomplete="off">
+          <input type="search" id="item-search" placeholder="Search items…" autocomplete="off"
+                 aria-label="Search items">
           <div id="filter-row">
             <select id="rarity-filter">
               <option value="">All Rarities</option>
@@ -1421,7 +1422,8 @@
   <div class="modal-box">
     <h2>Stock the Shop</h2>
     <p class="modal-note">Pick items from your catalogue. Quantity and price are set per item afterwards.</p>
-    <input type="text" id="shop-add-search" placeholder="Search items…" autocomplete="off">
+    <input type="search" id="shop-add-search" placeholder="Search items…" autocomplete="off"
+           aria-label="Search items">
     <div id="shop-add-list"><!-- rows injected by renderShopAddList() --></div>
     <div class="modal-footer">
       <button id="shop-add-confirm-btn" class="btn-primary">Add</button>

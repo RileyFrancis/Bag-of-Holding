@@ -73,7 +73,7 @@ In load order.
 | `shape-painter.js` | The item shape painter dialog (both item forms), and the in-form preview |
 | `grid.js` | Fit tests, place/remove, `rebuildGrid`, id generation |
 | `render-grid.js` | `renderGrid`, `renderAllItems` |
-| `render-sidebar.js` | `renderItemList`, details panel |
+| `render-sidebar.js` | `renderItemList`, the centred item details card |
 | `render-stats.js` | Inventory weight / encumbrance readout and its hover card |
 | `drag-ghost.js` | The ghost element that follows the cursor |
 | `drag-scroll.js` | Edge auto-scroll: a held drag near a panel's edge pulls it along |
@@ -129,7 +129,7 @@ that owns the element wins.
 | `icons.css` | The icon PNGs as `.ico` glyphs, masked over `currentColor` |
 | `layout.css` | The app shell: header, weight readout, main split, panel resizing |
 | `inventory.css` | The torn sheet, grid cells, placed items, the drag ghost |
-| `sidebar.css` | The right panel: browse list, folders, details, menus |
+| `sidebar.css` | The right panel: item list, folders, menus |
 | `modals.css` | Modal chrome, the item form's shape preview, and the shape painter |
 | `character.css` | The character tabs, and page one of the 2024 sheet |
 | `character-setup.css` | The sheet's gear button, and the class rows and option picker in the setup modal |
@@ -148,6 +148,7 @@ that owns the element wins.
 | `equipment.css` | The equip rack, the left-panel tabs, the layout editor |
 | `shop.css` | The GM shop editor, the player shopfront, and their modals |
 | `tooltip.css` | The hover tooltip |
+| `item-details.css` | The item details card, a larger hover card with no backdrop |
 | `stash.css` | The stash (items needing placement) and the container tabs |
 | `coins.css` | The multi-denomination cost input and the coin purse |
 | `settings.css` | The settings modal, the theme picker, and the info pages |

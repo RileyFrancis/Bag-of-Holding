@@ -66,8 +66,8 @@ function _rerenderThemedContent() {
   drawBattlemap();
   renderInitiativePanel();   // its rows are edged in the hostility colours too
 
-  // Repaint the details panel in place, not via show*Details(), which would
-  // switch to the Details tab.
+  // Repaint the details card in place (a no-op while it is closed, since
+  // closing clears the selection), not via show*Details(), which rewires it.
   const sel = state.selected;
   if (sel && sel.type === 'instance') {
     const inst = state.instances[sel.id];

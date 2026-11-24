@@ -15,7 +15,6 @@ function startPlacing(templateId) {
   document.body.style.cursor = 'crosshair';
   document.body.style.userSelect = 'none';
   renderItemList();
-  showTemplateDetails(templateId);
 
   // Attach document-level handlers
   document.addEventListener('mousemove', _onPlacingMouseMove);

@@ -259,6 +259,7 @@ function loadActiveCharacterIntoLive() {
 
 // Everything redrawn when the working copy is replaced wholesale.
 function renderLiveCharacter() {
+  closeItemDetails(); // it may show an item the new working copy doesn't have
   rebuildGrid();
   renderItemList();
   renderEquipPanel();
@@ -385,6 +386,7 @@ function openHomeScreen() {
   if (state.party.viewingPlayerId !== null) switchViewToOwn();
   hideMissingScreen();
   state.screen = 'home';
+  closeItemDetails();
   homeScreenEl.classList.remove('hidden');
   renderHomeScreen();
   syncRoute();
@@ -600,6 +602,7 @@ window.addEventListener('keydown', e => {
     && !isChatModalOpen()
     && !isStatusPickerOpen()
     && !isDiceDockOpen()
+    && !isItemDetailsOpen()
     && !rollGesture
     && !castGesture
     && openTabMenuKey === null

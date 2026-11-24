@@ -147,6 +147,5 @@ function deleteTemplate(templateId) {
   delete state.db[templateId];
   forgetItemFolder(templateId);
   renderItemList();
-  document.getElementById('details-content').classList.add('hidden');
-  document.getElementById('details-placeholder').classList.remove('hidden');
+  closeItemDetails();
 }

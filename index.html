@@ -87,6 +87,7 @@
   <link rel="stylesheet" href="src/css/equipment.css">
   <link rel="stylesheet" href="src/css/shop.css">
   <link rel="stylesheet" href="src/css/tooltip.css">
+  <link rel="stylesheet" href="src/css/item-details.css">
   <link rel="stylesheet" href="src/css/stash.css">
   <link rel="stylesheet" href="src/css/coins.css">
   <link rel="stylesheet" href="src/css/settings.css">
@@ -651,20 +652,19 @@
 
     <!-- ===== SIDEBAR ===== -->
     <aside id="sidebar">
-      <!-- Browse and Details belong beside a grid of items; Chat belongs
+      <!-- Items belongs beside a grid of items; Chat belongs
            beside a character sheet; Spellbook takes Chat's place while viewing
            the Spell Sheet (see `getSidebarView()` in modals.js — the two never
            show together). Party is in all three. Dice are not a tab — they
            are the dock in the middle panel's top right. -->
       <div id="sidebar-tabs">
-        <button class="tab-btn active" data-tab="browse">Browse</button>
-        <button class="tab-btn" data-tab="details">Details</button>
+        <button class="tab-btn active" data-tab="browse">Items</button>
         <button class="tab-btn hidden" data-tab="chat">Chat</button>
         <button class="tab-btn hidden" data-tab="spellbook">Spells</button>
         <button class="tab-btn" data-tab="party">Party</button>
       </div>
 
-      <!-- Browse Tab -->
+      <!-- Items Tab (its pane keeps the id tab-browse) -->
       <div id="tab-browse" class="tab-pane active">
         <div id="browser-controls">
           <input type="search" id="item-search" placeholder="Search items…" autocomplete="off"
@@ -697,48 +697,6 @@
         </div>
         <div id="browser-footer">
           <button id="new-item-btn" class="btn-primary"><span class="ico ico-plus lead"></span>New Item</button>
-        </div>
-      </div>
-
-      <!-- Details Tab -->
-      <div id="tab-details" class="tab-pane">
-        <div id="details-placeholder">
-          <p>Click an item in the inventory<br>or browse panel to see details.</p>
-        </div>
-        <div id="details-content" class="hidden">
-          <div id="details-header">
-            <span id="details-name"></span>
-            <span id="details-rarity-badge"></span>
-          </div>
-          <div id="details-shape-preview"></div>
-          <div id="details-image-wrap">
-            <img id="details-image" src="" alt="" class="hidden">
-          </div>
-          <div id="details-meta">
-            <div class="meta-row"><span class="meta-label">Weight</span><span id="details-weight"></span></div>
-            <div class="meta-row"><span class="meta-label">Cost</span><span id="details-cost"></span></div>
-            <div class="meta-row hidden" id="details-damage-row">
-              <span class="meta-label">Damage</span><span id="details-damage"></span>
-            </div>
-            <div class="meta-row hidden" id="details-attunement-row">
-              <span class="meta-label">Attunement</span><span id="details-attunement-val">Required</span>
-            </div>
-            <div class="meta-row" id="details-stack-row">
-              <span class="meta-label">Stack</span><span id="details-stack"></span>
-            </div>
-            <div class="meta-row hidden" id="details-source-row">
-              <span class="meta-label">Source</span><span id="details-source"></span>
-            </div>
-          </div>
-          <div id="details-tags"></div>
-          <div id="details-desc"></div>
-          <div id="details-abilities" class="hidden"></div>
-          <div id="details-actions">
-            <button id="details-place-btn" class="btn-primary">Place in Inventory</button>
-            <button id="details-stash-btn" class="btn-sm"><span class="ico ico-plus lead"></span>Stash</button>
-            <button id="details-edit-btn" class="btn-sm">Edit</button>
-            <button id="details-delete-btn" class="btn-sm danger">Delete</button>
-          </div>
         </div>
       </div>
 
@@ -1858,6 +1816,36 @@
 
 <!-- ===== ITEM TOOLTIP ===== -->
 <div id="item-tooltip" class="hidden"></div>
+
+<!-- Item details: the hover card, larger and clickable. No backdrop, so the
+     page behind stays sharp; see render-sidebar.js. -->
+<div id="item-details" class="hidden" role="dialog" aria-labelledby="details-name">
+  <div id="details-header">
+    <span id="details-name"></span>
+    <span id="details-rarity-badge"></span>
+    <button id="details-close-btn" class="btn-sm icon-only" type="button" title="Close (Esc)" aria-label="Close">✕</button>
+  </div>
+  <div id="details-attunement" class="hidden"></div>
+  <div id="details-body">
+    <div id="details-meta">
+      <div class="details-row"><span>Weight</span><span id="details-weight"></span></div>
+      <div class="details-row"><span>Cost</span><span id="details-cost"></span></div>
+      <div class="details-row hidden" id="details-damage-row"><span>Damage</span><span id="details-damage"></span></div>
+      <div class="details-row" id="details-stack-row"><span>Stack</span><span id="details-stack"></span></div>
+      <div class="details-row hidden" id="details-source-row"><span>Source</span><span id="details-source"></span></div>
+    </div>
+    <img id="details-image" src="" alt="" class="hidden">
+  </div>
+  <div id="details-desc"></div>
+  <div id="details-abilities" class="hidden"></div>
+  <div id="details-tags"></div>
+  <div id="details-actions">
+    <button id="details-place-btn" class="btn-primary">Place in Inventory</button>
+    <button id="details-stash-btn" class="btn-sm"><span class="ico ico-plus lead"></span>Stash</button>
+    <button id="details-edit-btn" class="btn-sm">Edit</button>
+    <button id="details-delete-btn" class="btn-sm danger">Delete</button>
+  </div>
+</div>
 <!-- The full spell card for a hovered row of Available Spells — built by
      _showSpellHoverCard() in src/js/spells.js. -->
 <div id="spell-hover-card" class="hidden" role="tooltip"></div>

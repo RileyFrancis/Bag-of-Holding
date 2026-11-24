@@ -7,8 +7,7 @@
 // null for every view (Party). Spells takes Chat's place in the spells view.
 // Dice are not a tab; they are the dock in the middle panel (dice.js).
 const SIDEBAR_TAB_VIEW = {
-  browse:    'inventory',
-  details:   'inventory',
+  browse:    'inventory', // labelled Items
   chat:      'sheet',
   spellbook: 'spells',
   party:     null, // all three
@@ -66,8 +65,8 @@ function syncSidebarTabs() {
   }
 }
 
-// Show a tab, switching to the view it lives in (a shop entry clicked from the
-// sheet asks for 'details'). A tab in several views never forces a switch, since
+// Show a tab, switching to the view it lives in (a stash from the details card
+// asks for 'browse'). A tab in several views never forces a switch, since
 // it can only be clicked from a view it is already visible in.
 function switchTab(name) {
   const view = _getSidebarTabView(name);

@@ -1,0 +1,212 @@
+/* ============================================================
+   item-details.css — the item details card, a larger hover card
+   ============================================================ */
+
+/* ─── CARD ───────────────────────────────────────────────── */
+/* Below #modal-backdrop (500), so the item editor opens over it. No backdrop
+   of its own: the page behind stays sharp and clickable. */
+#item-details {
+  position: fixed;
+  z-index: 450;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 16px 20px 18px;
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--emboss-hi);
+}
+#item-details::-webkit-scrollbar { width: 5px; }
+#item-details::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+#details-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+#details-name {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+#details-rarity-badge {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-style: italic;
+}
+#details-close-btn { align-self: center; flex-shrink: 0; }
+
+#details-attunement {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+}
+
+/* ─── STATS ──────────────────────────────────────────────── */
+#details-body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+/* A borderless two-column table, striped for reading across. */
+#details-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden; /* clips the striped rows to the rounded corners */
+  background: var(--surface);
+  border-radius: 6px;
+}
+.details-row {
+  display: flex;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+/* Counts only shown rows, so hiding Damage or Source doesn't break the stripes. */
+.details-row:nth-child(even of :not(.hidden)) {
+  background: color-mix(in srgb, var(--field) 55%, var(--surface));
+}
+.details-row span:first-child { flex: 0 0 72px; }
+.details-row span:last-child { flex: 1; min-width: 0; color: var(--text); }
+
+#details-image {
+  max-width: 96px;
+  max-height: 96px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* ─── DESCRIPTION ────────────────────────────────────────── */
+#details-desc {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+#details-desc:empty { display: none; }
+
+/* Markdown, rendered by markdown.js. Only what a description actually uses:
+   headings, lists, and a hand-written table (markdown.js does not parse pipe
+   syntax) for a scaling item like alchemist's supplies. */
+#details-desc > :first-child { margin-top: 0; }
+#details-desc > :last-child { margin-bottom: 0; }
+
+#details-desc p { margin: 0 0 0.6em; }
+
+#details-desc h1,
+#details-desc h2,
+#details-desc h3,
+#details-desc h4,
+#details-desc h5,
+#details-desc h6 {
+  margin: 0.8em 0 0.3em;
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 1em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+#details-desc ul,
+#details-desc ol { margin: 0 0 0.6em; padding-left: 1.35em; }
+#details-desc li { margin-bottom: 0.15em; }
+#details-desc li > ul,
+#details-desc li > ol { margin: 0.15em 0 0; }
+
+#details-desc blockquote {
+  margin: 0 0 0.6em;
+  padding: 0.1em 0 0.1em 0.8em;
+  border-left: 2px solid var(--accent-soft);
+}
+#details-desc blockquote > :last-child { margin-bottom: 0; }
+
+#details-desc code {
+  padding: 0.05em 0.3em;
+  font-style: normal;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+#details-desc pre {
+  margin: 0 0 0.6em;
+  padding: 7px 9px;
+  font-style: normal;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+#details-desc pre code { padding: 0; background: none; border: none; }
+
+#details-desc a { color: var(--accent); text-decoration: underline; }
+#details-desc a:hover { text-decoration: none; }
+
+#details-desc strong, #details-desc b { font-weight: 700; }
+#details-desc em, #details-desc i { font-style: italic; }
+
+#details-desc table {
+  width: 100%;
+  margin: 0 0 0.6em;
+  border-collapse: collapse;
+  font-size: 0.95em;
+  font-style: normal;
+}
+#details-desc th,
+#details-desc td {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+#details-desc th {
+  background: var(--field);
+  font-weight: 700;
+}
+
+/* ─── ABILITIES, TAGS AND ACTIONS ────────────────────────── */
+#details-abilities {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.ability-row {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ability-row .ability-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.ability-row .ability-text {
+  color: var(--text-dim);
+}
+
+#details-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+#details-tags:empty { display: none; }
+
+#details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}

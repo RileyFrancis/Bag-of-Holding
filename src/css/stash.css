@@ -99,13 +99,6 @@
 }
 .stash-card:hover .stash-remove { opacity: 1; }
 
-#details-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
 /* ─── CONTAINER TABS ─────────────────────────────────────── */
 #container-tabs {
   display: flex;

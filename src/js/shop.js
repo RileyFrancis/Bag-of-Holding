@@ -455,7 +455,7 @@ function _buildStockRow(shop, entry, isGm) {
     row.title = 'Set quantity and price';
     row.addEventListener('click', () => _openShopEntryModal(shop, entry));
   } else {
-    // The row is small, so looking an item over happens in the Details tab.
+    // The row is small, so looking an item over happens in the details card.
     row.addEventListener('click', () => _showShopItemDetails(shop, entry));
     const buy = document.createElement('button');
     buy.className = 'btn-sm shop-buy-btn';
@@ -498,7 +498,7 @@ function _buildStockCount(entry) {
   return wrap;
 }
 
-// A shop item may be something the viewer has never owned, so the details panel
+// A shop item may be something the viewer has never owned, so the details card
 // is handed the shop's own snapshot instead of a lookup in state.db — and the
 // action buttons go away, since none of them mean anything for goods on a shelf.
 function _showShopItemDetails(shop, entry) {
@@ -509,7 +509,7 @@ function _showShopItemDetails(shop, entry) {
   const price = _getShopEntryPrice(shop, entry);
   document.getElementById('details-cost').textContent = hasCost(price) ? formatCost(price) : 'Free';
   document.getElementById('details-actions').classList.add('hidden');
-  switchTab('details');
+  showItemDetailsCard();
 }
 
 // ─── SHOP — DROP TARGET ────────────────────────────────────────────────────────

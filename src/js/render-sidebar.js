@@ -1,5 +1,5 @@
 // =============================================================================
-// RENDER-SIDEBAR — Sidebar item list + item details panel
+// RENDER-SIDEBAR — Sidebar item list + item details card
 // =============================================================================
 'use strict';
 
@@ -217,8 +217,8 @@ function _buildItemCard(t, opts = {}) {
   return card;
 }
 
-// A press on a Browse card: a click folds a family or starts placing, a drag
-// drops the item onto a shop, a folder or the grid.
+// A press on a Browse card: a click folds a family or opens the details card, a
+// drag drops the item onto a shop, a folder or the grid.
 function _attachItemCardPointer(card, t, hasVariants) {
   card.addEventListener('pointerdown', e => {
     if (e.button !== 0 || isReadOnly()) return;
@@ -255,7 +255,7 @@ function _attachItemCardPointer(card, t, hasVariants) {
           renderItemList();
           return;
         }
-        startPlacing(tid);
+        showTemplateDetails(tid);
         return;
       }
       _dropCatalogueItem(card, tid, ue.clientX, ue.clientY);
@@ -405,26 +405,30 @@ function _populateTagFilter() {
   sel.value = current;
 }
 
-// ─── RENDERING — DETAILS PANEL ───
-// Select a catalogue template, show it in the Details tab and wire its actions.
+// ─── RENDERING — DETAILS CARD ───
+// Select a catalogue template, show it in the details card and wire its actions.
 function showTemplateDetails(templateId) {
-  state.selected = { type: 'template', id: templateId };
   const t = state.db[templateId];
   if (!t) return;
+  state.selected = { type: 'template', id: templateId };
   populateDetailsPanel(t);
-  switchTab('details');
+  showItemDetailsCard();
 
   // _showShopItemDetails() hides these: goods on a shelf are not yours to place.
   document.getElementById('details-actions').classList.remove('hidden');
   document.getElementById('details-place-btn').classList.remove('hidden');
-  document.getElementById('details-place-btn').onclick = () => startPlacing(t.id);
-  document.getElementById('details-stash-btn').onclick = () => { addToStash(t.id); switchTab('browse'); };
-  document.getElementById('details-edit-btn').onclick  = () => openItemModal(t.id);
+  document.getElementById('details-place-btn').onclick = () => { closeItemDetails(); startPlacing(t.id); };
+  document.getElementById('details-stash-btn').onclick = () => {
+    closeItemDetails();
+    addToStash(t.id);
+    switchTab('browse');
+  };
+  document.getElementById('details-edit-btn').onclick  = () => { closeItemDetails(); openItemModal(t.id); };
   document.getElementById('details-delete-btn').textContent = 'Delete';
   document.getElementById('details-delete-btn').onclick = () => deleteTemplate(t.id);
 }
 
-// Select a placed or stashed instance, show it in the Details tab and wire its actions.
+// Select a placed or stashed instance, show it in the details card and wire its actions.
 function showInstanceDetails(instanceId) {
   const inst = state.instances[instanceId];
   if (!inst) return;
@@ -433,11 +437,12 @@ function showInstanceDetails(instanceId) {
 
   state.selected = { type: 'instance', id: instanceId };
   populateDetailsPanel(t, inst);
-  switchTab('details');
+  showItemDetailsCard();
 
   document.getElementById('details-actions').classList.remove('hidden');
   document.getElementById('details-place-btn').classList.add('hidden');
   document.getElementById('details-stash-btn').onclick = () => {
+    closeItemDetails();
     if (inst.row !== null && inst.row !== undefined) {
       unequipInstance(instanceId);
       removeFromGrid(instanceId);
@@ -449,16 +454,51 @@ function showInstanceDetails(instanceId) {
     }
     switchTab('browse');
   };
-  document.getElementById('details-edit-btn').onclick = () => openItemModal(t.id);
+  document.getElementById('details-edit-btn').onclick = () => { closeItemDetails(); openItemModal(t.id); };
   document.getElementById('details-delete-btn').textContent = 'Remove';
   document.getElementById('details-delete-btn').onclick = () => {
+    closeItemDetails();
     removeInstance(instanceId);
-    document.getElementById('details-content').classList.add('hidden');
-    document.getElementById('details-placeholder').classList.remove('hidden');
   };
 }
 
-// Fill the Details panel for a template, or for one instance of it when `inst` is given.
+// Show the details card, already filled by populateDetailsPanel().
+function showItemDetailsCard() {
+  clearTooltip(); // the small card would otherwise sit on top of the large one
+  const card = document.getElementById('item-details');
+  card.classList.remove('hidden');
+  card.scrollTop = 0;
+}
+
+// Whether the details card is showing.
+function isItemDetailsOpen() {
+  return !document.getElementById('item-details').classList.contains('hidden');
+}
+
+// Hide the details card and drop the selection it was showing.
+function closeItemDetails() {
+  document.getElementById('item-details').classList.add('hidden');
+  state.selected = null;
+}
+
+document.getElementById('details-close-btn').addEventListener('click', closeItemDetails);
+
+// A press anywhere outside the card closes it. Capture, so a drag handler that
+// stops the press from bubbling still closes it.
+document.addEventListener('pointerdown', e => {
+  if (!isItemDetailsOpen()) return;
+  if (e.target.closest('#item-details, .modal, #context-menu')) return;
+  closeItemDetails();
+}, { capture: true });
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !isItemDetailsOpen()) return;
+  e.preventDefault();
+  closeItemDetails();
+});
+
+// Fill the details card for a template, or for one instance of it when `inst` is given.
+// Does not show the card; theme.js calls this to repaint one already open.
 function populateDetailsPanel(t, inst) {
   const color = getRarityColor(t.rarity);
   const shape = inst ? getRotatedShape(t.shape, inst.rotation ?? 0) : t.shape;
@@ -466,17 +506,10 @@ function populateDetailsPanel(t, inst) {
     ? (inst ? `${formatWeight(getItemUnitWeight(t) * (inst.stackCount ?? 1))} lb (×${inst.stackCount ?? 1})` : `${formatWeight(getItemUnitWeight(t))} lb each`)
     : `${getShapeWeight(shape)} lb`;
 
-  document.getElementById('details-placeholder').classList.add('hidden');
-  document.getElementById('details-content').classList.remove('hidden');
-
   document.getElementById('details-name').textContent = t.name;
-  const badge = document.getElementById('details-rarity-badge');
-  badge.textContent = RARITY_META[t.rarity]?.label;
-  badge.style.background = color + '33';
-  badge.style.color = color;
-  badge.style.border = `1px solid ${color}66`;
-
-  _renderDetailsShapePreview(shape, color);
+  const rarity = document.getElementById('details-rarity-badge');
+  rarity.textContent = RARITY_META[t.rarity]?.label ?? '';
+  rarity.style.color = color;
 
   const imgEl = document.getElementById('details-image');
   if (t.image) { imgEl.src = t.image; imgEl.classList.remove('hidden'); }
@@ -505,9 +538,9 @@ function populateDetailsPanel(t, inst) {
     damageRow.classList.add('hidden');
   }
 
-  document.getElementById('details-attunement-row').classList.toggle('hidden', !t.attunement);
-  document.getElementById('details-attunement-val').textContent =
-    t.attunementNote ? `Required ${t.attunementNote}` : 'Required';
+  const attuneEl = document.getElementById('details-attunement');
+  attuneEl.classList.toggle('hidden', !t.attunement);
+  attuneEl.textContent = `Requires Attunement${t.attunementNote ? ' ' + t.attunementNote : ''}`;
 
   const sourceRow = document.getElementById('details-source-row');
   if (t.source) {
@@ -550,19 +583,4 @@ function populateDetailsPanel(t, inst) {
     row.appendChild(text);
     abilitiesEl.appendChild(row);
   });
-}
-
-function _renderDetailsShapePreview(shape, color) {
-  const preview = document.getElementById('details-shape-preview');
-  const norm = normalizeShape(shape);
-  const { rows, cols } = getShapeDims(norm);
-  preview.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
-  preview.style.gridTemplateRows    = `repeat(${rows}, 20px)`;
-  preview.innerHTML = '';
-  norm.forEach(row => row.forEach(v => {
-    const cell = document.createElement('div');
-    cell.className = 'prev-cell ' + (v ? 'filled' : 'empty');
-    if (v) { cell.style.background = color + '55'; cell.style.borderColor = color; }
-    preview.appendChild(cell);
-  }));
 }

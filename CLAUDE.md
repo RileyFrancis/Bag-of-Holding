@@ -106,7 +106,7 @@ state.mode        'idle' | 'placing' | 'dragging'
 ### Sidebar and left panel
 
 ```
-inventory view    Browse · Details · Party
+inventory view    Items (data-tab "browse") · Party
 sheet / map view  Chat · Party
 spells view       Spells · Party
 ```

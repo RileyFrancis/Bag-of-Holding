@@ -104,7 +104,7 @@
 }
 #short-rest-tray.empty #short-rest-count { color: var(--text-dim); }
 
-/* ─── THE LONG REST PROMPT ───────────────────────────────── */
+/* ─── THE REST PROMPT ───────────────────────────────── */
 /* Top centre of the window, over everything but modals. */
 #rest-prompt {
   position: fixed;
@@ -139,13 +139,13 @@
 }
 .rest-prompt-text:empty { display: none; }
 
-.rest-prompt-lists {
+.rest-prompt-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 8px;
 }
-.rest-prompt-lists:empty { display: none; }
+.rest-prompt-body:empty { display: none; }
 .rest-prompt-group-label {
   font-size: 10px;
   font-weight: 700;
@@ -169,6 +169,101 @@
 }
 .rest-prompt-group.resting .rest-prompt-name { border-color: var(--accent-soft); }
 .rest-prompt-group.waiting .rest-prompt-name { color: var(--text-dim); font-style: italic; }
+
+/* Two figures side by side: HP and Hit Dice. */
+.rest-prompt-stats {
+  display: flex;
+  gap: 8px;
+}
+.rest-prompt-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.rest-prompt-stat span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.rest-prompt-stat strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--text);
+}
+.rest-prompt-body > .rest-stepper { align-self: center; }
+.rest-prompt-healed {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--crit);
+}
+
+/* − n +, for dice to roll and food to give. */
+.rest-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rest-stepper .btn-sm {
+  width: 24px;
+  padding: 1px 0;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.rest-stepper-value {
+  min-width: 18px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+}
+
+/* The food picker: one row per food item carried. */
+.rest-supply-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.rest-supply-list.empty {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-dim);
+}
+.rest-supply-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.rest-supply-row.picked { border-color: var(--accent-soft); }
+.rest-supply-name {
+  font-size: 13px;
+  color: var(--text);
+}
+.rest-supply-meta {
+  grid-row: 2;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.rest-supply-row .rest-stepper {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
 
 .rest-prompt-actions {
   display: flex;

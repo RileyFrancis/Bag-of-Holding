@@ -110,6 +110,8 @@ In load order.
 | `shop.js` | The left panel's tabs, GM shop editor, player shopfront, paying |
 | `chat.js` | The campaign's chat log, and the sidebar's Chat pane |
 | `dice.js` | Rolling: the tumbling number, the corner stack, the advantage wheel, the dice dock |
+| `rest-effects.js` | What a short or long rest restores, spending Hit Dice, and the food a camp is stocked from |
+| `rest.js` | The rest buttons, the short rest tray, and the long rest's vote, GM decision and camp supplies |
 | `battlemap.js` | Battle maps: the model, the Firebase seam, and line of sight |
 | `battlemap-library.js` | The GM's Maps pane, and the import / creature dialogs |
 | `battlemap-view.js` | The map itself: the camera, the canvas, the fog, the pointer |
@@ -142,6 +144,7 @@ that owns the element wins.
 | `homebrew.css` | The home screen's Homebrew section, its file tree, and the New Homebrew panel |
 | `chat.css` | The sidebar's Chat pane, its messages and composer, and a roll said in it |
 | `dice.css` | The flying number, the corner stack, the wheel, the hover card, the dice dock |
+| `rest.css` | The rest buttons under the dice button, the short rest tray, the rest prompt card |
 | `pending.css` | The pulsing reminder glow and the scroller edge indicators |
 | `battlemap.css` | The map button, the map view, and the GM's library pane |
 | `initiative.css` | The turn order panel over the board, and its group-roll dialog |
@@ -208,6 +211,19 @@ header name for a subclass, the own tab and its menu entry for the sheet or
 spell sheet). It is deliberately polled from events rather than called by each
 editor, so no edit path can forget it. A GM, having no character, is never
 reminded.
+
+## Resting
+
+`parties/<code>/rest` holds the party's remaining short rests and the current
+long rest request, which runs `voting` → `supplies` → `accepted` (or
+`declined`). Players vote; the GM accepts once every online player has
+answered; members then pledge food toward `campSuppliesPerCharacter` (default
+20) per resting character. A short rest is one player's, spending one of the
+party's shared count. Food is pledged, not taken, until the rest is accepted:
+a GM calling it off costs nobody anything. Each member's own client applies
+the outcome to its own character, and only for a step it watched happen, so a
+reload into an old accepted request rests and eats nothing. Solo play keeps
+both rests local.
 
 ## Persistence
 

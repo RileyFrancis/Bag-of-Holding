@@ -1017,10 +1017,11 @@ function _setSpellSlotsLeft(pool, level, total, left) {
   scheduleSaveAndSync();
 }
 
-// A Long Rest refills everything; a Short Rest refills Pact Magic only. Not wired
-// to any button yet.
-function _restoreSpellSlotsForLongRest()  { _restoreSpellSlots(SPELL_SLOT_POOLS); }
-function _restoreSpellSlotsForShortRest() { _restoreSpellSlots(['pact']); }
+// Refills every spell slot, for a Long Rest (rest-effects.js).
+function restoreSpellSlotsForLongRest()  { _restoreSpellSlots(SPELL_SLOT_POOLS); }
+
+// Refills Pact Magic only, for a Short Rest (rest-effects.js).
+function restoreSpellSlotsForShortRest() { _restoreSpellSlots(['pact']); }
 
 function _restoreSpellSlots(pools) {
   if (isReadOnly()) return;

@@ -937,14 +937,15 @@
 <!-- Where a roll lands before it flies to the corner, and where a chat line or
      another player's roll pops over their tab. Both are fixed layers over the app and
      under the modals, and neither takes a pointer event. See src/js/dice.js. -->
-<!-- The long rest prompt: a player's vote on a party long rest, the GM's
-     accept/decline once everyone has answered, or a solo confirmation. A card,
+<!-- The rest prompt: spending Hit Dice after a short rest, a player's vote on
+     a party long rest, the GM's decision, the camp supplies food picker, or a
+     solo long rest. A card,
      not a modal, so the table can keep playing around it. Filled by
      _renderRestPrompt() in src/js/rest.js. -->
 <div id="rest-prompt" class="hidden" role="dialog" aria-live="polite" aria-labelledby="rest-prompt-title">
   <div id="rest-prompt-title" class="rest-prompt-title"></div>
   <div id="rest-prompt-text" class="rest-prompt-text"></div>
-  <div id="rest-prompt-lists" class="rest-prompt-lists"></div>
+  <div id="rest-prompt-body" class="rest-prompt-body"></div>
   <div id="rest-prompt-actions" class="rest-prompt-actions"></div>
 </div>
 <div id="dice-stage" class="hidden"><!-- fliers, one per roll in flight --></div>
@@ -1968,6 +1969,7 @@
      arrives through that same subscription. After character-sheet.js too — the
      sheet's rows are what a skill or a save is rolled from. -->
 <script src="src/js/dice.js"></script>
+<script src="src/js/rest-effects.js"></script>
 <script src="src/js/rest.js"></script>
 <script src="src/js/tooltip.js"></script>
 

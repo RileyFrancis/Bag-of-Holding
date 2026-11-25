@@ -467,7 +467,7 @@ function _buildSupplyPicker(key) {
   stock.forEach(row => {
     const n = Math.min(row.units, draft.counts[row.templateId] ?? 0);
     const line = document.createElement('div');
-    line.className = 'rest-supply-row' + (n ? ' picked' : '');
+    line.className = 'rest-supply-row' + (n ? ' picked' : '') + (row.isSpoiled ? ' spoiled' : '');
     const name = document.createElement('span');
     name.className = 'rest-supply-name';
     name.textContent = row.name;
@@ -549,8 +549,10 @@ function _getGmDecisionModel(longRest, tally) {
   };
 }
 
-function _getSuppliesProgressText(longRest, extra = 0) {
-  return `${_getPledgedTotal(longRest) + extra} / ${Number(longRest.required) || 0} camp supplies`;
+// The numbers behind a supplies card's progress bar. `pick` is food chosen
+// here but not yet pledged, drawn as a lighter run after the pledged part.
+function _getSuppliesProgress(longRest, pick = 0) {
+  return { pledged: _getPledgedTotal(longRest), pick, required: Number(longRest.required) || 0 };
 }
 
 function _getMemberSuppliesModel(longRest) {
@@ -563,7 +565,8 @@ function _getMemberSuppliesModel(longRest) {
     return {
       key: longRest.id,
       title: 'Camp supplies',
-      text: `${_getSuppliesProgressText(longRest)} pledged. Waiting for the rest of the party.`,
+      text: 'Your food is pledged. Waiting for the rest of the party.',
+      progress: _getSuppliesProgress(longRest),
       groups: [{ label: 'Still choosing', names: waiting, cls: 'waiting' }].filter(g => g.names.length),
       actions: [],
     };
@@ -577,14 +580,13 @@ function _getMemberSuppliesModel(longRest) {
     };
   }
 
-  const items = _getDraftItems(_getSupplyDraft(longRest.id));
-  const mine = _getItemsTotal(items);
+  const mine = _getItemsTotal(_getDraftItems(_getSupplyDraft(longRest.id)));
   return {
     key: longRest.id,
     title: 'Camp supplies',
     text: `The Game Master accepted the long rest. The camp needs ${perChar} supplies for each of the ` +
-          `${members.length} resting, so ${_getSuppliesProgressText(longRest, mine)} with your pick. ` +
-          'Food you give is used up.',
+          `${members.length} resting. Food you give is used up.`,
+    progress: _getSuppliesProgress(longRest, mine),
     sig: _getSupplyPickerSig(longRest.id),
     body: () => [_buildSupplyPicker(longRest.id)],
     actions: [{ label: mine ? `Give ${mine} supplies` : 'Give nothing', primary: true,
@@ -598,8 +600,10 @@ function _getGmSuppliesModel(longRest) {
   return {
     key: longRest.id,
     title: 'Camp supplies',
-    text: `${_getSuppliesProgressText(longRest)} pledged.` +
-          (done.length === members.length && isShort ? ' Everyone has chosen, and the camp is short.' : ''),
+    text: done.length === members.length && isShort
+      ? 'Everyone has chosen, and the camp is short.'
+      : 'The party is choosing food for the camp.',
+    progress: _getSuppliesProgress(longRest),
     groups: [
       { label: 'Done', names: done.map(m => _getMemberName(m)), cls: 'resting' },
       { label: 'Still choosing', names: members.filter(m => !done.includes(m)).map(m => _getMemberName(m)), cls: 'waiting' },
@@ -612,12 +616,12 @@ function _getGmSuppliesModel(longRest) {
 }
 
 function _getSoloLongRestModel() {
-  const items = _getDraftItems(_getSupplyDraft('solo'));
-  const mine = _getItemsTotal(items);
+  const mine = _getItemsTotal(_getDraftItems(_getSupplyDraft('solo')));
   return {
     key: 'solo',
     title: 'Take a long rest?',
-    text: `A night's camp takes ${CAMP_SUPPLIES_PER_CHARACTER} supplies, ${mine} picked. Food you pick is used up.`,
+    text: `A night's camp takes ${CAMP_SUPPLIES_PER_CHARACTER} supplies. Food you pick is used up.`,
+    progress: { pledged: 0, pick: mine, required: CAMP_SUPPLIES_PER_CHARACTER },
     sig: _getSupplyPickerSig('solo'),
     body: () => [_buildSupplyPicker('solo')],
     actions: [
@@ -628,6 +632,46 @@ function _getSoloLongRestModel() {
 }
 
 // ─── THE PROMPT CARD ───
+
+// The camp supplies bar: filling left to right, the total so far on the left,
+// what the camp needs on the right, and how many more between them. Its colour
+// shifts from warning amber to green as it fills (rest.css reads `--fill`).
+function _buildSupplyBar({ pledged, pick, required }) {
+  const total = pledged + pick;
+  const ratio = required > 0 ? Math.min(1, total / required) : 1;
+  const wrap = document.createElement('div');
+  wrap.className = 'rest-supply-progress' + (total >= required ? ' met' : '');
+  wrap.style.setProperty('--fill', ratio.toFixed(3));
+
+  const track = document.createElement('div');
+  track.className = 'rest-supply-track';
+  track.setAttribute('role', 'progressbar');
+  track.setAttribute('aria-valuemin', '0');
+  track.setAttribute('aria-valuemax', String(required));
+  track.setAttribute('aria-valuenow', String(Math.min(total, required)));
+  track.setAttribute('aria-label', 'Camp supplies');
+  const pledgedEl = document.createElement('div');
+  pledgedEl.className = 'rest-supply-fill';
+  pledgedEl.style.width = (required > 0 ? Math.min(1, pledged / required) * 100 : 100) + '%';
+  const pickEl = document.createElement('div');
+  pickEl.className = 'rest-supply-fill pick';
+  pickEl.style.width = Math.max(0, ratio * 100 - parseFloat(pledgedEl.style.width)) + '%';
+  track.append(pledgedEl, pickEl);
+
+  const labels = document.createElement('div');
+  labels.className = 'rest-supply-labels';
+  const now = document.createElement('strong');
+  now.textContent = total;
+  const need = document.createElement('span');
+  need.className = 'rest-supply-need';
+  need.textContent = total >= required ? 'Enough for the camp' : `${required - total} more needed`;
+  const target = document.createElement('strong');
+  target.textContent = required;
+  labels.append(now, need, target);
+
+  wrap.append(track, labels);
+  return wrap;
+}
 
 function _buildRestStat(label, value) {
   const el = document.createElement('div');
@@ -695,6 +739,7 @@ function _renderRestPrompt() {
   restPromptTitleEl.textContent = model.title;
   restPromptTextEl.textContent = model.text ?? '';
   restPromptBodyEl.replaceChildren(
+    ...(model.progress ? [_buildSupplyBar(model.progress)] : []),
     ...(model.body ? model.body() : []),
     ...(model.groups ?? []).map(_buildRestPromptGroup),
   );

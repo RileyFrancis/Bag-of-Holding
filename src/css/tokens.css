@@ -171,6 +171,12 @@
   --pending-alt:  #0b8a8f;
   --pending: var(--pending-main);
 
+  /* Spoiled food's tint: a rot green, or a mould purple when a custom accent or
+     panel colour is green enough to swallow it (`_getSpoiledColorSwaps()`). */
+  --spoiled-main: #5e8c2e;
+  --spoiled-alt:  #8a4f9e;
+  --spoiled: var(--spoiled-main);
+
   /* Rarity — deepened so they hold contrast on parchment */
   --rarity-common:    #6d6355;
   --rarity-uncommon:  #2c7d34;
@@ -276,6 +282,8 @@
   --fumble-alt:  #d067d6;
   --pending-main: #ff4b3e;
   --pending-alt:  #3fd6dc;
+  --spoiled-main: #8cc152;
+  --spoiled-alt:  #c48ad6;
 
   --rarity-common:    #b3a894;
   --rarity-uncommon:  #56d95f;

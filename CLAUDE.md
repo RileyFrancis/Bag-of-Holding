@@ -194,6 +194,6 @@ checked after invisible characters are stripped (`java&#9;script:`).
 
 ### Theming
 
-- `_getCritColorSwaps()`/`_getPendingColorSwaps()` re-point `--crit`/`--fumble`/`--pending` when a
-  custom colour is too close. Never override the `-main`/`-alt` tokens; they are what the check reads.
+- `_getCritColorSwaps()`/`_getCrowdedColorSwap()` re-point `--crit`/`--fumble`/`--pending`/`--spoiled`
+  when a custom colour is too close. Never override the `-main`/`-alt` tokens; they are what the check reads.
 - **Any render path that inlines a palette colour must re-run from `_rerenderThemedContent()`.**

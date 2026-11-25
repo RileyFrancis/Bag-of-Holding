@@ -172,7 +172,7 @@ function _buildItemCard(t, opts = {}) {
     card.appendChild(tag);
   }
 
-  const color = getRarityColor(t.rarity);
+  const color = getItemColor(t);
 
   const swatch = document.createElement('div');
   swatch.className = 'item-card-swatch';

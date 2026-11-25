@@ -195,6 +195,8 @@
 .rarity-legendary { --rc: var(--rarity-legendary); }
 .rarity-artifact  { --rc: var(--rarity-artifact);  }
 .rarity-special   { --rc: var(--rarity-special);   }
+/* Spoiled food trades its rarity edge for the rot tint. */
+.placed-item.spoiled { --rc: var(--spoiled); }
 
 .item-cell.filled {
   background: color-mix(in srgb, var(--rc) 26%, transparent);

@@ -114,7 +114,7 @@ function _getInstanceUnits(inst) {
 }
 
 // Every food item the live character carries, one row per item, sorted by
-// name: `[{ templateId, name, units, value }]`, `value` per unit.
+// name: `[{ templateId, name, units, value, isSpoiled }]`, `value` per unit.
 function getOwnFoodStock() {
   const equippedIds = new Set(Object.values(state.equipped ?? {}));
   const byTemplate = new Map();
@@ -122,7 +122,8 @@ function getOwnFoodStock() {
     if (equippedIds.has(inst.id)) return;
     const t = state.db[inst.templateId];
     if (!_isFoodTemplate(t)) return;
-    const row = byTemplate.get(t.id) ?? { templateId: t.id, name: t.name, units: 0, value: getFoodCampSupplyValue(t) };
+    const row = byTemplate.get(t.id) ?? { templateId: t.id, name: t.name, units: 0,
+                                          value: getFoodCampSupplyValue(t), isSpoiled: isSpoiledItem(t) };
     row.units += _getInstanceUnits(inst);
     byTemplate.set(t.id, row);
   });

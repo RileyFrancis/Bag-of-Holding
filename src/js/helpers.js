@@ -220,6 +220,17 @@ function openRemoveCoinsModal(templateId) {
 // are baked into inline styles at render time, so theme.js clears the cache and
 // re-renders on a palette swap.
 
+// Whether an item is spoiled food (a `spoiled` tag), tinted with `--spoiled`.
+function isSpoiledItem(t) {
+  return (t?.tags ?? []).some(tag => String(tag).trim().toLowerCase() === 'spoiled');
+}
+
+// The colour an item is drawn in: its rarity's, or the rot tint for spoiled
+// food. The tint stays a var(), so a custom colour's swap reaches it unbaked.
+function getItemColor(t) {
+  return isSpoiledItem(t) ? 'var(--spoiled)' : getRarityColor(t?.rarity ?? 'common');
+}
+
 // The theme's colour for a rarity tier, cached.
 function getRarityColor(rarity) {
   if (rarityColorCache[rarity]) return rarityColorCache[rarity];

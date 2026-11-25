@@ -48,7 +48,7 @@ const ACCENT_ROLES = {
 
 // Every property this module may write on <html>, so a reset can remove what it
 // no longer sets and hand the palette back to tokens.css.
-const ACCENT_MANAGED = ['--on-accent', '--crit', '--fumble', '--pending'].concat(
+const ACCENT_MANAGED = ['--on-accent', '--crit', '--fumble', '--pending', '--spoiled'].concat(
   Object.values(ACCENT_ROLES).flatMap(r => r.tokens.map(t => t.name))
 );
 
@@ -63,10 +63,11 @@ const CRIT_MIN_DISTANCE = 0.08;
 const CRIT_MIN_HUE_GAP = 22;     // degrees of OKLCH hue
 const CRIT_HUE_MIN_CHROMA = 0.06;
 
-// The reminder glow (`--pending`) has to stand out from the highlight colours and
-// from the panels it sits on, so it is judged against every one of these that a
-// custom colour has set, by the same test as the crit colours.
-const PENDING_AVOID_TOKENS = ['--accent', '--accent-soft', '--panel', '--surface'];
+// The reminder glow (`--pending`) and spoiled food's tint (`--spoiled`) have to
+// stand out from the highlight colours and from the panels they sit on, so each
+// is judged against every one of these that a custom colour has set, by the
+// same test as the crit colours.
+const CROWDING_AVOID_TOKENS = ['--accent', '--accent-soft', '--panel', '--surface'];
 
 // The wheel face's lightness is clamped into a band where colour still reads
 // (a panel at L 91% or 12% would be a flat disc). The swatch shows the true result.
@@ -199,6 +200,7 @@ function _getCritPalette() {
       crit:   { main: read('--crit-main'),   alt: read('--crit-alt') },
       fumble: { main: read('--fumble-main'), alt: read('--fumble-alt') },
       pending: { main: read('--pending-main'), alt: read('--pending-alt') },
+      spoiled: { main: read('--spoiled-main'), alt: read('--spoiled-alt') },
     };
   });
   if (previousTheme === null) root.removeAttribute('data-theme');
@@ -232,16 +234,28 @@ function _getCritColorSwaps(accentHex, theme) {
 }
 
 // The `--pending` override for one theme's resolved colours; empty when the main
-// red is distinct from every custom highlight and panel colour. The alternate is
-// taken only when it clears all of them, so a pick that crowds both keeps the main.
+// red is distinct from every custom highlight and panel colour.
 function _getPendingColorSwaps(themeVars, theme) {
+  return _getCrowdedColorSwap(themeVars, theme, 'pending', '--pending');
+}
+
+// The `--spoiled` override, by the same test: a green accent or panel would
+// hide the rot green, so it turns mould purple instead.
+function _getSpoiledColorSwaps(themeVars, theme) {
+  return _getCrowdedColorSwap(themeVars, theme, 'spoiled', '--spoiled');
+}
+
+// Points `prop` at its alternate when the main colour crowds any custom colour
+// in CROWDING_AVOID_TOKENS. The alternate is taken only when it clears all of
+// them, so a pick that crowds both keeps the main.
+function _getCrowdedColorSwap(themeVars, theme, key, prop) {
   const isHex = v => /^#[0-9a-f]{6}$/i.test(v);
-  const avoid = PENDING_AVOID_TOKENS.map(t => themeVars[t]).filter(isHex);
+  const avoid = CROWDING_AVOID_TOKENS.map(t => themeVars[t]).filter(isHex);
   if (!avoid.length) return {};
-  const { main, alt } = _getCritPalette()[theme].pending;
+  const { main, alt } = _getCritPalette()[theme][key];
   if (!isHex(main) || !isHex(alt)) return {};
   const isCrowded = hex => avoid.some(a => _isTooCloseToAccent(a, hex));
-  return isCrowded(main) && !isCrowded(alt) ? { '--pending': 'var(--pending-alt)' } : {};
+  return isCrowded(main) && !isCrowded(alt) ? { [prop]: `var(${prop}-alt)` } : {};
 }
 
 // ─── RESOLVING AND APPLYING ───
@@ -298,6 +312,7 @@ function _computeAccentVars(prefs) {
 
     // Last, once every colour it is judged against has been resolved.
     Object.assign(out[theme], _getPendingColorSwaps(out[theme], theme));
+    Object.assign(out[theme], _getSpoiledColorSwaps(out[theme], theme));
   });
 
   return out;

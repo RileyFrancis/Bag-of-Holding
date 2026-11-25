@@ -109,7 +109,7 @@ function renderAllItems() {
 function _buildItemEl(template, shape, rarity) {
   const dims = getShapeDims(shape);
   const el = document.createElement('div');
-  el.className = `placed-item rarity-${rarity}`;
+  el.className = `placed-item rarity-${rarity}` + (isSpoiledItem(template) ? ' spoiled' : '');
   el.style.width  = dims.cols * CELL + 'px';
   el.style.height = dims.rows * CELL + 'px';
   el.style.gridTemplateColumns = `repeat(${dims.cols}, ${CELL}px)`;

@@ -96,7 +96,7 @@ function renderStash() {
   unplaced.forEach(inst => {
     const t = state.db[inst.templateId];
     if (!t) return;
-    const color = getRarityColor(t.rarity);
+    const color = getItemColor(t);
 
     const card = document.createElement('div');
     card.className = 'stash-card';

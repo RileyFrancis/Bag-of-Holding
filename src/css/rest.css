@@ -251,6 +251,58 @@
   border-radius: 6px;
 }
 .rest-supply-row.picked { border-color: var(--accent-soft); }
+/* Spoiled food: a rot tint along the row, still read through `--spoiled` so a
+   green custom colour swaps it to the alternate. */
+.rest-supply-row.spoiled {
+  border-color: color-mix(in srgb, var(--spoiled) 55%, var(--border));
+  background: color-mix(in srgb, var(--spoiled) 12%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--spoiled);
+}
+.rest-supply-row.spoiled .rest-supply-meta { color: color-mix(in srgb, var(--spoiled) 60%, var(--text-dim)); }
+
+/* The camp supplies bar. `--fill` (0–1, set inline) mixes the colour from
+   warning amber when empty to green when full; the pledged run is solid and
+   the run still being picked is a lighter, striped extension of it. */
+.rest-supply-progress {
+  --bar: color-mix(in oklab, var(--enc-ok) calc(var(--fill, 0) * 100%), var(--enc-warn));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rest-supply-track {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.rest-supply-fill {
+  height: 100%;
+  background: var(--bar);
+}
+.rest-supply-fill.pick {
+  background: repeating-linear-gradient(-45deg,
+    color-mix(in srgb, var(--bar) 55%, transparent) 0 4px,
+    color-mix(in srgb, var(--bar) 35%, transparent) 4px 8px);
+}
+.rest-supply-labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.rest-supply-labels strong {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--text);
+}
+.rest-supply-need {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.rest-supply-progress.met .rest-supply-need { color: var(--enc-ok); font-weight: 600; }
 .rest-supply-name {
   font-size: 13px;
   color: var(--text);

@@ -400,7 +400,7 @@ function _getSupplyDraft(key) {
 // The draft as pledge items, clamped to what is actually carried.
 function _getDraftItems(draft) {
   return getOwnFoodStock()
-    .map(row => ({ templateId: row.templateId, name: row.name, value: row.value,
+    .map(row => ({ templateId: row.templateId, name: row.name, value: row.value, spoiled: row.isSpoiled,
                    count: Math.min(row.units, draft.counts[row.templateId] ?? 0) }))
     .filter(i => i.count > 0);
 }
@@ -424,7 +424,7 @@ function _pledgeSupplies(requestId) {
   const pledge = {
     name: getChatAuthorName(),
     total: _getItemsTotal(items),
-    items: items.map(({ templateId, name, count }) => ({ templateId, name, count })),
+    items: items.map(({ templateId, name, count, spoiled }) => ({ templateId, name, count, spoiled: !!spoiled })),
     done: true,
   };
   const uid = state.party.playerId;
@@ -549,10 +549,21 @@ function _getGmDecisionModel(longRest, tally) {
   };
 }
 
-// The numbers behind a supplies card's progress bar. `pick` is food chosen
+function _hasSpoiledItems(items) {
+  return items.some(i => i.spoiled);
+}
+
+// The numbers behind a supplies card's progress bar. `pickItems` is food chosen
 // here but not yet pledged, drawn as a lighter run after the pledged part.
-function _getSuppliesProgress(longRest, pick = 0) {
-  return { pledged: _getPledgedTotal(longRest), pick, required: Number(longRest.required) || 0 };
+// Spoiled food anywhere in the camp's stock turns the bar the rot colour.
+function _getSuppliesProgress(longRest, pickItems = []) {
+  const pledgedItems = Object.values(longRest.supplies ?? {}).filter(p => p?.done).flatMap(_getPledgeItems);
+  return {
+    pledged: _getPledgedTotal(longRest),
+    pick: _getItemsTotal(pickItems),
+    required: Number(longRest.required) || 0,
+    hasSpoiled: _hasSpoiledItems(pledgedItems) || _hasSpoiledItems(pickItems),
+  };
 }
 
 function _getMemberSuppliesModel(longRest) {
@@ -580,13 +591,14 @@ function _getMemberSuppliesModel(longRest) {
     };
   }
 
-  const mine = _getItemsTotal(_getDraftItems(_getSupplyDraft(longRest.id)));
+  const pickItems = _getDraftItems(_getSupplyDraft(longRest.id));
+  const mine = _getItemsTotal(pickItems);
   return {
     key: longRest.id,
     title: 'Camp supplies',
     text: `The Game Master accepted the long rest. The camp needs ${perChar} supplies for each of the ` +
           `${members.length} resting. Food you give is used up.`,
-    progress: _getSuppliesProgress(longRest, mine),
+    progress: _getSuppliesProgress(longRest, pickItems),
     sig: _getSupplyPickerSig(longRest.id),
     body: () => [_buildSupplyPicker(longRest.id)],
     actions: [{ label: mine ? `Give ${mine} supplies` : 'Give nothing', primary: true,
@@ -620,8 +632,8 @@ function _getSoloLongRestModel() {
   return {
     key: 'solo',
     title: 'Take a long rest?',
-    text: `A night's camp takes ${CAMP_SUPPLIES_PER_CHARACTER} supplies. Food you pick is used up.`,
-    progress: { pledged: 0, pick: mine, required: CAMP_SUPPLIES_PER_CHARACTER },
+    progress: { pledged: 0, pick: mine, required: CAMP_SUPPLIES_PER_CHARACTER,
+                hasSpoiled: _hasSpoiledItems(_getDraftItems(_getSupplyDraft('solo'))) },
     sig: _getSupplyPickerSig('solo'),
     body: () => [_buildSupplyPicker('solo')],
     actions: [
@@ -635,12 +647,13 @@ function _getSoloLongRestModel() {
 
 // The camp supplies bar: filling left to right, the total so far on the left,
 // what the camp needs on the right, and how many more between them. Its colour
-// shifts from warning amber to green as it fills (rest.css reads `--fill`).
-function _buildSupplyBar({ pledged, pick, required }) {
+// shifts from amber to gold as it fills (rest.css reads `--fill`), or to the
+// rot colour when spoiled food is in it.
+function _buildSupplyBar({ pledged, pick, required, hasSpoiled }) {
   const total = pledged + pick;
   const ratio = required > 0 ? Math.min(1, total / required) : 1;
   const wrap = document.createElement('div');
-  wrap.className = 'rest-supply-progress' + (total >= required ? ' met' : '');
+  wrap.className = 'rest-supply-progress' + (total >= required ? ' met' : '') + (hasSpoiled ? ' spoiled' : '');
   wrap.style.setProperty('--fill', ratio.toFixed(3));
 
   const track = document.createElement('div');

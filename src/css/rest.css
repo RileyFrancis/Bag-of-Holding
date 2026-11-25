@@ -261,10 +261,12 @@
 .rest-supply-row.spoiled .rest-supply-meta { color: color-mix(in srgb, var(--spoiled) 60%, var(--text-dim)); }
 
 /* The camp supplies bar. `--fill` (0–1, set inline) mixes the colour from
-   warning amber when empty to green when full; the pledged run is solid and
-   the run still being picked is a lighter, striped extension of it. */
+   amber when empty to gold when full, or to the rot tint once spoiled food is
+   in the stock; the pledged run is solid and the run still being picked is a
+   lighter, striped extension of it. */
 .rest-supply-progress {
-  --bar: color-mix(in oklab, var(--enc-ok) calc(var(--fill, 0) * 100%), var(--enc-warn));
+  --bar-full: var(--coin-gp);
+  --bar: color-mix(in oklab, var(--bar-full) calc(var(--fill, 0) * 100%), var(--enc-warn));
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -302,7 +304,8 @@
   font-size: 11px;
   color: var(--text-dim);
 }
-.rest-supply-progress.met .rest-supply-need { color: var(--enc-ok); font-weight: 600; }
+.rest-supply-progress.spoiled { --bar-full: var(--spoiled); }
+.rest-supply-progress.met .rest-supply-need { color: var(--bar-full); font-weight: 600; }
 .rest-supply-name {
   font-size: 13px;
   color: var(--text);

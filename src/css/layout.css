@@ -213,6 +213,7 @@ body.party-readonly #char-name-display { pointer-events: none; }
 #app.equip-collapsed   #viewing-banner { padding-left: 42px; }
 #app.sidebar-collapsed #container-tabs,
 #app.sidebar-collapsed #viewing-banner { padding-right: 42px; }
+#app.equip-collapsed   #inv-layout-btn   { left: 46px; }
 #app.sidebar-collapsed #dice-dock-btn   { right: 46px; }
 #app.sidebar-collapsed .rest-dock-btn   { right: 49px; }
 #app.sidebar-collapsed #dice-dock-panel { right: 96px; }

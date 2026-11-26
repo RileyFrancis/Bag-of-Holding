@@ -101,6 +101,7 @@ function renderAllItems() {
     renderPlacedItem(inst);
   });
   updateGridFade();
+  renderInventoryList();
   renderContainerTabs();
   renderEquipPanel();
   renderStash();

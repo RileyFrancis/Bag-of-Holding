@@ -10,6 +10,8 @@ function startPlacing(templateId) {
   if (isReadOnly()) return;
   if (state.db[templateId]?.abstract) return; // a magic family's header — see items.js
   cancelPlacing();
+  // The list layout has no grid to aim a ghost at, so the item drops straight in.
+  if (isInventoryListView()) { addTemplateToFirstFreeSpot(templateId); return; }
   state.mode = 'placing';
   state.placing = { templateId, rotation: 0 };
   document.body.style.cursor = 'crosshair';
@@ -210,6 +212,7 @@ function finalizePlacement(template, shape, rotation, row, col, stackCount) {
   if (template.container && !state.containerGrids[id]) initContainerGrid(id);
   renderPlacedItem(state.instances[id]);
   updateGridFade();
+  renderInventoryList();
   renderContainerTabs();
   renderStash();
   renderEquipPanel();

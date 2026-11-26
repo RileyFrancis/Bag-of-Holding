@@ -73,6 +73,7 @@ In load order.
 | `shape-painter.js` | The item shape painter dialog (both item forms), and the in-form preview |
 | `grid.js` | Fit tests, place/remove, `rebuildGrid`, id generation |
 | `render-grid.js` | `renderGrid`, `renderAllItems` |
+| `inventory-list.js` | The inventory's list layout and the grid/list switch; in the list layout a new item drops into the first free spot instead of PLACING mode |
 | `render-sidebar.js` | `renderItemList`, the centred item details card |
 | `render-stats.js` | Inventory weight / encumbrance readout and its hover card |
 | `drag-ghost.js` | The ghost element that follows the cursor |

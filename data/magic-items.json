@@ -6400,7 +6400,7 @@
         "wondrous item",
         "book"
       ],
-      "shape": "111|11",
+      "shape": "111|110",
       "description": "This book contains memory and logic exercises, and its words are charged with magic. If you spend 48 hours over a period of 6 days or fewer studying the book's contents and practicing its guidelines, your Intelligence increases by 2, to a maximum of 30. The manual then loses its magic, but regains it in a century."
     },
     {
@@ -6416,7 +6416,7 @@
         "wondrous item",
         "book"
       ],
-      "shape": "111|11",
+      "shape": "111|110",
       "description": "This book contains guidelines for influencing and charming others, and its words are charged with magic. If you spend 48 hours over a period of 6 days or fewer studying the book's contents and practicing its guidelines, your Charisma increases by 2, to a maximum of 30. The manual then loses its magic, but regains it in a century."
     },
     {
@@ -6433,7 +6433,7 @@
         "wondrous item",
         "book"
       ],
-      "shape": "111|11",
+      "shape": "111|110",
       "description": "While attuned, you can use this tome as a Spellbook and an Arcane Focus. Once per dawn, while holding it, you can take a Bonus Action to cast a spell written in it without expending a spell slot or providing Verbal or Somatic components. Removing the tongue from its cover (only you can do so) permanently erases every spell in the book, and Vecna may scrawl fleeting messages in its pages."
     },
     {
@@ -6449,7 +6449,7 @@
         "wondrous item",
         "book"
       ],
-      "shape": "111|11",
+      "shape": "111|110",
       "description": "This book contains intuition and insight exercises, and its words are charged with magic. If you spend 48 hours over a period of 6 days or fewer studying the book's contents and practicing its guidelines, your Wisdom increases by 2, to a maximum of 30. The manual then loses its magic, but regains it in a century."
     },
     {

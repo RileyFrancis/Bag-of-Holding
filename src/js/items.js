@@ -195,7 +195,11 @@ function _parseCost(str) {
 
 function _parseShape(str) {
   if (!str || !str.trim()) return [[1]];
-  return str.trim().split('|').map(row => row.split('').map(c => parseInt(c, 10)));
+  const rows = str.trim().split('|').map(row => row.split('').map(c => parseInt(c, 10) ? 1 : 0));
+  // Rotation reads the width off the first row, so a short row ("111|11") would
+  // rotate into undefined cells and throw at render; pad every row to the widest.
+  const width = Math.max(...rows.map(r => r.length));
+  return rows.map(r => r.concat(Array(width - r.length).fill(0)));
 }
 
 // The loader splits the file on real newlines before parsing rows, so a

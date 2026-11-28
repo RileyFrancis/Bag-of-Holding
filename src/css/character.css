@@ -168,11 +168,67 @@
    shuffle the rest along and leave the reader working out which one went. */
 .identity-val.empty { color: var(--text-dim); }
 
-.sheet-id-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px 14px;
+/* ── The XP bar ──────────────────────────────────────────────────────────────
+   The last fact in the identity row, so it sits right after Level. It takes
+   whatever width the row has left and wraps to its own line under 180px. It
+   fills from this level's threshold toward the next; a click opens #xp-modal. */
+.xp-bar-fact {
+  flex: 1 1 180px;
+  max-width: 360px;
+  align-items: stretch; /* a button's UA default is flex-start, which shrinks the bar */
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
+.xp-bar-fact:disabled { cursor: default; opacity: 1; }
+
+.xp-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 18px;
+  padding: 0 7px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.xp-bar-fact:not(:disabled):hover .xp-bar { border-color: var(--accent-soft); }
+.xp-bar-fact:focus-visible .xp-bar { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.xp-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  transition: width 0.25s ease;
+}
+/* Enough XP banked for the next level. */
+.xp-bar-fact.ready .xp-bar-fill { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+
+.xp-bar-num {
+  position: relative; /* above the fill */
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.xp-bar-num:last-child { color: var(--text-dim); }
+.xp-bar-fact.ready .xp-bar-num:last-child { color: var(--text); }
+
+/* ── The XP modal ── */
+.xp-current-input {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+.xp-delta-btns { display: flex; gap: 8px; }
+.xp-delta-btns button { flex: 1; }
 
 /* ── Shared field chrome ── */
 .sheet-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }

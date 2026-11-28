@@ -344,7 +344,9 @@
                The identity line under the name is the readout of all of it.
 
                XP stays, because it is not part of what a character is: it is a
-               number that changes at the table, alongside HP and inspiration. -->
+               number that changes at the table, alongside HP and inspiration.
+               It is the bar closing the identity row, right after Level, and a
+               click on it opens #xp-modal to edit it. -->
           <section class="sheet-widget pinned" data-widget="identity">
             <div class="widget-body">
               <div class="sheet-head">
@@ -354,10 +356,17 @@
                 <input type="text" id="sheet-name" class="sheet-name-input" maxlength="40"
                        data-sheet="name" data-kind="text" placeholder="Character name"
                        aria-label="Character name">
-                <div id="sheet-identity" class="sheet-identity"></div>
-                <div class="sheet-id-grid">
-                  <label class="sheet-field narrow"><span>XP</span>
-                    <input type="number" data-sheet="xp" data-kind="int" min="0"></label>
+                <!-- The facts are rebuilt in front of the bar on every render;
+                     the bar itself is static and only written into. -->
+                <div id="sheet-identity" class="sheet-identity">
+                  <button type="button" id="sheet-xp-bar" class="identity-fact xp-bar-fact">
+                    <span class="identity-key">Experience</span>
+                    <span class="xp-bar">
+                      <span id="sheet-xp-fill" class="xp-bar-fill"></span>
+                      <span id="sheet-xp-current" class="xp-bar-num"></span>
+                      <span id="sheet-xp-next" class="xp-bar-num"></span>
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1253,6 +1262,31 @@
     <div class="modal-footer">
       <button id="stack-confirm-btn" class="btn-primary">Place</button>
       <button class="cancel-btn btn-sm">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== XP MODAL ===== -->
+<!-- Opened from the sheet's XP bar (character-sheet.js). Current XP sets the
+     total outright; the box below adds to it, or subtracts with a minus sign. -->
+<div id="xp-modal" class="modal hidden">
+  <div class="modal-box narrow" role="dialog" aria-labelledby="xp-modal-title">
+    <h2 id="xp-modal-title">Experience</h2>
+    <label class="field">
+      <span>Current XP</span>
+      <input type="number" id="xp-current-input" class="xp-current-input" min="0">
+    </label>
+    <p id="xp-modal-next" class="modal-note"></p>
+    <label class="field">
+      <span>Add or subtract</span>
+      <input type="number" id="xp-delta-input" placeholder="e.g. 250 or -100">
+    </label>
+    <div class="xp-delta-btns">
+      <button type="button" id="xp-subtract-btn" class="btn-sm">− Subtract</button>
+      <button type="button" id="xp-add-btn" class="btn-primary">+ Add</button>
+    </div>
+    <div class="modal-footer">
+      <button class="cancel-btn btn-sm">Done</button>
     </div>
   </div>
 </div>

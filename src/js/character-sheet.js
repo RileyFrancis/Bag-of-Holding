@@ -10,6 +10,12 @@
 
 const PROF_TITLES = ['Not proficient', 'Proficient', 'Expertise'];
 
+// Total XP needed to reach each level (index 0 = level 1), from the 2024 rules.
+const XP_LEVEL_THRESHOLDS = [
+  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
+  85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
+];
+
 // Whether the ability groups have been built into the page (once per session).
 let isSheetBuilt = false;
 
@@ -253,6 +259,7 @@ function renderCharacterSheet() {
 
   // The identity block under the name — the readout of what the gear edits.
   _renderSheetIdentity(c);
+  _renderXpBar(readOnly);
 
   // Nothing on someone else's sheet is editable, and a gear whose Save would
   // write to a character that is not yours is worse than no gear.
@@ -281,14 +288,17 @@ function _renderSheetIdentity(c) {
     return e.subclass ? `${e.name}${level} (${e.subclass})` : `${e.name}${level}`;
   }).join(' / ');
 
-  box.textContent = '';
+  // The XP bar is static markup at the end of the row, so only the facts are
+  // swapped out, and always in front of it.
+  const xpBar = document.getElementById('sheet-xp-bar');
+  box.querySelectorAll('.identity-fact:not(#sheet-xp-bar)').forEach(el => el.remove());
   [
     [entries.length > 1 ? 'Classes' : 'Class', classes],
     ['Species',    c.race],
     ['Background', c.background],
     ['Alignment',  c.alignment],
     ['Level',      c.level],
-  ].forEach(([label, value]) => box.appendChild(_buildIdentityFact(label, value)));
+  ].forEach(([label, value]) => box.insertBefore(_buildIdentityFact(label, value), xpBar));
 }
 
 function _buildIdentityFact(label, value) {
@@ -305,6 +315,81 @@ function _buildIdentityFact(label, value) {
 
   fact.append(key, val);
   return fact;
+}
+
+// ─── EXPERIENCE ───
+
+// The live character's XP, never negative.
+function _getXp() { return Math.max(0, parseInt(state.character.xp, 10) || 0); }
+
+// The character's level and its XP span: where it starts, and where the next
+// level starts (null at level 20). Read off the level set in Character
+// Setup, not worked out from the XP, since levelling up is the player's call.
+function _getXpLevelSpan() {
+  const level = Math.max(1, Math.min(20, parseInt(state.character.level, 10) || 1));
+  return { level, from: XP_LEVEL_THRESHOLDS[level - 1], to: XP_LEVEL_THRESHOLDS[level] ?? null };
+}
+
+// Fills the bar from this level's threshold toward the next one. Also keeps an
+// open XP panel in step, since a synced edit from elsewhere can land while it is.
+function _renderXpBar(readOnly) {
+  const xp = _getXp();
+  const { from, to } = _getXpLevelSpan();
+  const fill = to === null ? 1 : Math.max(0, Math.min(1, (xp - from) / (to - from)));
+  const isReady = to !== null && xp >= to;
+
+  const bar = document.getElementById('sheet-xp-bar');
+  bar.disabled = readOnly;
+  bar.classList.toggle('ready', isReady);
+  bar.title = readOnly ? '' : 'Edit experience points';
+  bar.setAttribute('aria-label', to === null
+    ? `Experience: ${xp} XP, max level`
+    : `Experience: ${xp} of ${to} XP to the next level`);
+  document.getElementById('sheet-xp-fill').style.width = (fill * 100) + '%';
+  document.getElementById('sheet-xp-current').textContent = xp.toLocaleString();
+  document.getElementById('sheet-xp-next').textContent = to === null ? 'Max' : to.toLocaleString();
+
+  const modal = document.getElementById('xp-modal');
+  if (modal.classList.contains('hidden')) return;
+  if (readOnly) { hideModal('xp-modal'); return; }
+  _renderXpModal();
+}
+
+function _renderXpModal() {
+  const xp = _getXp();
+  const { level, to } = _getXpLevelSpan();
+  const input = document.getElementById('xp-current-input');
+  if (input !== document.activeElement) input.value = xp;
+
+  let note = 'Max level reached.';
+  if (to !== null) note = xp >= to
+    ? `Enough XP for level ${level + 1}. Level up in Character Setup.`
+    : `${(to - xp).toLocaleString()} XP to level ${level + 1}.`;
+  document.getElementById('xp-modal-next').textContent = note;
+}
+
+function _openXpModal() {
+  if (isReadOnly()) return;
+  document.getElementById('xp-delta-input').value = '';
+  _renderXpModal();
+  showModal('xp-modal');
+  document.getElementById('xp-delta-input').focus();
+}
+
+function _setXp(value) {
+  state.character.xp = Math.max(0, Math.round(value) || 0);
+  commitSheetEdit('xp');
+}
+
+// Applies the add/subtract box; `sign` is 1 for Add, -1 for Subtract, so a
+// negative number typed with Add subtracts too.
+function _applyXpDelta(sign) {
+  const deltaInput = document.getElementById('xp-delta-input');
+  const delta = parseInt(deltaInput.value, 10);
+  if (!Number.isFinite(delta) || delta === 0 || isReadOnly()) return;
+  _setXp(_getXp() + sign * delta);
+  deltaInput.value = '';
+  deltaInput.focus();
 }
 
 function _renderProfDot(el, kind) {
@@ -392,6 +477,23 @@ sheetEl.addEventListener('click', e => {
   const next = kind === 'bool' ? !current : ((parseInt(current, 10) || 0) + 1) % 3;
   _setSheetPath(el.dataset.sheet, next);
   commitSheetEdit(el.dataset.sheet);
+});
+
+// The XP panel lives outside #character-sheet, so it is wired on its own.
+document.getElementById('sheet-xp-bar').addEventListener('click', _openXpModal);
+document.getElementById('xp-current-input').addEventListener('input', e => {
+  if (isReadOnly()) return;
+  const n = parseInt(e.target.value, 10);
+  _setXp(Number.isFinite(n) ? n : 0);
+});
+// The typed value stays until blur, so a cleared box is not snapped to 0 mid-edit.
+document.getElementById('xp-current-input').addEventListener('blur', e => { e.target.value = _getXp(); });
+document.getElementById('xp-add-btn').addEventListener('click', () => _applyXpDelta(1));
+document.getElementById('xp-subtract-btn').addEventListener('click', () => _applyXpDelta(-1));
+document.getElementById('xp-modal').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'xp-delta-input') { e.preventDefault(); _applyXpDelta(1); }
+  else if (e.key === 'Enter' && e.target.id === 'xp-current-input') hideModal('xp-modal');
+  else if (e.key === 'Escape') { e.stopPropagation(); hideModal('xp-modal'); }
 });
 
 // Runs everything that must follow a sheet edit to `path`. Strength is marked,

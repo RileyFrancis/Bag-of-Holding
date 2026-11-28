@@ -53,6 +53,37 @@
   filter: url(#paper-fray) drop-shadow(0 2px 7px var(--paper-cast));
 }
 
+/* The same tear baked into 9-slice masks (tools/make-paper-tear.html). A live
+   filter is re-run for every tile scrolled into view, which makes a long sheet
+   lag behind the scroll; a mask is one decoded image. Browsers without
+   mask-border (Firefox) keep the filter above. The slice, width and outset
+   must match the constants in the generator. */
+@supports (-webkit-mask-box-image: none) {
+  .paper-sheet::before,
+  .paper-sheet::after {
+    /* The box reaches the edge of the 62px margin, so it never adds scroll
+       overflow; the tear only bites inward from it. */
+    inset: calc(-0.5in - 14px);
+  }
+  .paper-sheet::before {
+    box-shadow: none;
+    filter: none;
+    -webkit-mask-box-image: url('../../img/paper-tear.png') 256 fill / 128px / 14px round;
+  }
+  /* The burn inside the torn edge and the shadow it casts, one layer over the
+     paper. The outset carries the shadow past the box; the box-shadow gives
+     it colour there without growing the scroll area. */
+  .paper-sheet::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--paper-edge);
+    box-shadow: 0 0 0 14px var(--paper-edge);
+    -webkit-mask-box-image: url('../../img/paper-tear-rim.png') 256 fill / 128px / 14px round;
+  }
+}
+
 #grid-scroll {
   flex: 1;
   overflow-y: auto;

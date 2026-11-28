@@ -128,8 +128,13 @@
      It is a *filter* rather than a mask on purpose: filters work in real pixels,
      so the fray stays the same size whatever shape the panel is dragged into,
      where a stretched mask image would smear along the long side. It is applied
-     only to the paper layer (#inventory-panel::before), never to an element with
+     only to the paper layer (.paper-sheet::before), never to an element with
      content in it — displacing the grid or the sheet's text would be a disaster.
+
+     Browsers with mask-border draw the sheets from the same tear baked into
+     img/paper-tear*.png instead (inventory.css), since the live filter re-runs
+     for every tile scrolled into view. These defs remain for Firefox and for
+     the small option picker.
 
      The filter region is deliberately larger than the element so the displaced
      edge is not clipped flat, and `scale` must stay under twice the paper's

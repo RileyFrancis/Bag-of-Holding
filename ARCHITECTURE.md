@@ -29,13 +29,14 @@ data/
   spell-slots.json      Spell slots each class grants, indexed by that class's level
   spells.json           Every spell the app knows, each tagged with its classes
   statuses.json         The statuses (conditions) a character can be under
-img/                    Image assets — the icon set and the paper texture
+img/                    Image assets — the icon set, the paper texture and its torn-edge masks
 functions/
   firebase-env.js       Cloudflare Pages Function: serves the Firebase keys on a
                         deploy, from the host's environment variables
 tools/
   serve.py              Local dev server: http.server plus the app's routes
   make-og-image.py      Draws img/og-preview.jpg, the link-preview picture (needs Pillow)
+  make-paper-tear.html  Draws img/paper-tear*.png, the torn edge of every paper sheet
   shape-editor.html     Standalone helper for drawing item shapes
   spell-editor.html     Standalone helper for authoring data/spells.json entries
   validate-items.py     Checks items.csv + magic-items.json (ids, bases, shapes, name clashes)
@@ -370,6 +371,11 @@ be wrong in one of the two themes. The single exception is the hue wheel in
   appearance.js re-points at their `-alt` colour when a custom colour crowds the
   main one: the dice against the accent, the glow against the accent, secondary
   and panel colours.
+- The torn paper edge is baked into alpha-only 9-slice masks
+  (`img/paper-tear*.png`, `mask-border` in `inventory.css`), coloured in CSS by
+  `--paper-edge`, so it follows the theme without a second image. A live SVG
+  filter would match it, but re-runs for every tile scrolled into view and made long
+  sheets lag; it remains only as the fallback for browsers without mask-border.
 - Rarity and coin colours differ per theme and are read out of CSS by JS. Any
   render path that bakes a palette colour into an inline style must be re-run
   from `_rerenderThemedContent()` on a theme switch.

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     make-paper-tear.html — draws the torn-paper masks in img/
+
+     Open it in Chrome (python3 tools/serve.py 8787, then /tools/make-paper-tear.html)
+     and save both PNGs over the ones in img/. The output is committed, not built.
+     Only the alpha channel is read, so the committed copies are re-saved as
+     greyscale+alpha to halve their size.
+
+     A live SVG filter is re-run for every tile scrolled into view; baked into
+     two 9-slice masks (`mask-border` in inventory.css) it is one decoded image.
+
+       paper-tear.png       alpha of the torn sheet itself
+       paper-tear-rim.png   the burn inside that edge plus the shadow it casts,
+                            coloured by inventory.css with --paper-edge
+
+     The edge slices repeat, so the noise is tiled to exactly one slice length
+     (stitchTiles + feTile) and joins itself seamlessly. Keep the constants here
+     in step with the `mask-border` slice/width/outset in inventory.css.
+     ============================================================ -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Paper Tear Masks</title>
+<style>
+  body { font-family: monospace; background: #6d5a3c; color: #f0e6d0; padding: 24px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; }
+  figure { margin: 0; }
+  canvas { width: 384px; height: 384px; background: repeating-conic-gradient(#888 0 25%, #aaa 0 50%) 0 0 / 16px 16px; }
+  a { color: #ffd98a; }
+</style>
+</head>
+<body>
+<p>Save both images into <code>img/</code>.</p>
+<div class="row" id="out"></div>
+<script>
+'use strict';
+
+const SCALE = 2;              // device pixels per CSS px, so the edge stays crisp on HiDPI
+const SLICE = 128;            // px; corner size and edge thickness of the 9-slice
+const TILE = 512;             // px; length of one repeating edge slice, and the noise period
+const SIZE = 2 * SLICE + TILE;
+const OUTSET = 14;            // px the image reaches past the pseudo-element's box, for the shadow
+const TEAR = 34;              // displacement scale; the edge moves up to half this either way
+const EDGE = OUTSET + TEAR / 2; // the undisplaced edge, so the tear never passes the box
+const BURN_BLUR = 19;         // σ; the old `inset 0 0 38px 10px` box-shadow
+const BURN_SPREAD = 10;
+const CAST_BLUR = 3.5;        // σ; the old `drop-shadow(0 2px 7px)`
+const CAST_DY = 2;
+const CAST_ALPHA = 0.38 / 0.55; // --paper-cast over --paper-edge: the rim is drawn in the latter
+
+// Shared primitives: periodic noise, the plain sheet, and the sheet torn by the noise.
+const TORN = `
+  <feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="5" seed="9"
+                stitchTiles="stitch" x="0" y="0" width="${TILE}" height="${TILE}" result="tile"/>
+  <feTile in="tile" result="noise"/>
+  <feFlood flood-color="#000" x="${EDGE}" y="${EDGE}" width="${SIZE - 2 * EDGE}"
+           height="${SIZE - 2 * EDGE}" result="paper"/>
+  <feDisplacementMap in="paper" in2="noise" scale="${TEAR}" xChannelSelector="R"
+                     yChannelSelector="G" result="torn"/>`;
+
+// The burn is blurred before it is torn, as the box-shadow was under the old filter.
+const RIM = `
+  <feFlood flood-color="#000" result="all"/>
+  <feFlood flood-color="#000" x="${EDGE + BURN_SPREAD}" y="${EDGE + BURN_SPREAD}"
+           width="${SIZE - 2 * (EDGE + BURN_SPREAD)}" height="${SIZE - 2 * (EDGE + BURN_SPREAD)}" result="hole"/>
+  <feComposite in="all" in2="hole" operator="out" result="ring"/>
+  <feGaussianBlur in="ring" stdDeviation="${BURN_BLUR}" result="ringBlur"/>
+  <feComposite in="ringBlur" in2="paper" operator="in" result="burnFlat"/>
+  <feDisplacementMap in="burnFlat" in2="noise" scale="${TEAR}" xChannelSelector="R"
+                     yChannelSelector="G" result="burn"/>
+  <feGaussianBlur in="torn" stdDeviation="${CAST_BLUR}" result="castBlur"/>
+  <feOffset in="castBlur" dy="${CAST_DY}" result="castOff"/>
+  <feComponentTransfer in="castOff" result="cast"><feFuncA type="linear" slope="${CAST_ALPHA}"/></feComponentTransfer>
+  <feComposite in="cast" in2="torn" operator="out" result="castOutside"/>
+  <feMerge><feMergeNode in="castOutside"/><feMergeNode in="burn"/></feMerge>`;
+
+// One SVG drawing the given filter chain over the whole tile, at SCALE.
+function buildMaskSvg(primitives) {
+  const pad = 100; // filter region past the image, so the blurs see a full neighbourhood
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE * SCALE}" height="${SIZE * SCALE}"
+               viewBox="0 0 ${SIZE} ${SIZE}">
+    <filter id="f" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse"
+            x="${-pad}" y="${-pad}" width="${SIZE + 2 * pad}" height="${SIZE + 2 * pad}"
+            color-interpolation-filters="sRGB">${primitives}</filter>
+    <rect width="${SIZE}" height="${SIZE}" fill-opacity="0" filter="url(#f)"/>
+  </svg>`;
+}
+
+// Draws the SVG into a canvas and adds it to the page with a download link.
+async function renderMask(name, primitives) {
+  const url = URL.createObjectURL(new Blob([buildMaskSvg(primitives)], { type: 'image/svg+xml' }));
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SIZE * SCALE;
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  URL.revokeObjectURL(url);
+
+  const fig = document.createElement('figure');
+  const link = document.createElement('a');
+  link.download = name;
+  link.href = canvas.toDataURL('image/png');
+  link.textContent = 'Save ' + name;
+  fig.append(canvas, document.createElement('br'), link);
+  document.getElementById('out').append(fig);
+}
+
+renderMask('paper-tear.png', TORN);
+renderMask('paper-tear-rim.png', TORN + RIM);
+</script>
+</body>
+</html>

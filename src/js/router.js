@@ -161,8 +161,4 @@ document.getElementById('missing-signin-btn').addEventListener('click', () => {
   requireAuth('Sign in to load your characters from your cloud save.', () => renderMissingScreen());
 });
 
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || state.screen !== 'missing') return;
-  if (document.querySelector('.modal:not(.hidden)')) return;
-  openHomeScreen();
-});
+registerEscapeLayer(ESCAPE_TIER.SCREEN, () => state.screen === 'missing', () => openHomeScreen());

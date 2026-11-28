@@ -805,6 +805,9 @@ function _hideRollDetail() {
   rollDetailEl.textContent = '';
 }
 
+registerEscapeLayer(ESCAPE_TIER.POPUP,
+  () => !!rollDetailEl && !rollDetailEl.classList.contains('hidden'), _hideRollDetail);
+
 // Delegated (the chips are rebuilt on every roll). `pointerover`, not
 // `mouseenter`, so moving between two chips swaps the card.
 diceHistoryEl.addEventListener('pointerover', e => {
@@ -914,9 +917,7 @@ window.addEventListener('pointermove', e => {
 
 window.addEventListener('pointerup',     () => _finishRollGesture(true));
 window.addEventListener('pointercancel', () => _finishRollGesture(false));
-window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && rollGesture) _finishRollGesture(false);
-});
+registerEscapeLayer(ESCAPE_TIER.GESTURE, () => !!rollGesture, () => _finishRollGesture(false));
 
 // Rolls straight on a click: the keyboard's way in, and the fallback for a
 // pointer sequence that produced no roll of its own.
@@ -1128,11 +1129,9 @@ document.addEventListener('pointerdown', e => {
   if (diceDockBtn.contains(e.target) || diceDockPanel.contains(e.target)) return;
   setDiceDockOpen(false);
 });
-// Capture, so this runs before the gesture's own Escape clears `rollGesture`:
-// an Escape backing out of a held Roll should not also fold the column.
-window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && isDiceDockOpen() && !rollGesture) setDiceDockOpen(false);
-}, { capture: true });
+// Below the roll gesture's tier, so an Escape backing out of a held Roll does
+// not also fold the column.
+registerEscapeLayer(ESCAPE_TIER.TRAY, isDiceDockOpen, () => setDiceDockOpen(false));
 
 _buildDiceDock();
 setDiceDockOpen(false);

@@ -346,11 +346,6 @@ function _isChatShortcutAllowed(e) {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && isChatModalOpen()) {
-    e.preventDefault();
-    _closeChatModal();
-    return;
-  }
   if (e.key === 'Enter' && _isChatShortcutAllowed(e)) {
     e.preventDefault(); // not a click on whatever button last kept focus
     _openChatModal();

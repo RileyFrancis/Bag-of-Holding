@@ -1317,7 +1317,7 @@
 <div id="chat-modal" class="modal hidden" data-backdrop-close="false">
   <div class="modal-box chat-modal-box" role="dialog" aria-labelledby="chat-modal-title">
     <h2 id="chat-modal-title">Chat</h2>
-    <button id="chat-modal-close" class="chat-modal-close" type="button"
+    <button id="chat-modal-close" class="chat-modal-close" type="button" data-escape="close"
             title="Close (Esc)" aria-label="Close chat">✕</button>
     <div id="chat-modal-body"></div>
   </div>
@@ -1328,7 +1328,7 @@
      editor. The form is built by src/js/homebrew-editor.js. -->
 <div id="homebrew-modal" class="modal hidden" data-backdrop-close="false">
   <div class="modal-box homebrew-box">
-    <button class="homebrew-close-btn hb-close" title="Close" aria-label="Close">✕</button>
+    <button class="homebrew-close-btn hb-close" title="Close" aria-label="Close" data-escape="close">✕</button>
     <section id="homebrew-picker">
       <h2>What are we brewing?</h2>
       <div id="homebrew-pick-grid"><!-- one button per kind, from HOMEBREW_KINDS --></div>
@@ -1337,7 +1337,7 @@
       <h2 id="homebrew-editor-title">New Homebrew</h2>
       <div id="homebrew-form"><!-- rendered by renderHomebrewForm() --></div>
       <div class="modal-footer">
-        <button id="homebrew-back-btn" class="btn-sm">&larr; Back</button>
+        <button id="homebrew-back-btn" class="btn-sm" data-escape="back">&larr; Back</button>
         <button id="homebrew-delete-btn" class="btn-sm danger hidden">Delete</button>
         <button id="homebrew-save-btn" class="btn-primary">Create</button>
         <button class="homebrew-close-btn btn-sm">Cancel</button>
@@ -1663,7 +1663,7 @@
 <!-- ===== CLOUD SAVE CONFLICT MODAL ===== -->
 <!-- First sign-in with an inventory already in both places. Never silent: one
      of the two is about to be replaced, so the user picks which. -->
-<div id="cloud-conflict-modal" class="modal hidden">
+<div id="cloud-conflict-modal" class="modal hidden" data-backdrop-close="false" data-escape="false">
   <div class="modal-box">
     <h2>Two Inventories</h2>
     <p class="modal-note">This browser and your account each hold an inventory, and they differ.
@@ -1848,7 +1848,7 @@
     </div>
 
     <div class="modal-footer">
-      <button class="settings-back-btn btn-sm">&#8249; Back</button>
+      <button class="settings-back-btn btn-sm" data-escape="back">&#8249; Back</button>
       <button class="cancel-btn btn-sm">Close</button>
     </div>
   </div>
@@ -1863,7 +1863,7 @@
       <p class="info-placeholder">Instructions coming soon.</p>
     </div>
     <div class="modal-footer">
-      <button class="settings-back-btn btn-sm">&#8249; Back</button>
+      <button class="settings-back-btn btn-sm" data-escape="back">&#8249; Back</button>
       <button class="cancel-btn btn-sm">Close</button>
     </div>
   </div>
@@ -1886,7 +1886,7 @@
     <div class="modal-footer">
       <button type="button" id="shape-painter-clear" class="btn-sm danger">Clear</button>
       <button type="button" id="shape-painter-done" class="btn-primary">Done</button>
-      <button type="button" id="shape-painter-cancel" class="btn-sm">Cancel</button>
+      <button type="button" id="shape-painter-cancel" class="btn-sm" data-escape="close">Cancel</button>
     </div>
   </div>
 </div>
@@ -1938,6 +1938,7 @@
 
 <script src="src/js/constants.js"></script>
 <script src="src/js/state.js"></script>
+<script src="src/js/escape.js"></script>
 <!-- Early on purpose: syncCharacterViewUI() calls into it from load-time code. -->
 <script src="src/js/pending-choices.js"></script>
 <script src="src/js/folders.js"></script>

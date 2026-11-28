@@ -453,6 +453,9 @@ function _closeColorWheel() {
   document.querySelectorAll('.color-row').forEach(row => row.classList.remove('open'));
 }
 
+// Inside the Appearance modal, so it folds before the modal closes.
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => wheelRole !== null, _closeColorWheel);
+
 function _onWheelPointerDown(e) {
   if (!wheelRole || e.button !== 0) return;
   e.preventDefault();

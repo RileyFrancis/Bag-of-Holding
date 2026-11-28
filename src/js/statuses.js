@@ -326,6 +326,7 @@ document.addEventListener('pointerdown', e => {
 
 // Any key, not just Escape: C/I/S switch the view out from under the picker.
 document.addEventListener('keydown', _closeStatusPicker);
+registerEscapeLayer(ESCAPE_TIER.POPUP, isStatusPickerOpen, _closeStatusPicker);
 
 // Fixed-position, so a scroll of the sheet under it would leave it floating
 // away from its button.

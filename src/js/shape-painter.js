@@ -216,16 +216,10 @@ document.getElementById('shape-painter-cancel').addEventListener('click', () => 
 
 // It sits over another modal, so the shared backdrop must not close it — that
 // would take the item form underneath with it. A click beside the box is a
-// Cancel, the same as Escape.
+// Cancel, the same as Escape (its Cancel button is `data-escape`).
 shapePainterEl.addEventListener('click', e => {
   if (e.target === shapePainterEl) _closeShapePainter(false);
 });
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !shapePainter) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  _closeShapePainter(false);
-}, true);
 
 // ─── THE PREVIEW ─────────────────────────────────────────────────────────────
 // Draws a small read-only preview of `shape` into `el`, as shown in the item forms.

@@ -706,12 +706,3 @@ hbModalEl.querySelectorAll('.homebrew-close-btn').forEach(btn =>
 document.getElementById('modal-backdrop').addEventListener('click', () => {
   if (!hbModalEl.classList.contains('hidden')) _closeHomebrewPanel();
 });
-
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || hbModalEl.classList.contains('hidden')) return;
-  // A modal opened over this one closes first.
-  const openModals = [...document.querySelectorAll('.modal:not(.hidden)')];
-  if (openModals.some(m => m !== hbModalEl)) return;
-  e.preventDefault();
-  _closeHomebrewPanel();
-});

@@ -20,7 +20,8 @@ app's routes and 404s a reload; `file://` may not load `.env` or `data/*.csv`.
 
 Classic scripts sharing globals, not ES modules. **Top-level code runs at load time in file
 order**, so the `<script>` order in `index.html` and the `<link>` cascade order are both behavior.
-`tokens.css` must load first.
+`tokens.css` must load first. **Escape closes one layer per press** via `registerEscapeLayer()`
+(`escape.js`), which swallows the key first: register new panels there, never a bare Escape listener.
 
 ### State (`state.js`)
 
@@ -118,8 +119,7 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
 
 ### Chat and dice
 
-- Chat lives at `parties/<code>/chat/<pushId>`, last 200 subscribed, nothing saved. Render with
-  **`textContent`, never `innerHTML`**; markdown.js is deliberately not involved.
+- Chat (`parties/<code>/chat`, last 200, unsaved) renders with **`textContent`, never `innerHTML`**.
 - `#chat-modal` *moves* the tab's `#chat-empty`/`#chat-body` into itself and back, so there is one
   log. It opts out of the shared backdrop close, since any other hide strands the log.
 - **A roll is a chat message** (`kind: 'roll'`); there is no `rolls` node. Rolling works with no
@@ -129,8 +129,7 @@ A GM with nobody picked has no character, so Shop is the whole left panel (`sync
   `parts` stays out of the payload.
 - Advantage rolls the whole pool twice and keeps the better total (`dropped` is the loser). A crit
   is a natural 20/1 on a single d20, read off the kept die.
-- `noteBubbleFeed()` never bubbles the first snapshot (backlog) or your own roll (it would reveal
-  the number before the tumble lands).
+- `noteBubbleFeed()` never bubbles the backlog or your own roll (it would spoil the tumble).
 
 ### Battle maps and initiative
 

@@ -56,6 +56,8 @@ function _hideContextMenu() {
   document.getElementById('ctx-folder').style.display    = 'none';
 }
 
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => !ctxMenu.classList.contains('hidden'), _hideContextMenu);
+
 document.getElementById('ctx-rotate').addEventListener('click', () => {
   if (!ctxInstanceId) return;
   _rotateInstance(ctxInstanceId);

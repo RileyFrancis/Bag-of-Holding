@@ -365,9 +365,9 @@ document.addEventListener('keydown', e => {
     if (state.mode === 'placing') { _rotatePlacingItem(); return; }
     if (state.mode === 'dragging') { _rotateDraggedItem(); return; }
   }
+});
 
-  if (e.key === 'Escape') {
-    cancelPlacing();
-    if (state.mode === 'dragging') _cancelItemDrag();
-  }
+registerEscapeLayer(ESCAPE_TIER.GESTURE, () => state.mode !== 'idle', () => {
+  cancelPlacing();
+  if (state.mode === 'dragging') _cancelItemDrag();
 });

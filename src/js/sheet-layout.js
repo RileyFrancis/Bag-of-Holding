@@ -356,7 +356,6 @@ document.getElementById('character-sheet').addEventListener('pointerdown', e => 
   window.addEventListener('pointermove', _onSheetDragMove);
   window.addEventListener('pointerup', _onSheetDragEnd);
   window.addEventListener('pointercancel', _onSheetDragCancel);
-  window.addEventListener('keydown', _onSheetDragKey, true);
 });
 
 function _onSheetDragMove(e) {
@@ -394,10 +393,6 @@ function _onSheetDragEnd() {
 
 function _onSheetDragCancel() { _endSheetDrag(); }
 
-function _onSheetDragKey(e) {
-  if (e.key === 'Escape' && sheetDrag) { e.stopPropagation(); _endSheetDrag(); }
-}
-
 function _endSheetDrag() {
   if (!sheetDrag) return;
   stopDragAutoScroll();
@@ -408,8 +403,9 @@ function _endSheetDrag() {
   window.removeEventListener('pointermove', _onSheetDragMove);
   window.removeEventListener('pointerup', _onSheetDragEnd);
   window.removeEventListener('pointercancel', _onSheetDragCancel);
-  window.removeEventListener('keydown', _onSheetDragKey, true);
 }
+
+registerEscapeLayer(ESCAPE_TIER.GESTURE, () => !!sheetDrag, _endSheetDrag);
 
 // ─── WHERE THE DROP LANDS ───
 //   `root`   — cursor on the sheet's rim: a band across the full width / height.

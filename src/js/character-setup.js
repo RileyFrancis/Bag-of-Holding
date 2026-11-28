@@ -468,12 +468,10 @@ charModalBoxEl.addEventListener('keydown', e => {
   } else if (e.key === 'Enter' && isVisible && charPickerActiveIndex >= 0) {
     e.preventDefault();
     _selectCharPickerOption(charPickerListEl.children[charPickerActiveIndex].dataset.value);
-  } else if (e.key === 'Escape' && isVisible) {
-    e.preventDefault();
-    e.stopPropagation(); // closes the picker, not whatever else listens for Escape
-    _setCharPickerVisible(false);
   }
 });
+// Over the Character Setup modal, so it closes before the modal does.
+registerEscapeLayer(ESCAPE_TIER.POPUP, _isCharPickerVisible, () => _setCharPickerVisible(false));
 
 // A press on the slip must not blur the field, or focusout closes it mid-pick.
 charPickerEl.addEventListener('mousedown', e => e.preventDefault());

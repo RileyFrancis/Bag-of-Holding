@@ -340,10 +340,16 @@ document.getElementById('stack-confirm-btn').addEventListener('click', () => {
 });
 
 // ─── MODAL HELPERS ───────────────────────────────────────────────────────────
+// Modal ids in the order they were shown, newest last, so Escape closes the
+// one on top. Ids of closed modals are skipped, not pruned.
+let modalShowOrder = [];
+
 // Show a modal and the shared backdrop.
 function showModal(id) {
   document.getElementById('modal-backdrop').classList.remove('hidden');
   document.getElementById(id).classList.remove('hidden');
+  modalShowOrder = modalShowOrder.filter(m => m !== id);
+  modalShowOrder.push(id);
 }
 
 // Hide a modal; the backdrop goes too once no modal is left open.
@@ -366,3 +372,33 @@ document.querySelectorAll('.cancel-btn').forEach(btn => {
     if (modal) hideModal(modal.id);
   });
 });
+
+// ─── ESCAPE ──────────────────────────────────────────────────────────────────
+function _getTopOpenModal() {
+  const open = [...document.querySelectorAll('.modal:not(.hidden)')];
+  if (!open.length) return null;
+  for (let i = modalShowOrder.length - 1; i >= 0; i--) {
+    const modal = document.getElementById(modalShowOrder[i]);
+    if (open.includes(modal)) return modal;
+  }
+  return open[open.length - 1]; // later in the page draws on top
+}
+
+// Escape presses the modal's own way out, so whatever its button also does
+// (a discard check, dropping a pending sign-in) still happens: a visible
+// `data-escape="back"` first, then `data-escape="close"`, then `.cancel-btn`.
+// `data-escape="false"` on the modal is a choice that must be made, never dismissed.
+function _closeModalByEscape(modal) {
+  if (modal.dataset.escape === 'false') return;
+  const buttons = [...modal.querySelectorAll('[data-escape], .cancel-btn')]
+    .filter(btn => btn.getClientRects().length > 0);
+  const btn = buttons.find(b => b.dataset.escape === 'back')
+    ?? buttons.find(b => b.dataset.escape === 'close')
+    ?? buttons.find(b => b.classList.contains('cancel-btn'));
+  if (btn) btn.click();
+  else hideModal(modal.id);
+}
+
+registerEscapeLayer(ESCAPE_TIER.MODAL,
+  () => _getTopOpenModal() !== null,
+  () => _closeModalByEscape(_getTopOpenModal()));

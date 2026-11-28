@@ -347,6 +347,8 @@ function _closeCampaignMenu() {
   campaignMenuEl.classList.add('hidden');
 }
 
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => openCampaignMenuCode !== null, _closeCampaignMenu);
+
 // ─── THE CAMPAIGN MODAL ───
 // One dialog, two jobs — creating a table and joining one are the same question
 // asked from either side.

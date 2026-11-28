@@ -172,9 +172,7 @@ document.addEventListener('click', e => {
   _closeCharacterTabMenu();
 });
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') _closeCharacterTabMenu();
-});
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => openTabMenuKey !== null, _closeCharacterTabMenu);
 
 // ─── SWITCHING ───
 // Picking from a tab's menu can change both halves of the selection at once:

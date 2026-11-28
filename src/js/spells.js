@@ -1258,9 +1258,7 @@ window.addEventListener('pointermove', e => {
 
 window.addEventListener('pointerup', () => _endCastGesture(true));
 window.addEventListener('pointercancel', () => _endCastGesture(false));
-window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && castGesture) _endCastGesture(false);
-});
+registerEscapeLayer(ESCAPE_TIER.GESTURE, () => !!castGesture, () => _endCastGesture(false));
 
 const spellListEl = document.getElementById('spell-list');
 
@@ -1298,6 +1296,8 @@ function _hideSpellHoverCard() {
   spellHoverEl.classList.add('hidden');
   spellHoverEl.textContent = '';
 }
+
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => !spellHoverEl.classList.contains('hidden'), _hideSpellHoverCard);
 
 function _showSpellHoverCard(spell, row) {
   if (!row.isConnected) return; // the list was redrawn under the timer

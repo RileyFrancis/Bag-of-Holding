@@ -1287,6 +1287,15 @@ function renderMapToolbar() {
 document.getElementById('map-btn').addEventListener('click', () => openBattlemap());
 document.getElementById('map-close-btn').addEventListener('click', _closeBattlemap);
 
+// A shape half drawn, or a grid half dragged, is what Escape backs out of
+// first; the next one closes the map back to the view it was opened from.
+registerEscapeLayer(ESCAPE_TIER.GESTURE, () => isMapOpen && !!(mapDrawing || mapGridDrag), () => {
+  mapDrawing = null;
+  mapGridDrag = null;
+  drawBattlemap();
+});
+registerEscapeLayer(ESCAPE_TIER.VIEW, () => isMapOpen && state.view === 'map', _closeBattlemap);
+
 document.addEventListener('keydown', e => {
   if (!isMapOpen) return;
   if (document.querySelector('.modal:not(.hidden)')) return;
@@ -1294,12 +1303,7 @@ document.addEventListener('keydown', e => {
   const t = e.target;
   if (t && t.matches && t.matches('input, textarea, select')) return;
   if (t && t.isContentEditable) return;
-  if (e.key === 'Escape') {
-    // A shape half drawn — or a grid half dragged — is what Escape refuses, not the map.
-    if (mapDrawing) { mapDrawing = null; drawBattlemap(); return; }
-    if (mapGridDrag) { mapGridDrag = null; drawBattlemap(); return; }
-    _closeBattlemap();
-  } else if ((e.key === 'Delete' || e.key === 'Backspace') && mapSelectedTokenId) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && mapSelectedTokenId) {
     const map = getViewedMap();
     const token = map ? (map.tokens || {})[mapSelectedTokenId] : null;
     if (token && canControlToken(token)) {

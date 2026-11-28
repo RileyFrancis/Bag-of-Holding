@@ -491,11 +491,7 @@ document.addEventListener('pointerdown', e => {
   closeItemDetails();
 }, { capture: true });
 
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !isItemDetailsOpen()) return;
-  e.preventDefault();
-  closeItemDetails();
-});
+registerEscapeLayer(ESCAPE_TIER.CARD, isItemDetailsOpen, closeItemDetails);
 
 // Fill the details card for a template, or for one instance of it when `inst` is given.
 // Does not show the card; theme.js calls this to repaint one already open.

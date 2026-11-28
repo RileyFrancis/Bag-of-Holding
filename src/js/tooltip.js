@@ -30,6 +30,9 @@ function clearTooltip() {
   el.innerHTML = '';
 }
 
+registerEscapeLayer(ESCAPE_TIER.POPUP,
+  () => !document.getElementById('item-tooltip').classList.contains('hidden'), clearTooltip);
+
 function _showItemTooltip(instanceId, x, y) {
   const inst = state.instances[instanceId];
   if (!inst) return;

@@ -66,6 +66,7 @@ In load order.
 | `items.js` | CSV parsing into `DEFAULT_ITEMS` |
 | `constants.js` | Constants read by more than one file: grid geometry, rarities, sheet abilities/skills, folder and homebrew kinds, battle-map defaults, the default equip layout |
 | `state.js` | The `state` object and convenience accessors |
+| `escape.js` | The Escape key: each panel registers a layer and tier, and one press closes the topmost open one. With nothing open it does nothing; it never leaves the character for home |
 | `pending-choices.js` | The reminder glow on unmade choices, the route to them, and the edge indicators |
 | `folders.js` | Browse-list folders: model, persistence, folder modals |
 | `item-sort.js` | The Browse list's sort order: the modes, their persistence, the menu |
@@ -81,7 +82,7 @@ In load order.
 | `interaction-placing.js` | PLACING mode |
 | `interaction-drag.js` | DRAGGING mode, plus R-key rotation |
 | `interaction-context.js` | Item clicks, context menu |
-| `modals.js` | Tabs, filters, character / item-editor / stack modals |
+| `modals.js` | Tabs, filters, character / item-editor / stack modals, and the modal helpers (Escape presses a modal's `data-escape` back/close button, else its Cancel) |
 | `helpers.js` | Shared formatting and lookup helpers |
 | `persistence.js` | `autoSave`, `autoLoad`, save payload build/apply |
 | `theme.js` | Light/dark palette switching and the settings modal |

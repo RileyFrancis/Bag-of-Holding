@@ -493,7 +493,6 @@ document.getElementById('xp-subtract-btn').addEventListener('click', () => _appl
 document.getElementById('xp-modal').addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'xp-delta-input') { e.preventDefault(); _applyXpDelta(1); }
   else if (e.key === 'Enter' && e.target.id === 'xp-current-input') hideModal('xp-modal');
-  else if (e.key === 'Escape') { e.stopPropagation(); hideModal('xp-modal'); }
 });
 
 // Runs everything that must follow a sheet edit to `path`. Strength is marked,

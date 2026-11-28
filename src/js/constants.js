@@ -18,6 +18,19 @@ const RARITY_META = {
 
 const RARITY_ORDER = ['common','uncommon','rare','very_rare','legendary','artifact','special'];
 
+// ─── ESCAPE ───
+// What Escape closes first, highest tier first (escape.js). Within a tier, the
+// layer registered first wins.
+const ESCAPE_TIER = {
+  GESTURE: 60, // a held drag, roll, cast or half-drawn shape: Escape backs out of it
+  POPUP:   50, // menus, pickers and hover cards, which can float over a modal
+  MODAL:   40, // the topmost `.modal` (modals.js)
+  CARD:    30, // cards floating over the app: item details, the rest prompt
+  TRAY:    20, // the dice dock and the short rest tray
+  VIEW:    10, // the battle map, laid over the view it was opened from
+  SCREEN:   0, // the not-found page, which has nowhere to go but home
+};
+
 // ─── CHARACTER SHEET ───
 
 const ABILITIES = [

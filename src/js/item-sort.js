@@ -132,6 +132,8 @@ function _hideSortMenu() {
   sortMenuEl.classList.add('hidden');
 }
 
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => !sortMenuEl.classList.contains('hidden'), _hideSortMenu);
+
 sortDirBtnEl.addEventListener('click', () => {
   _setItemSortReverse(!state.itemSortReverse);
   renderItemList();

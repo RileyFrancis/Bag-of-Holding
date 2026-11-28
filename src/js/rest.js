@@ -512,8 +512,26 @@ function _getRestPromptModel() {
     if (_isOwnLongRestMember(longRest)) return _getMemberSuppliesModel(longRest);
   }
 
-  if (restNotice) return { title: restNotice.title, text: restNotice.text, actions: [] };
+  if (restNotice) return { title: restNotice.title, text: restNotice.text, actions: [], isNotice: true };
   return null;
+}
+
+// The prompt card's own way out, or null when the card showing has none: Done
+// for Hit Dice, Not now for a solo long rest, or a notice dismissed early. A
+// party vote or decision is never dismissed by Escape.
+function _getRestPromptEscape() {
+  const model = _getRestPromptModel();
+  if (!model) return null;
+  if (hitDiceSession) return _closeHitDice;
+  if (isSoloLongRestOpen) return () => _takeSoloLongRest(false);
+  if (model.isNotice) return _dismissRestNotice;
+  return null;
+}
+
+function _dismissRestNotice() {
+  clearTimeout(restNoticeTimer);
+  restNotice = null;
+  renderRestUI();
 }
 
 function _getVoteModel(longRest) {
@@ -806,8 +824,7 @@ longRestBtn.addEventListener('click', () => {
 document.addEventListener('pointerdown', e => {
   if (isShortRestTrayOpen() && !restDockEl.contains(e.target)) closeShortRestTray();
 });
-window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && isShortRestTrayOpen()) closeShortRestTray();
-});
+registerEscapeLayer(ESCAPE_TIER.TRAY, isShortRestTrayOpen, closeShortRestTray);
+registerEscapeLayer(ESCAPE_TIER.CARD, () => _getRestPromptEscape() !== null, () => _getRestPromptEscape()());
 
 renderRestUI();

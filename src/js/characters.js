@@ -20,8 +20,6 @@ const homeMenuEl   = document.getElementById('char-card-menu');
 // Which card's ⋯ menu is open, or null.
 let openCardMenuId = null;
 
-// Set in the capture phase of an Escape keydown, read in the bubble phase.
-let shouldEscapeGoHome = false;
 
 // ─── MODEL ───
 function _createCharacterId() {
@@ -578,45 +576,7 @@ document.getElementById('home-new-char-btn').addEventListener('click', () => {
   openCharModal(null, { isNew: true });
 });
 
-// Home is the top of the page, so Escape only ever walks toward it — on home
-// itself it just folds a card's ⋯ menu.
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || state.screen !== 'home') return;
-  if (document.querySelector('.modal:not(.hidden)')) return; // the modal closes first
-  if (openCardMenuId !== null) closeCardMenu();
-});
-
-// From a character, Escape goes home — but only an Escape nothing else wanted.
-// A dozen handlers close their own thing on Escape (modals, chat, the dice dock,
-// a drag, the map, a tab menu), and by the time this could run they have, so
-// "is anything open" is asked in the capture phase, before any of them, and
-// acted on in the bubble phase, after all of them.
-window.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  const t = e.target;
-  shouldEscapeGoHome = state.screen === 'app'
-    && state.mode === 'idle'
-    && !(t && t.matches && t.matches('input, textarea, select'))
-    && !(t && t.isContentEditable)
-    && !document.querySelector('.modal:not(.hidden)')
-    && !isChatModalOpen()
-    && !isStatusPickerOpen()
-    && !isDiceDockOpen()
-    && !isShortRestTrayOpen()
-    && !isItemDetailsOpen()
-    && !rollGesture
-    && !castGesture
-    && openTabMenuKey === null
-    && !isMapOpen
-    && !sheetDrag;
-}, { capture: true });
-
-window.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !shouldEscapeGoHome) return;
-  shouldEscapeGoHome = false;
-  if (e.defaultPrevented || state.screen !== 'app') return;
-  openHomeScreen();
-});
+registerEscapeLayer(ESCAPE_TIER.POPUP, () => openCardMenuId !== null, closeCardMenu);
 
 // ─── LANDING HERE AT BOOT ───
 // A visit starts on the home screen, signed in or not — which character and
